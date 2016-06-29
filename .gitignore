@@ -18,3 +18,4 @@ clang-format
 *_BASE_*
 *.sublime-*
 /out*
+gn
