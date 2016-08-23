@@ -22,5 +22,6 @@ DDK_PROTOCOL_DEF(USB_BUS,        'pUBS', "usb-bus")
 DDK_PROTOCOL_DEF(USB_HUB,        'pUHB', "usb-hub")
 DDK_PROTOCOL_DEF(USB_DEVICE,     'pUDV', "usb-device")
 DDK_PROTOCOL_DEF(BLUETOOTH_HCI,  'pBHC', "usb-hci")
+DDK_PROTOCOL_DEF(HID_BUS,        'pHBS', "hid-bus")
 #undef DDK_PROTOCOL_DEF
 #endif
