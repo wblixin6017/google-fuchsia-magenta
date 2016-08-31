@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <magenta/device/ioctl.h>
 
+#define HIDCTL_DEV "/dev/class/misc/hidctl"
+
 #define IOCTL_HID_CTL_CONFIG \
     IOCTL(IOCTL_KIND_DEFAULT, IOCTL_FAMILY_HID, 0)
 

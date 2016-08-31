@@ -24,6 +24,10 @@
 #define NB_READ               8 // arg=blocknum
 #define NB_WRITE              9 // arg=blocknum, data=data
 #define NB_CLOSE             10 // arg=0
+#define NB_HID_OPEN          11 // arg=0
+#define NB_HID_CFG           12 // arg=id, data=hid_ioctl_config_t
+#define NB_HID_REPORT        13 // arg=id, data=input report
+#define NB_HID_CLOSE         14 // arg=id
 
 #define NB_ACK                0 // arg=0 or -err, NB_READ: data=data
 

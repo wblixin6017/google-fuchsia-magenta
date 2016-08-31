@@ -105,6 +105,7 @@ static ssize_t hidctl_read(mx_device_t* dev, void* buf, size_t count, mx_off_t o
 }
 
 static ssize_t hidctl_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
+    printf("hidctl_write %zd\n", count);
     hidctl_instance_t* inst = from_mx_device(dev);
     hid_io_queue(&inst->hiddev, buf, count);
     return count;

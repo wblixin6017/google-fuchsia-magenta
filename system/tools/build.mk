@@ -8,11 +8,12 @@ MKBOOTFS := $(BUILDDIR)/tools/mkbootfs
 BOOTSERVER := $(BUILDDIR)/tools/bootserver
 LOGLISTENER := $(BUILDDIR)/tools/loglistener
 NETRUNCMD := $(BUILDDIR)/tools/netruncmd
-NETCP:= $(BUILDDIR)/tools/netcp
+NETCP := $(BUILDDIR)/tools/netcp
+NETHID := $(BUILDDIR)/tools/nethid
 
 TOOLS_CFLAGS := -std=c11 -Wall -Isystem/public -Isystem/private
 
-ALL_TOOLS := $(MKBOOTFS) $(BOOTSERVER) $(LOGLISTENER) $(NETRUNCMD) $(NETCP)
+ALL_TOOLS := $(MKBOOTFS) $(BOOTSERVER) $(LOGLISTENER) $(NETRUNCMD) $(NETCP) $(NETHID)
 
 $(BUILDDIR)/tools/%: system/tools/%.c
 	@echo compiling $@
@@ -25,6 +26,11 @@ $(BUILDDIR)/tools/netruncmd: system/tools/netruncmd.c system/tools/netprotocol.c
 	$(NOECHO)cc $(TOOLS_CFLAGS) -o $@ $^
 
 $(BUILDDIR)/tools/netcp: system/tools/netcp.c system/tools/netprotocol.c
+	@echo compiling $@
+	@$(MKDIR)
+	$(NOECHO)cc $(TOOLS_CFLAGS) -o $@ $^
+
+$(BUILDDIR)/tools/nethid: system/tools/nethid.c system/tools/netprotocol.c
 	@echo compiling $@
 	@$(MKDIR)
 	$(NOECHO)cc $(TOOLS_CFLAGS) -o $@ $^

@@ -12,6 +12,7 @@
 #include <inet6/inet6.h>
 #include <inet6/netifc.h>
 
+#include <hexdump/hexdump.h>
 #include <magenta/processargs.h>
 #include <magenta/syscalls.h>
 #include <mxio/util.h>
@@ -103,6 +104,13 @@ void udp6_recv(void* data, size_t len,
         len -= sizeof(nbmsg);
         msg->data[len - 1] = 0;
 
+        char addr[IP6TOAMAX];
+        ip6toa(addr, (void*)saddr);
+        printf("udp6_recv saddr %s sport %u dport %u\n",
+                addr, sport, dport);
+        printf("udp6_recv cmd %u arg %u len %zd cookie %#x\n", msg->cmd, msg->arg, len, msg->cookie);
+        //hexdump(msg->data, len);
+
         switch (msg->cmd) {
         case NB_QUERY:
             if (strcmp((char*)msg->data, "*") &&
@@ -117,6 +125,8 @@ void udp6_recv(void* data, size_t len,
             msg->cmd = NB_ACK;
             memcpy(buf, msg, sizeof(nbmsg));
             memcpy(buf + sizeof(nbmsg), hostname, dlen);
+            printf("udp6_recv sending %zd byte response\n", sizeof(nbmsg) + dlen);
+            hexdump(buf, sizeof(nbmsg) + dlen);
             udp6_send(buf, sizeof(nbmsg) + dlen, saddr, sport, dport);
             break;
         case NB_SHELL_CMD:
@@ -137,6 +147,18 @@ void udp6_recv(void* data, size_t len,
             break;
         case NB_CLOSE:
             netfile_close(msg->cookie, saddr, sport, dport);
+            break;
+        case NB_HID_OPEN:
+            nethid_open(msg->cookie, saddr, sport, dport);
+            break;
+        case NB_HID_CFG:
+            nethid_cfg(msg->arg, (char*)msg->data, len, msg->cookie, saddr, sport, dport);
+            break;
+        case NB_HID_REPORT:
+            nethid_report(msg->arg, (char*)msg->data, len, msg->cookie, saddr, sport, dport);
+            break;
+        case NB_HID_CLOSE:
+            nethid_close(msg->arg, msg->cookie, saddr, sport, dport);
             break;
         }
         return;

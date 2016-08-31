@@ -37,3 +37,15 @@ void netfile_write(const char* data, size_t len, uint32_t cookie, uint32_t arg,
 
 void netfile_close(uint32_t cookie,
                    const ip6_addr_t* saddr, uint16_t sport, uint16_t dport);
+
+void nethid_open(uint32_t cookie,
+                 const ip6_addr_t* saddr, uint16_t sport, uint16_t dport);
+
+void nethid_cfg(uint32_t arg, const char* data, size_t len, uint32_t cookie,
+                 const ip6_addr_t* saddr, uint16_t sport, uint16_t dport);
+
+void nethid_report(uint32_t arg, const char* data, size_t len, uint32_t cookie,
+                   const ip6_addr_t* saddr, uint16_t sport, uint16_t dport);
+
+void nethid_close(uint32_t arg, uint32_t cookie,
+                  const ip6_addr_t* saddr, uint16_t sport, uint16_t dport);

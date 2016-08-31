@@ -12,9 +12,10 @@ MODULE_TYPE := userapp
 
 MODULE_SRCS += \
     $(LOCAL_DIR)/netsvc.c \
-    $(LOCAL_DIR)/netfile.c
+    $(LOCAL_DIR)/netfile.c \
+    $(LOCAL_DIR)/nethid.c
 
-MODULE_STATIC_LIBS := ulib/inet6
+MODULE_STATIC_LIBS := ulib/inet6 ulib/hexdump
 
 MODULE_LIBS := ulib/mxio ulib/launchpad ulib/magenta ulib/musl
 
