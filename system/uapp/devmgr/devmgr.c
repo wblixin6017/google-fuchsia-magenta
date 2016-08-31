@@ -806,6 +806,7 @@ mx_status_t devmgr_control(const char* cmd) {
                "poweroff    - poweroff the system\n"
                "reboot      - reboot the system\n"
                "kerneldebug - send a command to the kernel\n"
+               "acpi-ps0    - invoke the _PS0 method on an acpi object\n"
                );
         return NO_ERROR;
     }
@@ -833,6 +834,12 @@ mx_status_t devmgr_control(const char* cmd) {
     if (!strncmp(cmd, prefix, strlen(prefix))) {
         const char* arg = cmd + strlen(prefix);
         return mx_debug_send_command(root_resource_handle, arg, strlen(arg));
+    }
+    const char* ps0prefix = "acpi-ps0:";
+    if (!strncmp(cmd, ps0prefix, strlen(ps0prefix))) {
+        char* arg = (char*)cmd + strlen(ps0prefix);
+        devmgr_acpi_ps0(arg);
+        return NO_ERROR;
     }
 
     return ERR_NOT_SUPPORTED;

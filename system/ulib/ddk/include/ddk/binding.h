@@ -80,6 +80,9 @@ __BEGIN_CDECLS;
 #define BIND_USB_IFC_PROTOCOL 0x0207
 #define BIND_USB_DEVICE_TYPE  0x0208
 
+// TEMPORARY binding variables at 0xfXX
+#define BIND_I2C_ADDR         0x0f00
+
 typedef struct mx_bind_inst {
     uint32_t op;
     uint32_t arg;

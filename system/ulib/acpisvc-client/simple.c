@@ -254,3 +254,18 @@ mx_status_t acpi_s_state_transition(acpi_handle_t* h, uint8_t target_state) {
     // This state should be unreachable.
     abort();
 }
+
+mx_status_t acpi_ps0(acpi_handle_t* h, char* name, size_t len) {
+    acpi_cmd_ps0_t cmd = {
+        .hdr = {
+            .version = 0,
+            .cmd = ACPI_CMD_PS0,
+            .len = sizeof(cmd),
+        },
+    };
+    memcpy(cmd.name, name, len);
+
+    acpi_rsp_ps0_t* rsp;
+    size_t rsp_len;
+    return run_txn(h, &cmd, sizeof(cmd), (void**)&rsp, &rsp_len, NULL, 0);
+}
