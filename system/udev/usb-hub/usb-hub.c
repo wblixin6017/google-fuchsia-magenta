@@ -80,11 +80,25 @@ static void usb_hub_enable_port(usb_hub_t* hub, int port) {
     usleep(hub->power_on_delay);
 }
 
-static void usb_hub_port_connected(usb_hub_t* hub, int port) {
-    // USB 2.0 spec section 7.1.7.3 recommends 100ms between connect and reset
-    usleep(100 * 1000);
+mx_status_t usb_hub_debounce_cb(void* hub_context, int port) {
+    usb_hub_t* hub = (usb_hub_t*)hub_context;
+    usb_port_status_t status;
+    mx_status_t result = usb_hub_get_port_status(hub, port, &status);
+    if (result != NO_ERROR) {
+        return result;
+    }
 
+    return (status.wPortStatus & USB_PORT_CONNECTION) ? NO_ERROR : ERR_NOT_READY;
+}
+
+static void usb_hub_port_connected(usb_hub_t* hub, int port) {
     xprintf("port %d usb_hub_port_connected\n", port);
+
+    if (usb_hub_debounce_port(usb_hub_debounce_cb, hub, port) != NO_ERROR) {
+        printf("usb_hub_debounce_port failed for USB hub, port %d\n", port);
+        return;
+    }
+
     usb_set_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_PORT_RESET, port);
 }
 

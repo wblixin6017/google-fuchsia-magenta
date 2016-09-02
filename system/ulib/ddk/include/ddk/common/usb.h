@@ -34,6 +34,8 @@ mx_status_t usb_clear_feature(mx_device_t* device, uint8_t request_type, int fea
 // helper function for allocating iotxns for USB transfers
 iotxn_t* usb_alloc_iotxn(uint8_t ep_address, size_t data_size, size_t extra_size);
 
+/****** USB Descriptor Iteration Utilities ******/
+
 // Utilities for iterating through descriptors within a device's USB configuration descriptor
 typedef struct {
     uint8_t* desc;      // start of configuration descriptor
@@ -63,5 +65,14 @@ usb_interface_descriptor_t* usb_desc_iter_next_interface(usb_desc_iter_t* iter, 
 usb_endpoint_descriptor_t* usb_desc_iter_next_endpoint(usb_desc_iter_t* iter);
 
 usb_configuration_descriptor_t* usb_desc_iter_get_config_desc(usb_desc_iter_t* iter);
+
+/****** Utilities for Hubs ******/
+
+// returns NO_ERROR for success, ERR_NOT_READY to keep trying or other error for permanent failure
+typedef mx_status_t (* usb_hub_debounce_port_cb)(void* hub_context, int port);
+
+// utility for hub driver and root hub implementations to debounce ports that have just
+// entered connected state
+mx_status_t usb_hub_debounce_port(usb_hub_debounce_port_cb cb, void* hub_context, int port);
 
 __END_CDECLS;

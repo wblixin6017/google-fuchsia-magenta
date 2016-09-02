@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/common/usb.h>
 #include <stdio.h>
 #include <unistd.h>
 
@@ -17,12 +18,23 @@ static void xhci_reset_port(xhci_t* xhci, int port) {
     XHCI_WRITE32(portsc, temp);
 }
 
+mx_status_t xhci_hub_debounce_cb(void* hub_context, int port) {
+    xhci_t* xhci = (xhci_t *)hub_context;
+    volatile xhci_port_regs_t* port_regs = xhci->op_regs->port_regs;
+    uint32_t portsc = XHCI_READ32(&port_regs[port - 1].portsc);
+
+    // check to see if we are still connected
+    return (portsc & PORTSC_CCS) ? NO_ERROR : ERR_NOT_READY;
+}
+
 // called from device manager thread
 void xhci_handle_rh_port_connected(xhci_t* xhci, int port) {
     xprintf("xhci_handle_rh_port_connected %d\n", port);
 
-    // USB 2.0 spec section 7.1.7.3 recommends 100ms between connect and reset
-    usleep(100 * 1000);
+    if (usb_hub_debounce_port(xhci_hub_debounce_cb, xhci, port) != NO_ERROR) {
+        printf("usb_hub_debounce_port failed for root hub port %d\n", port);
+        return;
+    }
 
     xhci_reset_port(xhci, port);
 }

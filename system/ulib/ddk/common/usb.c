@@ -248,3 +248,33 @@ usb_endpoint_descriptor_t* usb_desc_iter_next_endpoint(usb_desc_iter_t* iter) {
 usb_configuration_descriptor_t* usb_desc_iter_get_config_desc(usb_desc_iter_t* iter) {
     return (usb_configuration_descriptor_t *)iter->desc;
 }
+
+// utility for hub driver and root hub implementations to debounce ports that have just
+// entered connected state
+mx_status_t usb_hub_debounce_port(usb_hub_debounce_port_cb cb, void* hub_context, int port) {
+    const mx_time_t timeout = 2 * 1000 * 1000;  // 2 second total timeout
+    const mx_time_t poll_delay = 25 * 1000;     // poll every 25 milliseconds
+    const mx_time_t stable_time = 100 * 1000;   // wait until stable for 100 milliseconds
+    mx_time_t total = 0;
+    mx_time_t stable = 0;
+
+    while (total < timeout) {
+        usleep(poll_delay);
+        total += poll_delay;
+
+        mx_status_t status = cb(hub_context, port);
+        if (status == NO_ERROR) {
+            stable += poll_delay;
+            if (stable >= stable_time) {
+                // printf("usb_hub_debounce_port success after %lld milliseconds\n", total / 1000);
+                return NO_ERROR;
+            }
+        } else if (status == ERR_NOT_READY) {
+            stable = 0;
+        } else {
+            return status;
+        }
+    }
+
+    return ERR_TIMED_OUT;
+}
