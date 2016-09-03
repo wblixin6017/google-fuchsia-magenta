@@ -27,6 +27,7 @@ static ssize_t dmctl_write(mx_device_t* dev, const void* buf, size_t count, mx_o
 }
 
 mx_status_t vfs_install_remote(mx_handle_t h);
+mx_status_t socket_install_remote(mx_handle_t h);
 
 static ssize_t dmctl_ioctl(mx_device_t* dev, uint32_t op,
                            const void* in_buf, size_t in_len,
@@ -40,22 +41,35 @@ static ssize_t dmctl_ioctl(mx_device_t* dev, uint32_t op,
     if ((in_len < 1) || (((char*)in_buf)[in_len - 1] != 0)) {
         return ERR_INVALID_ARGS;
     }
-    if (strcmp(in_buf, "fs:/data")) {
+    if (!strcmp(in_buf, "fs:/data")) {
+        mx_handle_t h[2];
+        mx_status_t r;
+        if ((r = mx_msgpipe_create(h, 0)) < 0) {
+            return r;
+        }
+        if ((r = vfs_install_remote(h[1])) < 0) {
+            mx_handle_close(h[0]);
+            mx_handle_close(h[1]);
+            return r;
+        }
+        memcpy(out_buf, h, sizeof(mx_handle_t));
+        return sizeof(mx_handle_t);
+    } else if (!strcmp(in_buf, "fs:/dev/socket")) {
+        mx_handle_t h[2];
+        mx_status_t r;
+        if ((r = mx_msgpipe_create(h, 0)) < 0) {
+            return r;
+        }
+        if ((r = socket_install_remote(h[1])) < 0) {
+            mx_handle_close(h[0]);
+            mx_handle_close(h[1]);
+            return r;
+        }
+        memcpy(out_buf, h, sizeof(mx_handle_t));
+        return sizeof(mx_handle_t);
+    } else {
         return ERR_NOT_FOUND;
     }
-
-    mx_handle_t h[2];
-    mx_status_t r;
-    if ((r = mx_msgpipe_create(h, 0)) < 0) {
-        return r;
-    }
-    if ((r = vfs_install_remote(h[1])) < 0) {
-        mx_handle_close(h[0]);
-        mx_handle_close(h[1]);
-        return r;
-    }
-    memcpy(out_buf, h, sizeof(mx_handle_t));
-    return sizeof(mx_handle_t);
 }
 
 static mx_protocol_device_t dmctl_device_proto = {
