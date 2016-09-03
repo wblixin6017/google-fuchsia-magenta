@@ -135,11 +135,6 @@ int rmdir(const char* path) {
 
 // Socket stubbing.
 
-int socket(int domain, int type, int protocol) {
-    errno = ENOSYS;
-    return -1;
-}
-
 int socketpair(int domain, int type, int protocol, int fd[2]) {
     errno = ENOSYS;
     return -1;
@@ -152,19 +147,7 @@ int shutdown(int fd, int how) {
     return checksocket(fd, ENOTSOCK, ENOSYS);
 }
 
-int bind(int fd, const struct sockaddr* addr, socklen_t len) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
 int connect(int fd, const struct sockaddr* addr, socklen_t len) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int listen(int fd, int backlog) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int accept4(int fd, struct sockaddr* restrict addr, socklen_t* restrict len, int flags) {
     return checksocket(fd, ENOTSOCK, ENOSYS);
 }
 

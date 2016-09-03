@@ -14,6 +14,8 @@
 #include <sys/uio.h>
 #include <threads.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 #include <magenta/processargs.h>
 #include <magenta/syscalls.h>
@@ -966,4 +968,104 @@ mode_t umask(mode_t mask) {
     __mxio_global_state.umask = mask & 0777;
     mtx_unlock(&mxio_lock);
     return oldmask;
+}
+
+// TODO
+// these socket APIs are tentatively using remote I/O protocol,
+// Many of them are mapped to ioctl currently.
+// That'll be changing once socket I/O's own protocol is ready.
+
+int socket(int domain, int type, int protocol) {
+    mxio_t* io = NULL;
+    mx_status_t r;
+    int fd;
+    int flags = 0;
+    uint32_t mode = 0;
+
+    // TODO: pass domain, type, protocol
+    domain = domain;
+    type = type;
+    protocol = protocol;
+
+    if ((r = __mxio_open(&io, NULL, "/dev/socket", flags, mode)) < 0) {
+        return ERROR(r);
+    }
+    if ((fd = mxio_bind_to_fd(io, -1, 0)) < 0) {
+        io->ops->close(io);
+        mxio_release(io);
+        return ERRNO(EMFILE);
+    }
+    return fd;
+}
+
+// TODO: for now, map APIs to ioctl
+#define IOCTL(kind, family, number) \
+    ((((kind) & 0xF) << 20) | (((family) & 0xFF) << 8) | ((number) & 0xFF))
+
+int bind(int fd, const struct sockaddr* addr, socklen_t len) {
+    mxio_t* io = fd_to_io(fd);
+    if (io == NULL) {
+        return ERRNO(EBADF);
+    }
+    uint32_t op = IOCTL(0, 0, 1);
+
+    ssize_t r = io->ops->ioctl(io, op, addr, len, NULL, 0);
+    mxio_release(io);
+    return r;
+}
+
+int listen(int fd, int backlog) {
+    mxio_t* io = fd_to_io(fd);
+    if (io == NULL) {
+        return ERRNO(EBADF);
+    }
+    uint32_t op = IOCTL(0, 0, 2);
+
+    ssize_t r = io->ops->ioctl(io, op, &backlog, sizeof(backlog), NULL, 0);
+    mxio_release(io);
+    return r;
+}
+
+int accept4(int fd, struct sockaddr* restrict addr, socklen_t* restrict len, int flags) {
+    mxio_t* io = fd_to_io(fd);
+    if (io == NULL) {
+        return ERRNO(EBADF);
+    }
+    uint32_t op = IOCTL(1/* get_handle */, 0, 3);
+
+    // TODO: support flags
+    struct {
+        mx_handle_t h;
+        struct sockaddr addr;
+        socklen_t len;
+    } reply;
+
+    ssize_t r = io->ops->ioctl(io, op, NULL, 0, &reply, sizeof(reply));
+    mxio_release(io);
+
+    int new_fd = -1;
+    if (r < 0) {
+        new_fd = ERROR(r);
+    } else {
+        mx_handle_t h = reply.h;
+        mxio_t *io2 = NULL;
+        r = mxio_from_handles(MXIO_PROTOCOL_REMOTE, &h, 1, &io2);
+        if (r < 0) {
+            new_fd = ERROR(r);
+        } else {
+            if ((new_fd = mxio_bind_to_fd(io2, -1, 0)) < 0) {
+                io->ops->close(io2);
+                mxio_release(io2);
+                return ERRNO(EMFILE);
+            }
+            if (addr != NULL && len != NULL) {
+                memcpy(addr, &reply.addr, *len < reply.len ? *len : reply.len);
+            }
+            if (len != NULL) {
+                *len = reply.len;
+            }
+        }
+    }
+
+    return new_fd;
 }
