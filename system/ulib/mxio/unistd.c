@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 
 #include <magenta/processargs.h>
 #include <magenta/syscalls.h>
@@ -1002,7 +1003,7 @@ int socket(int domain, int type, int protocol) {
 #define IOCTL(kind, family, number) \
     ((((kind) & 0xF) << 20) | (((family) & 0xFF) << 8) | ((number) & 0xFF))
 
-int bind(int fd, const struct sockaddr* addr, socklen_t len) {
+int connect(int fd, const struct sockaddr* addr, socklen_t len) {
     mxio_t* io = fd_to_io(fd);
     if (io == NULL) {
         return ERRNO(EBADF);
@@ -1014,12 +1015,24 @@ int bind(int fd, const struct sockaddr* addr, socklen_t len) {
     return r;
 }
 
-int listen(int fd, int backlog) {
+int bind(int fd, const struct sockaddr* addr, socklen_t len) {
     mxio_t* io = fd_to_io(fd);
     if (io == NULL) {
         return ERRNO(EBADF);
     }
     uint32_t op = IOCTL(0, 0, 2);
+
+    ssize_t r = io->ops->ioctl(io, op, addr, len, NULL, 0);
+    mxio_release(io);
+    return r;
+}
+
+int listen(int fd, int backlog) {
+    mxio_t* io = fd_to_io(fd);
+    if (io == NULL) {
+        return ERRNO(EBADF);
+    }
+    uint32_t op = IOCTL(0, 0, 3);
 
     ssize_t r = io->ops->ioctl(io, op, &backlog, sizeof(backlog), NULL, 0);
     mxio_release(io);
@@ -1031,7 +1044,7 @@ int accept4(int fd, struct sockaddr* restrict addr, socklen_t* restrict len, int
     if (io == NULL) {
         return ERRNO(EBADF);
     }
-    uint32_t op = IOCTL(1/* get_handle */, 0, 3);
+    uint32_t op = IOCTL(1/* get_handle */, 0, 4);
 
     // TODO: support flags
     struct {
@@ -1068,4 +1081,50 @@ int accept4(int fd, struct sockaddr* restrict addr, socklen_t* restrict len, int
     }
 
     return new_fd;
+}
+
+#define GAI_PACKET_NODE_MAXLEN 128
+#define GAI_PACKET_SERVICE_MAXLEN 128
+
+typedef struct gai_packet {
+    char node[GAI_PACKET_NODE_MAXLEN];
+    char service[GAI_PACKET_SERVICE_MAXLEN];
+    struct addrinfo ai;
+} gai_packet_t;
+
+int getaddrinfo(const char* __restrict node,
+                const char* __restrict service,
+                const struct addrinfo* __restrict hints,
+                struct addrinfo** __restrict res) {
+    mxio_t* io = NULL;
+    mx_status_t r;
+
+    if ((r = __mxio_open(&io, NULL, "/dev/socket", 0, 0)) < 0) {
+        return ERROR(r);
+    }
+
+    gai_packet_t packet;
+    if (node == NULL || service == NULL || res == NULL)
+        return ERRNO(EINVAL);
+    strncpy(packet.node, node, GAI_PACKET_NODE_MAXLEN);
+    packet.node[GAI_PACKET_NODE_MAXLEN-1] = '\0';
+    strncpy(packet.service, service, GAI_PACKET_SERVICE_MAXLEN);
+    packet.service[GAI_PACKET_SERVICE_MAXLEN-1] = '\0';
+    memcpy(&packet.ai, hints, sizeof(struct addrinfo));
+
+    uint32_t op = IOCTL(0, 0, 5);
+    ssize_t r_gai = io->ops->ioctl(io, op, &packet, sizeof(packet), NULL, 0);
+    mxio_close(io);
+    mxio_release(io);
+
+    if (r_gai == 0) {
+        struct addrinfo* ai = calloc(1, sizeof(struct addrinfo));
+        memcpy(ai, &packet.ai, sizeof(struct addrinfo));
+        *res = ai;
+    }
+    return r_gai;
+}
+
+void freeaddrinfo(struct addrinfo* res) {
+    free(res);
 }
