@@ -130,7 +130,7 @@ int service_starter(void* arg) {
     }
 #endif
 
-    if (getenv("netsvc.disable") == NULL) {
+    if (0 /* getenv("netsvc.disable") == NULL */) {
         // launch the network service
         devmgr_launch("netsvc", 1, argv_netsvc, -1);
     }
