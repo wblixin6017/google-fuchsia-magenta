@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <magenta/syscalls.h>
+#include <magenta/prctl.h>
 #include <magenta/types.h>
 #include <mxio/io.h>
 #include <dirent.h>
@@ -231,6 +233,13 @@ static int list_devices(bool verbose) {
 }
 
 int main(int argc, const char** argv) {
+    printf("STARTING TRACE\n");
+    mx_status_t status = mx_thread_arch_prctl(0, ARCH_ENABLE_PROCESSOR_TRACE, 0);
+    if (status != NO_ERROR) {
+        printf("Failed to enable tracing: %d\n", status);
+    }
+    printf("STARTED TRACE\n");
+
     int result = 0;
     bool verbose = false;
     const char* device_id = NULL;
@@ -256,15 +265,27 @@ int main(int argc, const char** argv) {
     }
 
     if (device_id) {
-        return list_device(device_id, verbose);
+        result = list_device(device_id, verbose);
     } else {
-        return list_devices(verbose);
+        result =  list_devices(verbose);
     }
+
+    printf("STOPPING TRACE\n");
+    size_t capture_size;
+    mx_handle_t trace_vmo = mx_thread_arch_prctl(0, ARCH_DISABLE_PROCESSOR_TRACE, &capture_size);
+    if (trace_vmo < 0) {
+        printf("Failed to finish tracing: %d\n", trace_vmo);
+    } else {
+        printf("Got trace VMO, %ld (%#lx) bytes\n", capture_size, capture_size);
+    }
+
+    return result;
 
 usage:
     printf("Usage:\n");
     printf("%s [-v] [-d <device ID>]", argv[0]);
     printf("  -v   Verbose output (prints descriptors\n");
     printf("  -d   Prints only specified device\n");
+exit:
     return result;
 }
