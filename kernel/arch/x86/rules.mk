@@ -82,6 +82,7 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/mmu.cpp \
 	$(LOCAL_DIR)/mmu_mem_types.c \
 	$(LOCAL_DIR)/mp.c \
+	$(LOCAL_DIR)/processor_trace.c \
 	$(LOCAL_DIR)/registers.c \
 	$(LOCAL_DIR)/thread.c \
 	$(LOCAL_DIR)/tsc.c \

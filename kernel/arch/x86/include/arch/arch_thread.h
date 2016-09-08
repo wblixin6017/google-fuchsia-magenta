@@ -25,6 +25,8 @@ struct arch_thread {
     vaddr_t *extended_register_state;
     uint8_t extended_register_buffer[X86_MAX_EXTENDED_REGISTER_SIZE + 64];
 
+    void *processor_trace_ctx;
+
     /* if non-NULL, address to return to on page fault */
     void *page_fault_resume;
 };
