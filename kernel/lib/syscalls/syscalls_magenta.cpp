@@ -880,6 +880,9 @@ void sys_thread_exit() {
 
 extern "C" {
 uint64_t get_tsc_ticks_per_ms(void);
+status_t x86_processor_trace_enable(uint capture_size_log2);
+status_t x86_processor_trace_disable(
+        paddr_t* capture_buf, size_t* buffer_size, size_t* capture_size);
 };
 
 mx_status_t sys_thread_arch_prctl(mx_handle_t handle_value, uint32_t op,
@@ -921,6 +924,65 @@ mx_status_t sys_thread_arch_prctl(mx_handle_t handle_value, uint32_t op,
         if (copy_to_user_uptr(value_ptr, value) != NO_ERROR)
             return ERR_INVALID_ARGS;
         break;
+    case ARCH_ENABLE_PROCESSOR_TRACE: {
+        // TODO(teisenbe): Don't hardcode the 2^27 buffer size
+
+        mx_status_t status = x86_processor_trace_enable(27);
+        if (status != NO_ERROR) {
+            return status;
+        }
+        break;
+    }
+    case ARCH_DISABLE_PROCESSOR_TRACE: {
+        paddr_t buf_phys;
+        size_t buf_size;
+        size_t capture_size;
+
+        mx_status_t status = x86_processor_trace_disable(
+                &buf_phys, &buf_size, &capture_size);
+        if (status != NO_ERROR) {
+            return status;
+        }
+
+        // create a vm object
+        mxtl::RefPtr<VmObject> vmo = VmObject::Create(0, buf_size);
+        if (!vmo) {
+            for (uint64_t offset = 0; offset < buf_size; offset += PAGE_SIZE) {
+                vm_page_t* page = paddr_to_vm_page(buf_phys + offset);
+                pmm_free_page(page);
+            }
+            return ERR_NO_MEMORY;
+        }
+
+        // Move the ownership of the physical pages into the VMO
+        for (uint64_t offset = 0; offset < buf_size; offset += PAGE_SIZE) {
+            vm_page_t* page = paddr_to_vm_page(buf_phys + offset);
+            list_delete(&page->node);
+            vmo->AddPage(page, offset);
+        }
+
+        // create a Vm Object dispatcher
+        mxtl::RefPtr<Dispatcher> dispatcher;
+        mx_rights_t rights;
+        mx_status_t result = VmObjectDispatcher::Create(mxtl::move(vmo), &dispatcher, &rights);
+        if (result != NO_ERROR)
+            return result;
+
+        // create a handle and attach the dispatcher to it
+        HandleUniquePtr handle(MakeHandle(mxtl::move(dispatcher), rights));
+        if (!handle)
+            return ERR_NO_MEMORY;
+
+        auto up = ProcessDispatcher::GetCurrent();
+
+        if (copy_to_user_uptr(value_ptr, capture_size) != NO_ERROR)
+            return ERR_INVALID_ARGS;
+
+        mx_handle_t hv = up->MapHandleToValue(handle.get());
+        up->AddHandle(mxtl::move(handle));
+
+        return hv;
+    }
 #elif ARCH_ARM64
     case ARCH_SET_TPIDRRO_EL0:
         if (copy_from_user_uptr(&value, value_ptr) != NO_ERROR)

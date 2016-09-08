@@ -14,7 +14,9 @@ enum { ARCH_SET_FS = 0,
        ARCH_GET_FS = 1,
        ARCH_SET_GS = 2,
        ARCH_GET_GS = 3,
-       ARCH_GET_TSC_TICKS_PER_MS = 4 };
+       ARCH_GET_TSC_TICKS_PER_MS = 4,
+       ARCH_ENABLE_PROCESSOR_TRACE = 5,
+       ARCH_DISABLE_PROCESSOR_TRACE = 6 };
 
 #elif defined(__aarch64__)
 
