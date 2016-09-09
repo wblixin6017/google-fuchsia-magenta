@@ -51,7 +51,8 @@ MODULE_STATIC_LIBS := \
     ulib/launchpad \
     ulib/elfload \
     ulib/mxio \
-    ulib/gfx
+    ulib/gfx \
+    ulib/cryptolib
 
 MODULE_LIBS := ulib/magenta ulib/musl
 
