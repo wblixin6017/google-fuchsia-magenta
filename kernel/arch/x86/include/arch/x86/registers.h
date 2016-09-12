@@ -30,6 +30,7 @@
 #define X86_MSR_EFER                    0xc0000080 /* EFER Model Specific Register id */
 #define X86_MSR_IA32_STAR               0xc0000081 /* system call address */
 #define X86_MSR_IA32_LSTAR              0xc0000082 /* long mode call address */
+#define X86_MSR_IA32_CSTAR              0xc0000083 /* 32bit call address */
 #define X86_MSR_IA32_FMASK              0xc0000084 /* system call flag mask */
 #define X86_MSR_IA32_FS_BASE            0xc0000100 /* fs base address */
 #define X86_MSR_IA32_GS_BASE            0xc0000101 /* gs base address */

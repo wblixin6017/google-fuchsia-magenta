@@ -66,7 +66,8 @@ static ACPI_STATUS handle_prt(
         // Either we're handling the root complex (port_dev_id == UINT8_MAX), or
         // we're handling a root port, and if it's a root port, dev_id should
         // be 0.
-        assert(port_dev_id == UINT8_MAX || dev_id == 0);
+        printf("port_dev_id %u dev_id %u\n", port_dev_id, dev_id);
+        //assert(port_dev_id == UINT8_MAX || dev_id == 0);
 
         uint32_t global_irq = MX_PCI_NO_IRQ_MAPPING;
         bool level_triggered = true;
@@ -141,6 +142,8 @@ static ACPI_STATUS handle_prt(
             break;
         }
         if (!found_irq) {
+            printf("num_irqs %u\n", arg->num_irqs);
+            printf("global_irq %u\n", global_irq);
             assert(arg->num_irqs < countof(arg->irqs));
             arg->irqs[arg->num_irqs].global_irq = global_irq;
             arg->irqs[arg->num_irqs].active_high = active_high;

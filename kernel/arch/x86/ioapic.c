@@ -55,7 +55,7 @@
 #define IO_APIC_NUM_REDIRECTIONS 120
 
 
-#define LOCAL_TRACE 0
+#define LOCAL_TRACE 1
 
 // Struct for tracking all we need to know about each IO APIC
 struct io_apic {

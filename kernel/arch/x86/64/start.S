@@ -13,6 +13,11 @@
 #include <arch/x86/mmu.h>
 #include <arch/x86/registers.h>
 
+.macro putpixel
+    movabs  $(0xffffff8000000000 + 0xe0000000), %r15
+    movl    $0xffffffff, (%r15)
+.endm
+
 /* shared code to set up a default 64bit page table structure */
 .macro page_table_init
     /* load the physical pointer to the top level page table */
@@ -217,18 +222,24 @@ FUNCTION(_entry64)
     /* zero the bss */
     bss_setup
 
-.Lpaging_setup64:
+paging_setup64:
     /* initialize the default page tables */
     page_table_init
 
+    /*
+     * Set PGE to enable global kernel pages
+     */
+    mov   %cr4, %rax
+    or    $(X86_CR4_PGE), %rax
+    mov   %rax, %cr4
+
     /* load the physical pointer to the top level page table */
-    mov  $PHYS(pml4), %rax
-    mov  %rax, %cr3
+    mov   $PHYS(pml4), %rax
+    mov   %rax, %cr3
 
     /* load our gdtr */
     lgdt _gdtr
 
-    /* long jump to our code selector and the high address */
     push  $CODE_64_SELECTOR
     push  $high_entry
     lretq

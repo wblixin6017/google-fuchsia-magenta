@@ -28,6 +28,15 @@
 #include <kernel/event.h>
 #include <kernel/timer.h>
 
+static void putpixel(void) {
+    static volatile uint32_t *addr = (void *)(0xffffff8000000000 + 0xe0000000);
+
+    for (int i = 0; i < 1024; i++)
+        *addr++ = 0xffffffff;
+
+    addr += 1024 * 4;
+}
+
 struct x86_percpu bp_percpu = {
     .cpu_num = 0,
     .direct = &bp_percpu,
@@ -106,10 +115,11 @@ void x86_init_percpu(uint8_t cpu_num)
     idt_load(&percpu->idt);
 
     x86_initialize_percpu_tss();
+    putpixel();
 
     // Apply any timestamp counter adjustment to keep a continuous clock across
     // suspend/resume.
-    x86_tsc_adjust();
+    //x86_tsc_adjust();
 
 #if ARCH_X86_64
     /* load the syscall entry point */

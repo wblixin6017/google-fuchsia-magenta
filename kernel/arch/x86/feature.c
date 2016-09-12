@@ -55,7 +55,7 @@ void x86_feature_init(void)
     }
 
 #if LK_DEBUGLEVEL > 1
-    x86_feature_debug();
+    //x86_feature_debug();
 #endif
 }
 

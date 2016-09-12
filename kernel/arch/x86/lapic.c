@@ -63,6 +63,8 @@ static void *apic_virt_base;
 #define INIT_COUNT_ADDR ((volatile uint32_t *)(apic_virt_base + 0x380))
 #define CURRENT_COUNT_ADDR ((volatile uint32_t *)(apic_virt_base + 0x390))
 #define DIVIDE_CONF_ADDR ((volatile uint32_t *)(apic_virt_base + 0x3E0))
+#define EXT_FEATURE_ADDR ((volatile uint32_t *)(apic_virt_base + 0x400))
+#define EXT_CONTROL_ADDR ((volatile uint32_t *)(apic_virt_base + 0x410))
 
 // Spurious IRQ bitmasks
 #define SVR_APIC_ENABLE (1 << 8)
@@ -329,6 +331,7 @@ cleanup:
 // TODO: Where should this declaration go
 extern enum handler_return platform_handle_timer_tick(void);
 enum handler_return apic_timer_interrupt_handler(void) {
+    //printf("t 0x%x\n", apic_local_id());
     return platform_handle_timer_tick();
 }
 
@@ -408,6 +411,8 @@ void apic_local_debug(void)
     printf("  spurious_irq: %08x\n", *SPURIOUS_IRQ_ADDR);
     printf("  tpr: %02x\n", (uint8_t)*TASK_PRIORITY_ADDR);
     printf("  ppr: %02x\n", (uint8_t)*PROCESSOR_PRIORITY_ADDR);
+    printf("  ext feature: 0x%x\n", *EXT_FEATURE_ADDR);
+    printf("  ext control: 0x%x\n", *EXT_CONTROL_ADDR);
     for (int i = 0; i < 8; ++i)
         printf("  irr %d: %08x\n", i, *IRQ_REQUEST_ADDR(i));
     for (int i = 0; i < 8; ++i)

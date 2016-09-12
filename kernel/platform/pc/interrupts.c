@@ -178,6 +178,8 @@ enum handler_return platform_irq(x86_iframe_t *frame)
     DEBUG_ASSERT(x86_vector >= X86_INT_PLATFORM_BASE &&
                  x86_vector <= X86_INT_PLATFORM_MAX);
 
+    //printf("i%u\n", x86_vector);
+
     // deliver the interrupt
     enum handler_return ret = INT_NO_RESCHEDULE;
 
@@ -235,6 +237,8 @@ void register_int_handler(unsigned int vector, int_handler handler, void *arg)
                      (range_start <= X86_INT_PLATFORM_MAX));
         x86_vector = (uint8_t)range_start;
     }
+
+    TRACEF("mapping vector %u to %u\n", vector, x86_vector);
 
     // Update the handler table and register the x86 vector with the io_apic.
     DEBUG_ASSERT(!!x86_vector == !!handler);
