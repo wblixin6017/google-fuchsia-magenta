@@ -316,7 +316,7 @@ static int acpi_os_task(void *raw_ctx) {
 
     mutex_acquire(&os_execute_lock);
     os_execute_tasks--;
-    cond_broadcast(&os_execute_cond);
+    cond_broadcast(&os_execute_cond, true);
     mutex_release(&os_execute_lock);
 
     free(ctx);
@@ -373,7 +373,7 @@ ACPI_STATUS AcpiOsExecute(
         free(ctx);
         mutex_acquire(&os_execute_lock);
         os_execute_tasks--;
-        cond_broadcast(&os_execute_cond);
+        cond_broadcast(&os_execute_cond, true);
         mutex_release(&os_execute_lock);
         return AE_NO_MEMORY;
     }

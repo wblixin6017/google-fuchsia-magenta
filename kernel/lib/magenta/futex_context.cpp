@@ -120,11 +120,18 @@ status_t FutexContext::FutexWait(int* value_ptr, int current_value, mx_time_t ti
 void FutexContext::WakeAll() {
     LTRACE_ENTRY;
 
-    AutoLock lock(lock_);
-    for(auto &entry : futex_table_) {
-        FutexNode::WakeThreads(&entry);
+    int wake_count = 0;
+    {
+        AutoLock lock(lock_);
+
+        for(auto &entry : futex_table_) {
+            wake_count += FutexNode::WakeThreads(&entry);
+        }
+        futex_table_.clear();
     }
-    futex_table_.clear();
+
+    if (wake_count > 0)
+        thread_preempt(false);
 }
 
 status_t FutexContext::FutexWake(int* value_ptr, uint32_t count) {
@@ -134,6 +141,7 @@ status_t FutexContext::FutexWake(int* value_ptr, uint32_t count) {
 
     uintptr_t futex_key = reinterpret_cast<uintptr_t>(value_ptr);
 
+    int wake_count;
     {
         AutoLock lock(lock_);
 
@@ -157,8 +165,12 @@ status_t FutexContext::FutexWake(int* value_ptr, uint32_t count) {
         // lock, because any of these threads might wake up from a timeout
         // and call FutexWait(), which would clobber the "next" pointer in
         // the thread's FutexNode.
-        FutexNode::WakeThreads(wake_head);
+        wake_count = FutexNode::WakeThreads(wake_head, false);
     }
+
+    // outside of the lock reschedule the local cpu if we released any threads
+    if (wake_count)
+        thread_preempt(false);
 
     return NO_ERROR;
 }
@@ -218,6 +230,7 @@ status_t FutexContext::FutexRequeue(int* wake_ptr, uint32_t wake_count, int curr
     }
 
     FutexNode::WakeThreads(wake_head);
+
     return NO_ERROR;
 }
 

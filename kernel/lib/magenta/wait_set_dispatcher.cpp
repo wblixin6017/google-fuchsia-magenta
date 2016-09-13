@@ -178,7 +178,7 @@ bool WaitSetDispatcher::Entry::Trigger_NoLock() {
     wait_set_->triggered_entries_.push_back(this);
     wait_set_->num_triggered_entries_++;
     if (was_empty) {
-        cond_broadcast(&wait_set_->cv_);
+        cond_broadcast(&wait_set_->cv_, true);
         return !!wait_set_->waiter_count_;
     }
 
@@ -382,7 +382,7 @@ bool WaitSetDispatcher::OnCancel(Handle* handle, bool* should_remove, bool* call
 
     AutoLock lock(&mutex_);
     cancelled_ = true;
-    cond_broadcast(&cv_);
+    cond_broadcast(&cv_, true);
     return waiter_count_ > 0u;
 }
 

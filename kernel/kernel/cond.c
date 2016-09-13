@@ -50,24 +50,28 @@ status_t cond_wait_timeout(cond_t *cond, mutex_t *mutex, lk_time_t timeout)
     return result;
 }
 
-void cond_signal(cond_t *cond)
+int cond_signal(cond_t *cond, bool reschedule)
 {
     DEBUG_ASSERT(cond->magic == COND_MAGIC);
 
     THREAD_LOCK(state);
 
-    wait_queue_wake_one(&cond->wait, true, NO_ERROR);
+    int wake_count = wait_queue_wake_one(&cond->wait, reschedule, NO_ERROR);
 
     THREAD_UNLOCK(state);
+
+    return wake_count;
 }
 
-void cond_broadcast(cond_t *cond)
+int cond_broadcast(cond_t *cond, bool reschedule)
 {
     DEBUG_ASSERT(cond->magic == COND_MAGIC);
 
     THREAD_LOCK(state);
 
-    wait_queue_wake_all(&cond->wait, true, NO_ERROR);
+    int wake_count = wait_queue_wake_all(&cond->wait, reschedule, NO_ERROR);
 
     THREAD_UNLOCK(state);
+
+    return wake_count;
 }

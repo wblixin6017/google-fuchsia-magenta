@@ -62,9 +62,12 @@ status_t FutexNode::BlockThread(Mutex* mutex, mx_time_t timeout) {
     return cond_wait_timeout(&condvar_, mutex->GetInternal(), t);
 }
 
-void FutexNode::WakeThreads(FutexNode* head) {
+int FutexNode::WakeThreads(FutexNode* head, bool reschedule) {
+    int wake_count = 0;
     while (head != nullptr) {
-        cond_signal(&head->condvar_);
+        wake_count += cond_signal(&head->condvar_, reschedule);
         head = head->next_;
     }
+
+    return wake_count;
 }

@@ -38,7 +38,9 @@ public:
     status_t BlockThread(Mutex* mutex, mx_time_t timeout);
 
     // wakes the list of threads starting with node |head|
-    static void WakeThreads(FutexNode* head);
+    // reschedule flag determines if the calling thread should reschedule
+    // if anything is woken up immediately.
+    static int WakeThreads(FutexNode* head, bool reschedule = true);
 
     FutexNode* next() const {
         return next_;

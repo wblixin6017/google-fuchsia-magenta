@@ -321,7 +321,7 @@ status_t UserThread::MarkExceptionHandled(mx_exception_status_t status) {
     if (exception_status_ != MX_EXCEPTION_STATUS_WAITING)
         return ERR_BAD_STATE;
     exception_status_ = status;
-    cond_signal(&exception_wait_cond_);
+    cond_signal(&exception_wait_cond_, true);
     return NO_ERROR;
 }
 
