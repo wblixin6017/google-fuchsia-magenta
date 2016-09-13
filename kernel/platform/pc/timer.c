@@ -58,7 +58,7 @@ static volatile uint32_t apic_ticks_per_ms = 0;
 static uint8_t apic_divisor = 0;
 
 // TSC timer calibration values
-static uint64_t tsc_ticks_per_ms;
+static uint64_t tsc_ticks_per_ms = (4*1000*1000ULL); // XXX hack
 
 uint64_t get_tsc_ticks_per_ms(void) {
     return tsc_ticks_per_ms;
