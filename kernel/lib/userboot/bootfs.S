@@ -12,7 +12,7 @@
 
 // include the bootfs archive containing a user file system
 DATA(user_bootfs)
-.incbin USER_BOOTFS_FILENAME
+#.incbin USER_BOOTFS_FILENAME
 END(user_bootfs)
 
 .Luser_bootfs_end:

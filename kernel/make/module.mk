@@ -131,9 +131,9 @@ endif
 # build a ld -r style combined object
 MODULE_OBJECT := $(MODULE_OUTNAME).mod.o
 $(MODULE_OBJECT): $(MODULE_OBJS) $(MODULE_EXTRA_OBJS)
-	@$(MKDIR)
+#	@$(MKDIR)
 	@echo linking $@
-	$(NOECHO)$(LD) $(GLOBAL_MODULE_LDFLAGS) -r $^ -o $@
+#	$(NOECHO)$(LD) $(GLOBAL_MODULE_LDFLAGS) -r $^ -o $@
 
 # track all of the source files compiled
 ALLSRCS += $(MODULE_SRCS)
@@ -178,10 +178,10 @@ endif
 # build static library
 MODULE_STATIC_LIB := $(MODULE_LIBNAME).a
 $(MODULE_STATIC_LIB): $(MODULE_LIBRARY_OBJS)
-	@$(MKDIR)
-	@echo linking $@
-	@rm -f $@
-	$(NOECHO)$(AR) cr $@ $^
+#	@$(MKDIR)
+#	@echo linking $@
+#	@rm -f $@
+#	$(NOECHO)$(AR) cr $@ $^
 
 # always build all libraries
 EXTRA_BUILDDEPS += $(MODULE_STATIC_LIB)

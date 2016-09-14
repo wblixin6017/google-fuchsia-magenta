@@ -76,19 +76,23 @@ GLOBAL_COMPILEFLAGS += -Wall -Wextra -Wno-multichar -Werror -Wno-unused-paramete
 ifeq ($(CLANG),1)
 GLOBAL_COMPILEFLAGS += -Wno-error
 endif
-GLOBAL_CFLAGS := --std=c11 -Werror-implicit-function-declaration -Wstrict-prototypes -Wwrite-strings
+#GLOBAL_CFLAGS := --std=c11 -Werror-implicit-function-declaration -Wstrict-prototypes -Wwrite-strings
+GLOBAL_CFLAGS := --std=c11 -Werror-implicit-function-declaration -Wstrict-prototypes -Wwrite-strings -S -emit-llvm
+
 # Note: Both -fno-exceptions and -fno-asynchronous-unwind-tables is needed
 # in order to stop gcc from emitting .eh_frame (which is part of the loaded
 # image by default).
-GLOBAL_CPPFLAGS := --std=c++11 -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -fno-threadsafe-statics -Wconversion
+GLOBAL_CPPFLAGS := --std=c++11 -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -fno-threadsafe-statics -Wconversion -S -emit-llvm
 #GLOBAL_CPPFLAGS += -Weffc++
-GLOBAL_ASMFLAGS := -DASSEMBLY
+GLOBAL_ASMFLAGS := -DASSEMBLY -S -emit-llvm
 GLOBAL_LDFLAGS := -nostdlib $(addprefix -L,$(LKINC))
 GLOBAL_MODULE_LDFLAGS :=
 
 # Kernel compile flags
 KERNEL_COMPILEFLAGS := -ffreestanding -include $(KERNEL_CONFIG_HEADER)
+#KERNEL_CFLAGS := --analyze -Xclang -analyzer-checker=security.insecureAPI.vfork
 KERNEL_CFLAGS :=
+#KERNEL_CPPFLAGS := -Xclang -analyze -Xclang -analyzer-checker=security.insecureAPI.vfork
 KERNEL_CPPFLAGS :=
 KERNEL_ASMFLAGS :=
 
@@ -303,7 +307,8 @@ else
 CC := $(CCACHE) $(TOOLCHAIN_PREFIX)gcc
 AR := $(TOOLCHAIN_PREFIX)ar
 endif
-LD := $(TOOLCHAIN_PREFIX)ld
+#LD := $(TOOLCHAIN_PREFIX)ld
+LD := true
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
 CPPFILT := $(TOOLCHAIN_PREFIX)c++filt
