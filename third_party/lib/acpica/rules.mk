@@ -27,6 +27,16 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/source/components/utilities/utexcep.c \
 	$(LOCAL_DIR)/source/components/utilities/utalloc.c \
 	$(LOCAL_DIR)/source/components/utilities/utglobal.c \
+	$(LOCAL_DIR)/source/components/hardware/hwacpi.c \
+	$(LOCAL_DIR)/source/components/hardware/hwxfsleep.c \
+	$(LOCAL_DIR)/source/components/hardware/hwgpe.c \
+	$(LOCAL_DIR)/source/components/hardware/hwxface.c \
+	$(LOCAL_DIR)/source/components/hardware/hwregs.c \
+	$(LOCAL_DIR)/source/components/hardware/hwpci.c \
+	$(LOCAL_DIR)/source/components/hardware/hwvalid.c \
+	$(LOCAL_DIR)/source/components/hardware/hwtimer.c \
+	$(LOCAL_DIR)/source/components/hardware/hwesleep.c \
+	$(LOCAL_DIR)/source/components/hardware/hwsleep.c \
 	$(LOCAL_DIR)/source/os_specific/service_layers/osmagenta.c
 
 include make/module.mk

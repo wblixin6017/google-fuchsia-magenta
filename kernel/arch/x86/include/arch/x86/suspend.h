@@ -5,11 +5,13 @@
 // https://opensource.org/licenses/MIT
 #pragma once
 
+#include <stdint.h>
+
 #include <magenta/compiler.h>
 
 __BEGIN_CDECLS
 
-void x86_tsc_adjust(void);
-void x86_tsc_store_adjustment(void);
+void _x86_suspend_wakeup(void) __NO_RETURN;
+void x86_suspend_wakeup(void* usermode_aspace, uint64_t usermode_ip, void* bootstrap_aspace) __NO_RETURN;
 
 __END_CDECLS

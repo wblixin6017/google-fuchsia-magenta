@@ -232,6 +232,7 @@ MAGENTA_SYSCALL_DEF(4, 4, 251, mx_status_t, object_set_property, mx_handle_t han
 MAGENTA_SYSCALL_DEF(1, 1, 260, uint32_t, acpi_uefi_rsdp, mx_handle_t handle)
 MAGENTA_SYSCALL_DEF(1, 1, 261, mx_status_t, acpi_cache_flush, mx_handle_t handle)
 MAGENTA_SYSCALL_DEF(1, 1, 262, mx_status_t, acpi_set_interrupts_enabled, mx_handle_t handle, bool enabled)
+MAGENTA_SYSCALL_DEF(1, 1, 263, mx_status_t, acpi_prepare_for_suspend, mx_handle_t handle, void* resume_ip, USER_PTR(uint32_t) wake_vector)
 
 // Sockets
 MAGENTA_SYSCALL_DEF(2, 2, 280, mx_status_t, socket_create, mx_handle_t out_handles[2], uint32_t flags)

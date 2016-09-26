@@ -734,3 +734,55 @@ mx_status_t sys_acpi_set_interrupts_enabled(mx_handle_t hrsrc, bool enabled) {
     ut->SetInterruptsEnabled(enabled);
     return NO_ERROR;
 }
+
+#if ARCH_X86
+#include <arch/x86/bootstrap16.h>
+#include <arch/x86/suspend.h>
+#include <arch/x86/tsc.h>
+extern "C" {
+#include <acpica/acpi.h>
+}
+#endif
+mx_status_t sys_acpi_prepare_for_suspend(mx_handle_t hrsrc, void* resume_ip, user_ptr<uint32_t> wake_vector) {
+    // TODO: finer grained validation
+    mx_status_t status;
+    if ((status = validate_resource_handle(hrsrc)) < 0) {
+        return status;
+    }
+
+    auto ut = UserThread::GetCurrent();
+    if (ut->interrupts_enabled()) {
+        return ERR_BAD_STATE;
+    }
+
+#if ARCH_X86_64
+    DEBUG_ASSERT(arch_ints_disabled());
+
+    vmm_aspace_t *bootstrap_aspace = NULL;
+    auto kernel_aspace = VmAspace::kernel_aspace();
+
+    struct x86_realmode_entry_data *bootstrap_data = NULL;
+
+    status = x86_bootstrap16_prep(
+            PHYS_BOOTSTRAP_PAGE,
+            (uintptr_t)_x86_suspend_wakeup,
+            &bootstrap_aspace,
+            (void **)&bootstrap_data);
+    if (status != NO_ERROR) {
+        return status;
+    }
+
+    bootstrap_data->usermode_aspace = reinterpret_cast<uint64_t>(&ut->process()->aspace()->arch_aspace());
+    bootstrap_data->usermode_resume_ip = reinterpret_cast<uint64_t>(resume_ip);
+    bootstrap_data->bootstrap_aspace = reinterpret_cast<uint64_t>(bootstrap_aspace);
+
+    kernel_aspace->FreeRegion(reinterpret_cast<vaddr_t>(bootstrap_data));
+
+    // Save the current TSC offset; we will resume at it.
+    x86_tsc_store_adjustment();
+
+    return wake_vector.copy_to_user(static_cast<uint32_t>(PHYS_BOOTSTRAP_PAGE));
+#else
+    return ERR_NOT_SUPPORTED;
+#endif
+}

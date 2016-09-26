@@ -19,7 +19,9 @@
 #define BCD_CPU_WAITING_OFFSET 32
 #define BCD_PER_CPU_BASE_OFFSET 40
 
-#define RED_REGISTERS_OFFSET 28
+#define RED_USERMODE_ASPACE_OFFSET 28
+#define RED_USERMODE_IP_OFFSET 36
+#define RED_BOOTSTRAP_ASPACE_OFFSET 44
 
 #ifndef ASSEMBLY
 #include <assert.h>
@@ -57,8 +59,12 @@ struct __PACKED x86_bootstrap16_data {
 struct __PACKED x86_realmode_entry_data {
     struct x86_bootstrap16_data hdr;
 
-    // Virtual address of the register dump
-    uint64_t registers_ptr;
+    // Where to return execution to
+    uint64_t usermode_aspace;
+    uint64_t usermode_resume_ip;
+
+    // Aspace to free once we've resumed
+    uint64_t bootstrap_aspace;
 };
 
 struct __PACKED x86_ap_bootstrap_data {
@@ -102,7 +108,9 @@ static_assert(__offsetof(struct x86_ap_bootstrap_data, cpu_waiting_mask) == BCD_
 static_assert(__offsetof(struct x86_ap_bootstrap_data, per_cpu) == BCD_PER_CPU_BASE_OFFSET, "");
 
 static_assert(__offsetof(struct x86_realmode_entry_data, hdr) == 0, "");
-static_assert(__offsetof(struct x86_realmode_entry_data, registers_ptr) == RED_REGISTERS_OFFSET, "");
+static_assert(__offsetof(struct x86_realmode_entry_data, usermode_aspace) == RED_USERMODE_ASPACE_OFFSET, "");
+static_assert(__offsetof(struct x86_realmode_entry_data, usermode_resume_ip) == RED_USERMODE_IP_OFFSET, "");
+static_assert(__offsetof(struct x86_realmode_entry_data, bootstrap_aspace) == RED_BOOTSTRAP_ASPACE_OFFSET, "");
 
 __END_CDECLS
 

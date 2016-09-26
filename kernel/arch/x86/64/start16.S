@@ -148,9 +148,11 @@ FUNCTION(_x86_suspend_wakeup)
     # Retrieve the new PML4 address before our data page becomes unreachable
     mov BCD_PHYS_KERNEL_PML4_OFFSET(%esi), %ecx
 
-    # Stash register pointer so that we can read it after we change
-    # address spaces
-    mov RED_REGISTERS_OFFSET(%esi), %rdi
+    # Stash usermode entry point info so we can read it after we switch to
+    # our real address space.
+    mov RED_USERMODE_ASPACE_OFFSET(%esi), %rdi
+    mov RED_BOOTSTRAP_ASPACE_OFFSET(%esi), %rdx
+    mov RED_USERMODE_IP_OFFSET(%esi), %rsi
 
     # Switch out of the copied code page and into the kernel's
     # version of it
@@ -159,7 +161,6 @@ FUNCTION(_x86_suspend_wakeup)
 .Lwakeup_highaddr:
     # Switch to the kernel's PML4
     mov %rcx, %cr3
-    # As of this point, %esi is invalid
 
     # Reload the GDT with one based off of non-identity mapping
     lgdt _gdtr
@@ -175,24 +176,12 @@ FUNCTION(_x86_suspend_wakeup)
     # Load the IDT
     lidt _idtr
 
-    mov 8(%rdi), %rsi
-    mov 16(%rdi), %rbp
-    mov 24(%rdi), %rbx
-    mov 32(%rdi), %rdx
-    mov 40(%rdi), %rcx
-    mov 48(%rdi), %rax
-    mov 56(%rdi), %r8
-    mov 64(%rdi), %r9
-    mov 72(%rdi), %r10
-    mov 80(%rdi), %r11
-    mov 88(%rdi), %r12
-    mov 96(%rdi), %r13
-    mov 104(%rdi), %r14
-    mov 112(%rdi), %r15
-    mov 120(%rdi), %rsp
+    mov $x86_resume_stack, %rsp
+    add $4080, %rsp
 
-    # Restore RIP
-    jmp *128(%rdi)
+    # Switch to C to perform the rest of processor-state restoration
+    # Note that we've already set up our registers for passing arguments.
+    jmp x86_suspend_wakeup
 
 DATA(x86_bootstrap16_end)
     nop

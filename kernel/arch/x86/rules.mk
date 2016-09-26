@@ -84,6 +84,7 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/mmu_mem_types.c \
 	$(LOCAL_DIR)/mp.c \
 	$(LOCAL_DIR)/registers.c \
+	$(LOCAL_DIR)/suspend.c \
 	$(LOCAL_DIR)/thread.c \
 	$(LOCAL_DIR)/tsc.c \
 	$(LOCAL_DIR)/user_copy.c \
