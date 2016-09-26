@@ -87,6 +87,13 @@ public:
     mx_koid_t get_koid() const { return koid_; }
     void set_dispatcher(ThreadDispatcher* dispatcher);
 
+    // Control whether interrupts are enabled in usermode or not.  This is
+    // a very privileged state, primarily used for power management operations
+    // like suspend-to-RAM.  These functions should only be called from this
+    // thread's execution context.
+    void SetInterruptsEnabled(bool enabled) { interrupts_enabled_ = enabled; }
+    bool interrupts_enabled() { return interrupts_enabled_; }
+
 private:
     UserThread(const UserThread&) = delete;
     UserThread& operator=(const UserThread&) = delete;
@@ -138,6 +145,9 @@ private:
     mx_exception_status_t exception_status_ = MX_EXCEPTION_STATUS_NOT_HANDLED;
     cond_t exception_wait_cond_ = COND_INITIAL_VALUE(exception_wait_cond_);
     Mutex exception_wait_lock_;
+
+    // If false, interrupts should be disabled for this thread in usermode.
+    bool interrupts_enabled_ = true;
 
     // cleanup dpc structure
     dpc_t cleanup_dpc_ = {};

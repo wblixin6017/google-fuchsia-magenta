@@ -708,14 +708,29 @@ mx_status_t sys_acpi_cache_flush(mx_handle_t hrsrc) {
     if ((status = validate_resource_handle(hrsrc)) < 0) {
         return status;
     }
-    // TODO(teisenbe): This should be restricted to when interrupts are
-    // disabled, but we haven't added support for letting the ACPI process
-    // disable interrupts yet.  It only uses this for S-state transitions
-    // like poweroff and (more importantly) sleep.
+
+    auto ut = UserThread::GetCurrent();
+    if (ut->interrupts_enabled()) {
+        return ERR_BAD_STATE;
+    }
+
 #if ARCH_X86
+    DEBUG_ASSERT(arch_ints_disabled());
     __asm__ volatile ("wbinvd");
     return NO_ERROR;
 #else
     return ERR_NOT_SUPPORTED;
 #endif
+}
+
+mx_status_t sys_acpi_set_interrupts_enabled(mx_handle_t hrsrc, bool enabled) {
+    // TODO: finer grained validation
+    mx_status_t status;
+    if ((status = validate_resource_handle(hrsrc)) < 0) {
+        return status;
+    }
+
+    auto ut = UserThread::GetCurrent();
+    ut->SetInterruptsEnabled(enabled);
+    return NO_ERROR;
 }

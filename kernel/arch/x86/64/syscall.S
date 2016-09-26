@@ -58,6 +58,7 @@ FUNCTION(x86_syscall)
     push    %r11 /* user RFLAGS */
 
     /* start to push the rest of the args on the stack as per C calling convention */
+    push    %rsp /* Address of user RFLAGS */
     push    %rcx /* user RIP */
     push    %rax /* syscall # */
     push    %r13 /* arg 8 */
@@ -74,6 +75,7 @@ FUNCTION(x86_syscall)
     pop     %r13
     add     $8, %rsp /* skip the saved syscall # stack entry */
     pop     %rcx /* user RIP */
+    add     $8, %rsp /* skip the saved pointer to RFLAGS */
     pop     %r11 /* user RFLAGS */
 
     /* callee saved regs */

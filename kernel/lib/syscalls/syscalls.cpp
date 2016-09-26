@@ -150,7 +150,7 @@ using syscall_func = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d,
 
 extern "C" uint64_t x86_64_syscall(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4,
                                    uint64_t arg5, uint64_t arg6, uint64_t arg7, uint64_t arg8,
-                                   uint64_t syscall_num, uint64_t ip) {
+                                   uint64_t syscall_num, uint64_t ip, uint64_t* rflags) {
 
     /* check for magic value to differentiate our syscalls */
     if (unlikely((syscall_num >> 32) != 0xff00ff)) {
@@ -161,8 +161,10 @@ extern "C" uint64_t x86_64_syscall(uint64_t arg1, uint64_t arg2, uint64_t arg3, 
 
     ktrace_tiny(TAG_SYSCALL_ENTER, (static_cast<uint32_t>(syscall_num) << 8) | arch_curr_cpu_num());
 
-    /* re-enable interrupts to maintain kernel preemptiveness */
-    arch_enable_ints();
+    /* re-enable interrupts to maintain kernel preemptiveness (only if usermode
+     * had interrupts enabled) */
+    if (likely(*rflags & X86_FLAGS_IF))
+        arch_enable_ints();
 
     LTRACEF_LEVEL(2, "t %p syscall num %llu ip 0x%llx\n", get_current_thread(), syscall_num, ip);
 
@@ -184,6 +186,14 @@ extern "C" uint64_t x86_64_syscall(uint64_t arg1, uint64_t arg2, uint64_t arg3, 
 
     /* call the routine */
     uint64_t ret = sfunc(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+
+    /* Make sure interrupt status gets sent down to usermode */
+    auto ut = UserThread::GetCurrent();
+    if (likely(ut->interrupts_enabled())) {
+        *rflags |= X86_FLAGS_IF;
+    } else {
+        *rflags &= ~X86_FLAGS_IF;
+    }
 
     /* check to see if there are any pending signals */
     thread_process_pending_signals();
