@@ -446,7 +446,24 @@ static mx_status_t cmd_s_state_transition(mx_handle_t h, acpi_handle_ctx_t* ctx,
     case ACPI_S_STATE_S5:
         poweroff();
         break;
-    case ACPI_S_STATE_S3: // fall-through since suspend-to-RAM is not yet supported
+    case ACPI_S_STATE_S3: {
+        mx_status_t status = perform_suspend();
+        if (status != NO_ERROR) {
+            return send_error(h, cmd->hdr.request_id, status);
+        }
+        acpi_rsp_s_state_transition_t rsp = {
+            .hdr = {
+                .status = NO_ERROR,
+                .len = sizeof(rsp),
+                .request_id = cmd->hdr.request_id,
+            },
+        };
+
+        status = mx_msgpipe_write(h, &rsp, sizeof(rsp), NULL, 0, 0);
+        if (status != NO_ERROR) {
+            return send_error(h, cmd->hdr.request_id, status);
+        }
+    }
     default:
         return send_error(h, cmd->hdr.request_id, ERR_NOT_SUPPORTED);
     }

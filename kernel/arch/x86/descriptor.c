@@ -28,7 +28,6 @@ void x86_initialize_percpu_tss(void)
     struct x86_percpu *percpu = x86_get_percpu();
     uint8_t cpu_num = percpu->cpu_num;
     tss_t *tss = &percpu->default_tss;
-    memset(tss, 0, sizeof(*tss));
 
 #if ARCH_X86_32
     tss->esp0 = 0;

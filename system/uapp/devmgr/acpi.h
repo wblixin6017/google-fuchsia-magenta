@@ -11,5 +11,6 @@ mx_status_t devmgr_init_pcie(void);
 
 void devmgr_reboot(void);
 void devmgr_poweroff(void);
+mx_status_t devmgr_sleep(void);
 void devmgr_acpi_ps0(char* arg);
 mx_handle_t devmgr_acpi_clone(void);

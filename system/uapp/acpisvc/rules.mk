@@ -20,7 +20,8 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/pci.c \
     $(LOCAL_DIR)/power.c \
     $(LOCAL_DIR)/powerbtn.c \
-    $(LOCAL_DIR)/processor.c
+    $(LOCAL_DIR)/processor.c \
+    $(LOCAL_DIR)/suspend.S
 else
 MODULE_SRCS += $(LOCAL_DIR)/dummy.c
 endif

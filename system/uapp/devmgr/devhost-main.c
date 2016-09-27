@@ -115,6 +115,9 @@ mx_status_t devmgr_control(const char* cmd) {
         devmgr_reboot();
         return ERR_NOT_SUPPORTED;
     }
+    if (!strcmp(cmd, "sleep")) {
+        return devmgr_sleep();
+    }
     const char* prefix = "kerneldebug ";
     if (!strncmp(cmd, prefix, strlen(prefix))) {
         const char* arg = cmd + strlen(prefix);

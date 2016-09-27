@@ -255,8 +255,8 @@ mx_status_t acpi_s_state_transition(acpi_handle_t* h, uint8_t target_state) {
         return status;
     }
 
-    // This state should be unreachable.
-    abort();
+    free(rsp);
+    return NO_ERROR;
 }
 
 mx_status_t acpi_ps0(acpi_handle_t* h, char* path, size_t len) {

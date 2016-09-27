@@ -11,6 +11,7 @@
 #include <arch/x86/apic.h>
 #include <arch/x86/bootstrap16.h>
 #include <arch/x86/descriptor.h>
+#include <arch/x86/mmu_mem_types.h>
 #include <arch/x86/tsc.h>
 #include <kernel/mp.h>
 #include <kernel/timer.h>
@@ -25,6 +26,7 @@ void x86_suspend_wakeup(void* usermode_aspace, uint64_t usermode_ip, void* boots
 
     x86_init_percpu(0);
     x86_mmu_percpu_init();
+    x86_pat_sync(1<<0);
 
     /* Free the bootstrap resources we used. */
     vmm_free_aspace(bootstrap_aspace);

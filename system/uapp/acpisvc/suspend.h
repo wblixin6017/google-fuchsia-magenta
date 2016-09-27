@@ -4,8 +4,7 @@
 
 #pragma once
 
-#include <magenta/types.h>
+#include <acpica/acpi.h>
 
-void poweroff(void);
-void reboot(void);
-mx_status_t perform_suspend(void);
+extern void x86_suspend_resume(void);
+extern ACPI_STATUS x86_do_suspend(void);

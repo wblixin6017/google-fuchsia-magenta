@@ -134,6 +134,10 @@ void devmgr_reboot(void) {
     mx_debug_send_command(get_root_resource(), "reboot", sizeof("reboot"));
 }
 
+mx_status_t devmgr_sleep(void) {
+    return acpi_s_state_transition(&acpi_root, ACPI_S_STATE_S3);
+}
+
 void devmgr_acpi_ps0(char* arg) {
     acpi_ps0(&acpi_root, arg, strlen(arg));
 }
