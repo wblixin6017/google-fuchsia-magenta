@@ -335,6 +335,7 @@ void platform_init_timer(uint level)
     invariant_tsc = x86_feature_test(X86_FEATURE_INVAR_TSC);
     use_tsc_deadline = invariant_tsc &&
             x86_feature_test(X86_FEATURE_TSC_DEADLINE);
+    use_tsc_deadline = false;
     if (!use_tsc_deadline) {
         calibrate_apic_timer();
     }
