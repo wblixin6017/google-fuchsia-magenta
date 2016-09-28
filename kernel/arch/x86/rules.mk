@@ -101,7 +101,7 @@ include $(LOCAL_DIR)/toolchain.mk
 ifeq ($(SUBARCH),x86-64)
 KERNEL_DEFINES += \
 	WITH_SMP=1 \
-	SMP_MAX_CPUS=16
+	SMP_MAX_CPUS=1
 MODULE_SRCS += \
 	$(SUBARCH_DIR)/bootstrap16.c \
 	$(SUBARCH_DIR)/smp.c \
