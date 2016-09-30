@@ -8,6 +8,7 @@
 #include <trace.h>
 
 #include <dev/pcie.h>
+#include <mxtl/limits.h>
 #include "pch_thermal.h"
 
 #define LOCAL_TRACE 0
@@ -26,7 +27,7 @@ static void pch_thermal_cleanup(struct pch_thermal_context* ctx)
 
     if (ctx->regs) {
         /* Disable thermal sensor */
-        ctx->regs->tsel &= ~1;
+        ctx->regs->tsel = static_cast<uint8_t>(ctx->regs->tsel & ~1u);
 
         /* Unmap our registers */
         vmm_free_region(ctx->aspace, (vaddr_t)ctx->regs);
@@ -75,6 +76,9 @@ static status_t pch_thermal_startup(struct pcie_device_state* pci_device)
     DEBUG_ASSERT(!g_pch_thermal_context.regs);
     DEBUG_ASSERT(g_pch_thermal_context.pci_device == pci_device);
     status_t status;
+    uint64_t size;
+    void *vaddr;
+    int16_t current_ctt;
 
     g_pch_thermal_context.aspace = vmm_get_kernel_aspace();
 
@@ -95,19 +99,25 @@ static status_t pch_thermal_startup(struct pcie_device_state* pci_device)
         goto finished;
     }
 
-    uint64_t size = ROUNDUP(bar_info->size, PAGE_SIZE);
-    void *vaddr = NULL;
+    size   = ROUNDUP(bar_info->size, PAGE_SIZE);
+    vaddr  = nullptr;
+
+    if ((bar_info->bus_addr > mxtl::numeric_limits<paddr_t>::max()) ||
+        (size > mxtl::numeric_limits<size_t>::max())) {
+        status = ERR_INVALID_ARGS;
+        goto finished;
+    }
+
     status = vmm_alloc_physical(
             g_pch_thermal_context.aspace,
             "pch_therm",
-            size,
+            static_cast<size_t>(size),
             &vaddr,
             PAGE_SIZE_SHIFT,
             0,
-            bar_info->bus_addr,
+            static_cast<paddr_t>(bar_info->bus_addr),
             0,
-            ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ |
-                ARCH_MMU_FLAG_PERM_WRITE);
+            ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE);
     if (status != NO_ERROR) {
         TRACEF("Failed to map registers (err = %d)\n", status);
         goto finished;
@@ -116,13 +126,13 @@ static status_t pch_thermal_startup(struct pcie_device_state* pci_device)
 
     pcie_enable_mmio(pci_device, true);
 
-    g_pch_thermal_context.regs = vaddr;
+    g_pch_thermal_context.regs = reinterpret_cast<pch_thermal_registers*>(vaddr);
 
     /* Enable thermal sensor */
     g_pch_thermal_context.regs->tsel |= 1;
 
     /* Set the catastrophic trip threshold */
-    int16_t current_ctt = decode_temp(g_pch_thermal_context.regs->ctt & 0x1ff);
+    current_ctt = decode_temp(g_pch_thermal_context.regs->ctt & 0x1ff);
     if (current_ctt >= 113) {
         /* The PCH spec suggests we should avoid 120C, but the sensor might be
          * 2C off due to the location of the sensor.  In the range 90C to 120C,

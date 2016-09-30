@@ -9,7 +9,10 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 MODULE := $(LOCAL_DIR)
 
 MODULE_SRCS += \
-	$(LOCAL_DIR)/debug.c \
-	$(LOCAL_DIR)/thermal.c
+	$(LOCAL_DIR)/debug.cpp \
+	$(LOCAL_DIR)/thermal.cpp
+
+MODULE_DEPS += \
+    lib/mxtl
 
 include make/module.mk

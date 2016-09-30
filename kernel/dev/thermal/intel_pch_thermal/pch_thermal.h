@@ -19,15 +19,15 @@ struct pch_thermal_context {
 
 static inline uint16_t encode_temp(int16_t temp_c)
 {
-    uint16_t val = (temp_c + 50) * 2;
-    ASSERT(!(val & ~0x1ff));
-    return val;
+    int32_t val = (temp_c + 50) * 2;
+    ASSERT((val >= 0) && (val < 0x200));
+    return static_cast<uint16_t>(val);
 }
 
 static inline int16_t decode_temp(uint16_t val)
 {
-    val = val & 0x1ff;
-    return val / 2 - 50;
+    int32_t tmp = ((val & 0x1ff) / 2) -  50;
+    return static_cast<int16_t>(tmp);
 }
 
 /* Thermal registers */
