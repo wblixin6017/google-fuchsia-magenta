@@ -13,14 +13,17 @@
 #include <dev/pcie.h>
 #include <kernel/vm.h>
 #include <lib/gfxconsole.h>
+#include <mxtl/limits.h>
 
-extern uint32_t bootloader_fb_base;
-extern uint32_t bootloader_fb_width;
-extern uint32_t bootloader_fb_height;
-extern uint32_t bootloader_fb_stride;
-extern uint32_t bootloader_fb_format;
-extern uint32_t bootloader_i915_reg_base;
-extern uint32_t bootloader_fb_window_size;
+extern "C" {
+uint32_t bootloader_fb_base;
+uint32_t bootloader_fb_width;
+uint32_t bootloader_fb_height;
+uint32_t bootloader_fb_stride;
+uint32_t bootloader_fb_format;
+uint32_t bootloader_i915_reg_base;
+uint32_t bootloader_fb_window_size;
+}
 
 #define LOCAL_TRACE 0
 
@@ -33,7 +36,7 @@ extern uint32_t bootloader_fb_window_size;
 #define BACKLIGHT_CTRL_OFFSET (0xc8250)
 #define BACKLIGHT_CTRL_BIT    ((uint32_t)(1u << 31))
 
-typedef struct intel_i915_device {
+struct intel_i915_device_t {
     void*                regs;
     size_t               regs_size;
     void*                framebuffer;
@@ -41,7 +44,7 @@ typedef struct intel_i915_device {
     vmm_aspace_t*        aspace;
     struct display_info  disp;
     pcie_device_state_t* pci_device;
-} intel_i915_device_t;
+};
 
 static intel_i915_device_t* g_i915_device;
 
@@ -198,8 +201,9 @@ static void intel_i915_enable_backlight(intel_i915_device_t* dev, bool enable) {
     if (!dev->regs)
         return;
 
-    void*    backlight_ctrl = (uint8_t*)dev->regs + BACKLIGHT_CTRL_OFFSET;
-    uint32_t tmp = pcie_read32(backlight_ctrl);
+    uint32_t* backlight_ctrl = reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(dev->regs) +
+                                                           BACKLIGHT_CTRL_OFFSET);
+    uint32_t  tmp = pcie_read32(backlight_ctrl);
 
     if (enable)
         tmp |= BACKLIGHT_CTRL_BIT;
@@ -211,7 +215,7 @@ static void intel_i915_enable_backlight(intel_i915_device_t* dev, bool enable) {
 
 static status_t intel_i915_pci_startup(struct pcie_device_state* pci_device) {
     DEBUG_ASSERT(pci_device && pci_device->driver_ctx);
-    intel_i915_device_t*   dev = (intel_i915_device_t*)pci_device->driver_ctx;
+    intel_i915_device_t* dev = (intel_i915_device_t*)pci_device->driver_ctx;
     status_t status = NO_ERROR;
 
     /* Figure our where the bus driver has placed our register window and our
@@ -224,7 +228,15 @@ static status_t intel_i915_pci_startup(struct pcie_device_state* pci_device) {
         goto bailout;
     }
 
-    status = intel_i915_map_reg_window(dev, info->bus_addr, info->size);
+    if ((info->bus_addr > mxtl::numeric_limits<paddr_t>::max()) ||
+        (info->size     > mxtl::numeric_limits<size_t>::max())) {
+        status = ERR_INVALID_ARGS;
+        goto bailout;
+    }
+
+    status = intel_i915_map_reg_window(dev,
+                                       static_cast<paddr_t>(info->bus_addr),
+                                       static_cast<size_t>(info->size));
     if (status != NO_ERROR)
         goto bailout;
 
@@ -234,7 +246,15 @@ static status_t intel_i915_pci_startup(struct pcie_device_state* pci_device) {
         goto bailout;
     }
 
-    status = intel_i915_map_fb_window(dev, info->bus_addr, info->size);
+    if ((info->bus_addr > mxtl::numeric_limits<paddr_t>::max()) ||
+        (info->size     > mxtl::numeric_limits<size_t>::max())) {
+        status = ERR_INVALID_ARGS;
+        goto bailout;
+    }
+
+    status = intel_i915_map_fb_window(dev,
+                                      static_cast<paddr_t>(info->bus_addr),
+                                      static_cast<size_t>(info->size));
     if (status != NO_ERROR)
         goto bailout;
 
