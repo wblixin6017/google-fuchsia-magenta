@@ -14,7 +14,6 @@ PLATFORM := pc
 MODULE_SRCS += $(LOCAL_DIR)/config.c
 
 MODULE_DEPS += \
-    dev/broadwell_chipset_config \
     dev/i915 \
     dev/intel_rng \
     dev/thermal/intel_pch_thermal
