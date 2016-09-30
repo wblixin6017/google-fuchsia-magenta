@@ -9,12 +9,12 @@
 #include <assert.h>
 #include <kernel/vm.h>
 
-struct pcie_device_state;
+struct pcie_device_state_t;
 
 struct pch_thermal_context {
     vmm_aspace_t *aspace;
     struct pch_thermal_registers *regs;
-    struct pcie_device_state* pci_device;
+    pcie_device_state_t* pci_device;
 };
 
 static inline uint16_t encode_temp(int16_t temp_c)

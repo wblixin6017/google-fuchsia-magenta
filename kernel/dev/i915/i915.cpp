@@ -213,7 +213,7 @@ static void intel_i915_enable_backlight(intel_i915_device_t* dev, bool enable) {
     pcie_write32(backlight_ctrl, tmp);
 }
 
-static status_t intel_i915_pci_startup(struct pcie_device_state* pci_device) {
+static status_t intel_i915_pci_startup(pcie_device_state_t* pci_device) {
     DEBUG_ASSERT(pci_device && pci_device->driver_ctx);
     intel_i915_device_t* dev = (intel_i915_device_t*)pci_device->driver_ctx;
     status_t status = NO_ERROR;
@@ -287,7 +287,7 @@ bailout:
     return status;
 }
 
-static void intel_i915_pci_shutdown(struct pcie_device_state* pci_device) {
+static void intel_i915_pci_shutdown(pcie_device_state_t* pci_device) {
     DEBUG_ASSERT(pci_device && pci_device->driver_ctx);
     intel_i915_device_t* dev = (intel_i915_device_t*)pci_device->driver_ctx;
 

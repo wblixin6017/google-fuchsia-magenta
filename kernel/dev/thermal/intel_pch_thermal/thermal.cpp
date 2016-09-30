@@ -37,15 +37,15 @@ static void pch_thermal_cleanup(struct pch_thermal_context* ctx)
     ctx->regs   = NULL;
 }
 
-static pcie_irq_handler_retval_t pch_thermal_irq_handler(struct pcie_device_state* dev,
-                                                  uint irq_id,
-                                                  void* ctx)
+static pcie_irq_handler_retval_t pch_thermal_irq_handler(pcie_device_state_t* dev,
+                                                         uint irq_id,
+                                                         void* ctx)
 {
     TRACEF("Thermal interrupt\n");
     return PCIE_IRQRET_NO_ACTION;
 }
 
-static void* pch_thermal_probe(struct pcie_device_state* pci_device)
+static void* pch_thermal_probe(pcie_device_state_t* pci_device)
 {
     /* If we've already claimed a device, do not claim another */
     if (g_pch_thermal_context.pci_device) {
@@ -71,7 +71,7 @@ static void* pch_thermal_probe(struct pcie_device_state* pci_device)
     return &g_pch_thermal_context;
 }
 
-static status_t pch_thermal_startup(struct pcie_device_state* pci_device)
+static status_t pch_thermal_startup(pcie_device_state_t* pci_device)
 {
     DEBUG_ASSERT(!g_pch_thermal_context.regs);
     DEBUG_ASSERT(g_pch_thermal_context.pci_device == pci_device);
@@ -157,7 +157,7 @@ finished:
     return status;
 }
 
-static void pch_thermal_shutdown(struct pcie_device_state* pci_device)
+static void pch_thermal_shutdown(pcie_device_state_t* pci_device)
 {
     DEBUG_ASSERT(pci_device == g_pch_thermal_context.pci_device);
     pch_thermal_cleanup(&g_pch_thermal_context);
