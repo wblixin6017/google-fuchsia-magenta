@@ -383,7 +383,7 @@ static mx_status_t xhci_handle_disconnect_device(xhci_t* xhci, uint32_t hub_addr
     return NO_ERROR;
 }
 
-static int xhci_device_thread(void* arg) {
+int xhci_device_thread(void* arg) {
     xhci_t* xhci = (xhci_t*)arg;
 
     xhci->input_context = (uint8_t*)xhci_memalign(xhci, 64, xhci->context_size * (XHCI_NUM_EPS + 2));
@@ -435,10 +435,6 @@ static int xhci_device_thread(void* arg) {
     xhci->device_descriptor = NULL;
 
     return 0;
-}
-
-void xhci_start_device_thread(xhci_t* xhci) {
-    thrd_create_with_name(&xhci->device_thread, xhci_device_thread, xhci, "xhci_device_thread");
 }
 
 static mx_status_t xhci_queue_command(xhci_t* xhci, int command, uint32_t hub_address,

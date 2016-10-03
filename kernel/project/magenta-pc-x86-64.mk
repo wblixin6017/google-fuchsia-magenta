@@ -17,3 +17,5 @@ EMBED_USER_BOOTFS:=true
 include project/virtual/test.mk
 include project/virtual/user.mk
 include project/target/pc-x86.mk
+
+MODULES += dev/usb/xhci

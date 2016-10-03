@@ -10,6 +10,7 @@
 #include <trace.h>
 
 #include <xhci/xhci.h>
+#include <xhci/xhci-device-manager.h>
 
 #define XHCI_PCI_CLASS (0x0C)
 #define XHCI_PCI_SUBCLASS (0x03)
@@ -69,14 +70,16 @@ void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool c
 void xhci_rh_port_changed(xhci_t* xhci, xhci_root_hub_t* rh, int port_index) {
 }
 
+void xhci_start_device_thread(xhci_t* xhci) {
+    thread_detach_and_resume(thread_create("xhci_device_thread", xhci_device_thread, xhci, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE));
+}
+
 typedef struct {
     xhci_t xhci;
 } usb_xhci_device_t;
 
 
 static void* usb_xhci_pci_probe(struct pcie_device_state* pci_device) {
-    LTRACE_ENTRY;
-
     DEBUG_ASSERT(pci_device);
 
     if ((pci_device->class_id != XHCI_PCI_CLASS) ||
@@ -92,7 +95,6 @@ static void* usb_xhci_pci_probe(struct pcie_device_state* pci_device) {
         return NULL;
     }
 
-    LTRACE_EXIT;
     return dev;
 }
 
@@ -132,8 +134,10 @@ static status_t usb_xhci_pci_startup(struct pcie_device_state* pci_device) {
 
     status = xhci_init(&dev->xhci, mmio);
     if (status != NO_ERROR) {
+    TRACEF("xhci_init FAIL\n");
         return status;
     }
+    TRACEF("xhci_init SUCCESS\n");
 
     xhci_start(&dev->xhci);
     return NO_ERROR;

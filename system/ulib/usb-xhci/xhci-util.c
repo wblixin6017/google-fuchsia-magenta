@@ -13,7 +13,7 @@ static void xhci_sync_command_callback(void* data, uint32_t cc, xhci_trb_t* comm
 }
 
 void xhci_sync_command_init(xhci_sync_command_t* command) {
-    completion_reset(&command->completion);
+    completion_init(&command->completion);
     command->context.callback = xhci_sync_command_callback;
     command->context.data = command;
 }
@@ -32,7 +32,7 @@ static void xhci_sync_transfer_callback(mx_status_t result, void* data) {
 }
 
 void xhci_sync_transfer_init(xhci_sync_transfer_t* xfer) {
-    completion_reset(&xfer->completion);
+    completion_init(&xfer->completion);
     xfer->context.callback = xhci_sync_transfer_callback;
     xfer->context.data = xfer;
 }

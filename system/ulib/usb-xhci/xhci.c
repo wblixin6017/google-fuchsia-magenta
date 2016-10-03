@@ -280,6 +280,7 @@ void xhci_start(xhci_t* xhci) {
     XHCI_SET32(usbcmd, start_flags, start_flags);
     xhci_wait_bits(usbsts, USBSTS_HCH, 0);
 
+    completion_init(&xhci->command_queue_completion);
     xhci_start_device_thread(xhci);
 }
 

@@ -108,6 +108,10 @@ mx_vaddr_t xhci_phys_to_virt(xhci_t* xhci, mx_paddr_t addr) {
     return io_phys_to_virt(uxhci->io_alloc, addr);
 }
 
+void xhci_start_device_thread(xhci_t* xhci) {
+    thrd_create_with_name(&xhci->device_thread, xhci_device_thread, xhci, "xhci_device_thread");
+}
+
 static int xhci_irq_thread(void* arg) {
     usb_xhci_t* uxhci = (usb_xhci_t*)arg;
     xprintf("xhci_irq_thread start\n");

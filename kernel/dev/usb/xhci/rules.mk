@@ -11,7 +11,7 @@ MODULE := $(LOCAL_DIR)
 MODULE_CFLAGS := -DKERNEL
 
 MODULE_SRCS += \
-	$(LOCAL_DIR)/xhci.c \
+	$(LOCAL_DIR)/usb_xhci.c \
 
 MODULE_DEPS += \
 	dev/pcie \

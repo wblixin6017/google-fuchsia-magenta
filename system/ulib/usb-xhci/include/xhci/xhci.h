@@ -82,7 +82,6 @@ struct xhci {
     uint8_t* rh_port_map;
 
     // device thread stuff
-    thrd_t device_thread;
     xhci_slot_t* slots;
 
     // for command processing in xhci-device-manager.c
@@ -133,3 +132,4 @@ mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int spee
 void xhci_remove_device(xhci_t* xhci, int slot_id);
 void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool closed);
 void xhci_rh_port_changed(xhci_t* xhci, xhci_root_hub_t* rh, int port_index);
+void xhci_start_device_thread(xhci_t* xhci);

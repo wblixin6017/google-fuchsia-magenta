@@ -13,22 +13,10 @@
 
 #define le16toh(x)  LE16(x)
 
-typedef thread_t* thrd_t;
 typedef mutex_t mtx_t;
 typedef event_t completion_t;
 
 typedef thread_start_routine thrd_start_t;
-
-static inline int thrd_create_with_name(thrd_t* thread, thrd_start_t entry, void* arg, const char* name) {
-    thread_t* result = thread_create(name, entry, arg, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
-    if (result) {
-        thread_detach_and_resume(result);
-        *thread = result;
-        return NO_ERROR;
-    } else {
-        return ERR_NO_MEMORY;
-    }
-}
 
 static inline void mtx_lock(mtx_t* mutex) {
     mutex_acquire(mutex);
@@ -38,7 +26,11 @@ static inline void mtx_unlock(mtx_t* mutex) {
     mutex_release(mutex);
 }
 
-static mx_status_t completion_wait(completion_t* completion, mx_time_t timeout) {
+static inline void completion_init(completion_t* completion) {
+    event_init(completion, false, 0);
+}
+
+static inline mx_status_t completion_wait(completion_t* completion, mx_time_t timeout) {
     lk_time_t t = (timeout == MX_TIME_INFINITE ? INFINITE_TIME : timeout / 1000000);
     return event_wait_timeout(completion, t, true);
 }
@@ -65,6 +57,10 @@ static inline mx_time_t mx_current_time(void) {
 #include <magenta/syscalls.h>
 #include <threads.h>
 #include <unistd.h>
+
+static inline void completion_init(completion_t* completion) {
+    completion_reset(completion);
+}
 
 static inline void xhci_sleep_ms(uint32_t ms) {
     usleep(ms * 1000);
