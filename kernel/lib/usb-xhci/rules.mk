@@ -8,6 +8,8 @@ MODULE := $(LOCAL_DIR)
 
 SRC_DIR := system/ulib/usb-xhci
 
+MODULE_CFLAGS := -DKERNEL
+
 KERNEL_INCLUDES += $(SRC_DIR)/include
 
 MODULE_SRCS := \

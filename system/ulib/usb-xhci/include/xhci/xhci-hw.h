@@ -6,7 +6,11 @@
 
 // clang-format off
 
+#ifdef KERNEL
+#include <reg.h>
+#else
 #include <hw/reg.h>
+#endif
 
 #define XHCI_READ32(a)      readl(a)
 #define XHCI_WRITE32(a, v)  writel(v, a)

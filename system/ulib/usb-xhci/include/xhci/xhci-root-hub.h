@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <magenta/listnode.h>
-
 #include "xhci-trb.h"
 
 // this struct contains state needed for a virtual root hub device

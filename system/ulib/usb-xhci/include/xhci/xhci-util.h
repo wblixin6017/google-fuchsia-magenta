@@ -4,8 +4,6 @@
 
 #pragma once
 
-#include <ddk/completion.h>
-
 #include "xhci.h"
 #include "xhci-transfer.h"
 

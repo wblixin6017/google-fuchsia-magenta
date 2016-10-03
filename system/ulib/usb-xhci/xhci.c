@@ -2,14 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <hw/reg.h>
 #include <magenta/types.h>
-#include <magenta/syscalls.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <threads.h>
-#include <unistd.h>
 
 #include <xhci/xhci.h>
 #include <xhci/xhci-device-manager.h>
@@ -245,7 +241,7 @@ static void xhci_interruptor_init(xhci_t* xhci, int interruptor) {
 void xhci_wait_bits(volatile uint32_t* ptr, uint32_t bits, uint32_t expected) {
     uint32_t value = XHCI_READ32(ptr);
     while ((value & bits) != expected) {
-        usleep(1000);
+        xhci_sleep_ms(1000);
         value = XHCI_READ32(ptr);
     }
 }

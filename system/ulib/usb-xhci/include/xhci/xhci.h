@@ -4,14 +4,12 @@
 
 #pragma once
 
-#include <ddk/completion.h>
 #include <magenta/hw/usb.h>
 #include <magenta/hw/usb-hub.h>
 #include <magenta/types.h>
-#include <magenta/listnode.h>
 #include <stdbool.h>
-#include <threads.h>
 
+#include "xhci-platform.h"
 #include "xhci-hw.h"
 #include "xhci-root-hub.h"
 #include "xhci-trb.h"

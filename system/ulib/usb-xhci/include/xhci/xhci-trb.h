@@ -4,9 +4,8 @@
 
 #pragma once
 
-#include <magenta/listnode.h>
-
-#include <xhci/xhci-hw.h>
+#include "xhci-hw.h"
+#include "xhci-platform.h"
 
 // used for both command ring and transfer rings
 typedef struct xhci_transfer_ring {

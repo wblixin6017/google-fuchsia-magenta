@@ -4,7 +4,6 @@
 
 #include <magenta/hw/usb.h>
 #include <stdio.h>
-#include <threads.h>
 
 #include <xhci/xhci-transfer.h>
 #include <xhci/xhci-util.h>
