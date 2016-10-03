@@ -213,6 +213,50 @@ static void xhci_iotxn_callback(mx_status_t result, void* cookie) {
     txn->ops->complete(txn, status, actual);
 }
 
+static mx_status_t xhci_rh_iotxn_queue(xhci_t* xhci, iotxn_t* txn, int rh_index) {
+    xprintf("xhci_rh_iotxn_queue rh_index: %d\n", rh_index);
+
+    usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
+    xhci_root_hub_t* rh = &xhci->root_hubs[rh_index];
+    void* buffer;
+    txn->ops->mmap(txn, &buffer);
+    size_t length = txn->length;
+
+    uint8_t ep_index = xhci_endpoint_index(data->ep_address);
+    if (ep_index == 0) {
+        mx_status_t status = xhci_rh_control(xhci, rh, &data->setup, buffer, &length);
+        txn->ops->complete(txn, status, length);
+        return NO_ERROR;
+    } else if (ep_index == 2) {
+        if (xhci_rh_handle_intr_req(rh, buffer, &length)) {
+            txn->ops->complete(txn, NO_ERROR, length);
+        } else {
+            // queue transaction until we have something to report
+            list_add_tail(&rh->pending_intr_reqs, &txn->node);
+        }
+        return NO_ERROR;
+    }
+
+    txn->ops->complete(txn, ERR_NOT_SUPPORTED, 0);
+    return ERR_NOT_SUPPORTED;
+}
+
+void xhci_rh_port_changed(xhci_t* xhci, xhci_root_hub_t* rh, int port_index) {
+    xprintf("xhci_rh_port_changed\n");
+    iotxn_t* txn = list_remove_head_type(&rh->pending_intr_reqs, iotxn_t, node);
+    if (txn) {
+        void* buffer;
+        txn->ops->mmap(txn, &buffer);
+        size_t length = txn->length;
+        if (xhci_rh_handle_intr_req(rh, buffer, &length)) {
+            txn->ops->complete(txn, NO_ERROR, length);
+        } else {
+            // queue transaction until we have something to report
+            list_add_tail(&rh->pending_intr_reqs, &txn->node);
+        }
+    }
+}
+
 static mx_status_t xhci_do_iotxn_queue(xhci_t* xhci, iotxn_t* txn) {
     usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
     int rh_index = xhci_get_root_hub_index(xhci, data->device_id);

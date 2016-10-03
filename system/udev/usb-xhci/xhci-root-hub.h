@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <ddk/iotxn.h>
 #include <magenta/listnode.h>
 
 #include "xhci-trb.h"
@@ -29,5 +28,7 @@ typedef struct {
 mx_status_t xhci_root_hub_init(xhci_t* xhci, int rh_index);
 void xhci_root_hub_free(xhci_root_hub_t* rh);
 mx_status_t xhci_start_root_hubs(xhci_t* xhci);
-mx_status_t xhci_rh_iotxn_queue(xhci_t* xhci, iotxn_t* txn, int rh_index);
+mx_status_t xhci_rh_control(xhci_t* xhci, xhci_root_hub_t* rh, usb_setup_t* setup, void* buffer,
+                            size_t* in_out_length);
+bool xhci_rh_handle_intr_req(xhci_root_hub_t* rh, void* buffer, size_t* in_out_length);
 void xhci_handle_root_hub_change(xhci_t* xhci);

@@ -134,3 +134,4 @@ mx_vaddr_t xhci_phys_to_virt(xhci_t* xhci, mx_paddr_t addr);
 mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed);
 void xhci_remove_device(xhci_t* xhci, int slot_id);
 void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool closed);
+void xhci_rh_port_changed(xhci_t* xhci, xhci_root_hub_t* rh, int port_index);
