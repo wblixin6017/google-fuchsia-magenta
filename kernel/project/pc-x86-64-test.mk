@@ -15,4 +15,4 @@ include project/virtual/test.mk
 include project/target/pc-x86.mk
 
 MODULES += \
-    lib/usb-xhci
+    dev/usb/xhci
