@@ -17,6 +17,8 @@ __BEGIN_CDECLS;
 #define containerof(ptr, type, member) \
     ((type *)((addr_t)(ptr) - offsetof(type, member)))
 
+typedef struct list_node list_node_t;
+
 struct list_node {
     struct list_node *prev;
     struct list_node *next;
