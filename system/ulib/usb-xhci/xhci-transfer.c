@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <threads.h>
 
-#include "xhci-transfer.h"
-#include "xhci-util.h"
+#include <xhci/xhci-transfer.h>
+#include <xhci/xhci-util.h>
 
 //#define TRACE 1
 #include "xhci-debug.h"

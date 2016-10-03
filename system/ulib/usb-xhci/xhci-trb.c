@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "xhci.h"
+#include <xhci/xhci.h>
 
 //#define TRACE 1
 #include "xhci-debug.h"

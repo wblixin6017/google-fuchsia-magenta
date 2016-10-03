@@ -69,7 +69,7 @@ MODULE_SRCS := \
 
 # hexdump, hid, gfx are needed for various drivers
 # TODO: remove when drivers are no longer linked in to devhost
-MODULE_STATIC_LIBS := \
+MODULE_STATIC_LIBS += \
     ulib/acpisvc-client \
     ulib/ddk \
     ulib/hexdump \

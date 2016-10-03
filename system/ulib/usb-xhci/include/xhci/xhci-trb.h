@@ -6,7 +6,7 @@
 
 #include <magenta/listnode.h>
 
-#include "xhci-hw.h"
+#include <xhci/xhci-hw.h>
 
 // used for both command ring and transfer rings
 typedef struct xhci_transfer_ring {

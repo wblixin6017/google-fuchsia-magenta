@@ -10,9 +10,9 @@
 #include <string.h>
 #include <threads.h>
 
-#include "xhci-device-manager.h"
-#include "xhci-root-hub.h"
-#include "xhci-util.h"
+#include <xhci/xhci-device-manager.h>
+#include <xhci/xhci-root-hub.h>
+#include <xhci/xhci-util.h>
 
 //#define TRACE 1
 #include "xhci-debug.h"

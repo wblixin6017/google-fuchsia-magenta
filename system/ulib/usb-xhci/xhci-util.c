@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "xhci-util.h"
+#include <xhci/xhci-util.h>
 
 static void xhci_sync_command_callback(void* data, uint32_t cc, xhci_trb_t* command_trb,
                                          xhci_trb_t* event_trb) {
