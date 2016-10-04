@@ -14,7 +14,7 @@ struct pcie_device_state_t;
 struct pch_thermal_context {
     vmm_aspace_t *aspace;
     struct pch_thermal_registers *regs;
-    pcie_device_state_t* pci_device;
+    bool device_claimed;
 };
 
 static inline uint16_t encode_temp(int16_t temp_c)

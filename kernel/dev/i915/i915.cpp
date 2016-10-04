@@ -43,7 +43,7 @@ struct intel_i915_device_t {
     size_t               framebuffer_size;
     vmm_aspace_t*        aspace;
     struct display_info  disp;
-    pcie_device_state_t* pci_device;
+    bool                 pci_device_claimed;
 };
 
 static intel_i915_device_t* g_i915_device;
@@ -165,7 +165,7 @@ static void intel_i915_cleanup_device(intel_i915_device_t* dev)
 
     DEBUG_ASSERT(!dev->regs);
     DEBUG_ASSERT(!dev->framebuffer);
-    DEBUG_ASSERT(!dev->pci_device);
+    DEBUG_ASSERT(!dev->pci_device_claimed);
     DEBUG_ASSERT(dev == g_i915_device);
 
     intel_i915_unmap_windows(dev);
@@ -213,7 +213,7 @@ static void intel_i915_enable_backlight(intel_i915_device_t* dev, bool enable) {
     pcie_write32(backlight_ctrl, tmp);
 }
 
-static status_t intel_i915_pci_startup(pcie_device_state_t* pci_device) {
+static status_t intel_i915_pci_startup(const mxtl::RefPtr<pcie_device_state_t>& pci_device) {
     DEBUG_ASSERT(pci_device && pci_device->driver_ctx);
     intel_i915_device_t* dev = (intel_i915_device_t*)pci_device->driver_ctx;
     status_t status = NO_ERROR;
@@ -222,7 +222,7 @@ static status_t intel_i915_pci_startup(pcie_device_state_t* pci_device) {
      * framebuffer window */
     const pcie_bar_info_t* info;
 
-    info = pcie_get_bar_info(pci_device, 0);
+    info = pcie_get_bar_info(*pci_device, 0);
     if (!info || !info->is_allocated || !info->is_mmio) {
         status = ERR_BAD_STATE;
         goto bailout;
@@ -240,7 +240,7 @@ static status_t intel_i915_pci_startup(pcie_device_state_t* pci_device) {
     if (status != NO_ERROR)
         goto bailout;
 
-    info = pcie_get_bar_info(pci_device, 2);
+    info = pcie_get_bar_info(*pci_device, 2);
     if (!info || !info->is_allocated || !info->is_mmio) {
         status = ERR_BAD_STATE;
         goto bailout;
@@ -287,7 +287,7 @@ bailout:
     return status;
 }
 
-static void intel_i915_pci_shutdown(pcie_device_state_t* pci_device) {
+static void intel_i915_pci_shutdown(const mxtl::RefPtr<pcie_device_state_t>& pci_device) {
     DEBUG_ASSERT(pci_device && pci_device->driver_ctx);
     intel_i915_device_t* dev = (intel_i915_device_t*)pci_device->driver_ctx;
 
@@ -305,7 +305,7 @@ static void intel_i915_pci_release(void* ctx) {
     intel_i915_cleanup_device(g_i915_device);
 }
 
-static void* intel_i915_pci_probe(pcie_device_state_t* pci_device) {
+static void* intel_i915_pci_probe(const mxtl::RefPtr<pcie_device_state_t>& pci_device) {
     DEBUG_ASSERT(pci_device);
 
     /* Is this the droid we are looking for? */
@@ -323,13 +323,12 @@ static void* intel_i915_pci_probe(pcie_device_state_t* pci_device) {
         /* If the singleton device structure has already been allocated, check
          * to see if it has already claimed a PCI device.  If it has, do not
          * claim this one. */
-        if (g_i915_device->pci_device)
+        if (g_i915_device->pci_device_claimed)
             return NULL;
     }
 
-    /* Stash a reference to our PCI device and claim the device in the bus
-     * driver */
-    g_i915_device->pci_device = pci_device;
+    /* Claim the device */
+    g_i915_device->pci_device_claimed = true;
     return g_i915_device;
 }
 

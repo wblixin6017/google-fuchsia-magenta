@@ -20,10 +20,10 @@ static const uint16_t intel_dids[] = { 0x3a32, 0x9ca4 };
 /* Driver state */
 struct pch_thermal_context g_pch_thermal_context;
 
-static void pch_thermal_cleanup(struct pch_thermal_context* ctx)
-{
-    if (ctx->pci_device)
-        pcie_set_irq_mode_disabled(ctx->pci_device);
+static void pch_thermal_cleanup(struct pch_thermal_context* ctx,
+                                const mxtl::RefPtr<pcie_device_state_t>& pci_device) {
+    if (pci_device)
+        pcie_set_irq_mode_disabled(pci_device);
 
     if (ctx->regs) {
         /* Disable thermal sensor */
@@ -37,7 +37,7 @@ static void pch_thermal_cleanup(struct pch_thermal_context* ctx)
     ctx->regs   = NULL;
 }
 
-static pcie_irq_handler_retval_t pch_thermal_irq_handler(pcie_device_state_t* dev,
+static pcie_irq_handler_retval_t pch_thermal_irq_handler(const pcie_device_state_t& dev,
                                                          uint irq_id,
                                                          void* ctx)
 {
@@ -45,14 +45,12 @@ static pcie_irq_handler_retval_t pch_thermal_irq_handler(pcie_device_state_t* de
     return PCIE_IRQRET_NO_ACTION;
 }
 
-static void* pch_thermal_probe(pcie_device_state_t* pci_device)
+static void* pch_thermal_probe(const mxtl::RefPtr<pcie_device_state_t>& pci_device)
 {
     /* If we've already claimed a device, do not claim another */
-    if (g_pch_thermal_context.pci_device) {
+    if (g_pch_thermal_context.device_claimed) {
         return NULL;
     }
-
-    g_pch_thermal_context.pci_device = pci_device;
 
     bool claim = false;
     if (pci_device->vendor_id == INTEL_VID) {
@@ -68,13 +66,14 @@ static void* pch_thermal_probe(pcie_device_state_t* pci_device)
         return NULL;
     }
 
+    g_pch_thermal_context.device_claimed = true;
     return &g_pch_thermal_context;
 }
 
-static status_t pch_thermal_startup(pcie_device_state_t* pci_device)
+static status_t pch_thermal_startup(const mxtl::RefPtr<pcie_device_state_t>& pci_device)
 {
     DEBUG_ASSERT(!g_pch_thermal_context.regs);
-    DEBUG_ASSERT(g_pch_thermal_context.pci_device == pci_device);
+    DEBUG_ASSERT(&g_pch_thermal_context == pci_device->driver_ctx);
     status_t status;
     uint64_t size;
     void *vaddr;
@@ -82,7 +81,7 @@ static status_t pch_thermal_startup(pcie_device_state_t* pci_device)
 
     g_pch_thermal_context.aspace = vmm_get_kernel_aspace();
 
-    const pcie_bar_info_t* bar_info = pcie_get_bar_info(pci_device, 0);
+    const pcie_bar_info_t* bar_info = pcie_get_bar_info(*pci_device, 0);
     DEBUG_ASSERT(bar_info && bar_info->bus_addr);
 
     /* Select legacy IRQ Mode */
@@ -152,21 +151,22 @@ static status_t pch_thermal_startup(pcie_device_state_t* pci_device)
 
 finished:
     if (status != NO_ERROR)
-        pch_thermal_cleanup(&g_pch_thermal_context);
+        pch_thermal_cleanup(&g_pch_thermal_context, pci_device);
 
     return status;
 }
 
-static void pch_thermal_shutdown(pcie_device_state_t* pci_device)
+static void pch_thermal_shutdown(const mxtl::RefPtr<pcie_device_state_t>& pci_device)
 {
-    DEBUG_ASSERT(pci_device == g_pch_thermal_context.pci_device);
-    pch_thermal_cleanup(&g_pch_thermal_context);
+    DEBUG_ASSERT(&g_pch_thermal_context == pci_device->driver_ctx);
+    pch_thermal_cleanup(&g_pch_thermal_context, pci_device);
 }
 
 static void pch_thermal_release(void* ctx)
 {
+    DEBUG_ASSERT(&g_pch_thermal_context == ctx);
     DEBUG_ASSERT(!g_pch_thermal_context.regs);
-    DEBUG_ASSERT(!g_pch_thermal_context.pci_device);
+    g_pch_thermal_context.device_claimed = false;
 }
 
 static pcie_driver_fn_table_t DRV_FN_TABLE = {
