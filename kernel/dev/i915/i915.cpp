@@ -223,7 +223,7 @@ static status_t intel_i915_pci_startup(const mxtl::RefPtr<pcie_device_state_t>& 
     const pcie_bar_info_t* info;
 
     info = pcie_get_bar_info(*pci_device, 0);
-    if (!info || !info->is_allocated || !info->is_mmio) {
+    if (!info || !info->is_mmio) {
         status = ERR_BAD_STATE;
         goto bailout;
     }
@@ -241,7 +241,7 @@ static status_t intel_i915_pci_startup(const mxtl::RefPtr<pcie_device_state_t>& 
         goto bailout;
 
     info = pcie_get_bar_info(*pci_device, 2);
-    if (!info || !info->is_allocated || !info->is_mmio) {
+    if (!info || !info->is_mmio) {
         status = ERR_BAD_STATE;
         goto bailout;
     }

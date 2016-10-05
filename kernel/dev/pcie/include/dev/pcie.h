@@ -18,6 +18,7 @@
 #include <endian.h>
 #include <err.h>
 #include <kernel/mutex.h>
+#include <region-alloc/region-alloc.h>
 #include <mxtl/ref_counted.h>
 #include <mxtl/ref_ptr.h>
 #include <sys/types.h>
@@ -39,15 +40,15 @@ struct pcie_device_state_t;
 /*
  * struct used to fetch information about a configured base address register
  */
-typedef struct pcie_bar_info {
-    uint64_t size;
-    uint64_t bus_addr;
+struct pcie_bar_info_t {
+    uint64_t size = 0;
+    uint64_t bus_addr = 0;
     bool     is_mmio;
     bool     is_64bit;
     bool     is_prefetchable;
     uint     first_bar_reg;
-    bool     is_allocated;
-} pcie_bar_info_t;
+    RegionAllocator::Region::UPtr allocation;
+};
 
 /* Function table registered by a device driver.  Method requirements and device
  * lifecycle are described below.
@@ -282,7 +283,7 @@ static inline const pcie_bar_info_t* pcie_get_bar_info(
         uint bar_ndx) {
     DEBUG_ASSERT(bar_ndx < countof(dev.bars));
     const pcie_bar_info_t* ret = &dev.bars[bar_ndx];
-    return ret->is_allocated ? ret : NULL;
+    return (ret->allocation != nullptr) ? ret : NULL;
 }
 
 /*

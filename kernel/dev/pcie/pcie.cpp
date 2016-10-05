@@ -63,8 +63,12 @@
 #define EXPORT_TO_DEBUG_CONSOLE static
 #endif
 
+static constexpr size_t REGION_BOOKKEEPING_SLAB_SIZE = 16 << 10;
+static constexpr size_t REGION_BOOKKEEPING_MAX_MEM = 128 << 10;
+
 static uint8_t g_drv_mem[sizeof(pcie_bus_driver_state_t)];
 static pcie_bus_driver_state_t* g_drv_state;
+
 #ifdef WITH_LIB_CONSOLE
 pcie_bus_driver_state_t* pcie_get_bus_driver_state(void) { return g_drv_state; }
 #endif
@@ -268,7 +272,7 @@ static status_t pcie_enumerate_bars(const mxtl::RefPtr<pcie_device_state_t>& dev
     for (uint i = 0; i < bar_count; ++i) {
         /* If this is a re-scan of the bus, We should not be re-enumerating BARs. */
         DEBUG_ASSERT(dev->bars[i].size == 0);
-        DEBUG_ASSERT(!dev->bars[i].is_allocated);
+        DEBUG_ASSERT(dev->bars[i].allocation == nullptr);
 
         status_t probe_res = pcie_probe_bar_info(cfg, i, bar_count, &dev->bars[i]);
         if (probe_res != NO_ERROR)
@@ -555,17 +559,18 @@ static bool pcie_allocate_bar(pcie_device_state_t& dev, pcie_bar_info_t* info) {
 
     /* Do not attempt to remap if we are rescanning the bus and this BAR is
      * already allocated */
-    if (info->is_allocated)
+    if (info->allocation != nullptr)
         return true;
 
     pcie_bus_driver_state_t* bus_drv = dev.bus_drv;
     pcie_config_t*           cfg = dev.cfg;
 
-    /* Choose which range we will attempt to allocate from, then check to see if we have the
-     * space. */
-    pcie_io_range_alloc_t* io_range = !info->is_mmio
-                                    ? &bus_drv->pio
-                                    : (info->is_64bit ? &bus_drv->mmio_hi : &bus_drv->mmio_lo);
+    /* Choose which region allocator we will attempt to allocate from, then
+     * check to see if we have the space. */
+    RegionAllocator* alloc = !info->is_mmio
+                             ? &bus_drv->pio_regions
+                             : (info->is_64bit ? &bus_drv->mmio_hi_regions
+                                               : &bus_drv->mmio_lo_regions);
     uint32_t addr_mask = info->is_mmio
                        ? PCI_BAR_MMIO_ADDR_MASK
                        : PCI_BAR_PIO_ADDR_MASK;
@@ -574,39 +579,28 @@ static bool pcie_allocate_bar(pcie_device_state_t& dev, pcie_bar_info_t* info) {
      * range.  In the case of a 64 bit MMIO BAR, if we run out of space in
      * the high-memory MMIO range, try the low memory range as well.
      */
-    uint64_t align_size, avail, alloc_start, align_overhead, real_alloc_start;
     while (true) {
         /* MMIO windows and I/O windows on systems where I/O space is actually
          * memory mapped must be aligned to a page boundary, at least. */
-        bool is_io_space = PCIE_HAS_IO_ADDR_SPACE && !info->is_mmio;
-        DEBUG_ASSERT(io_range->used <= io_range->io.size);
-        align_size     = ((info->size >= PAGE_SIZE) || is_io_space)
-                       ? info->size
-                       : PAGE_SIZE;
-        avail          = (io_range->io.size - io_range->used);
+        bool     is_io_space = PCIE_HAS_IO_ADDR_SPACE && !info->is_mmio;
+        uint64_t align_size  = ((info->size >= PAGE_SIZE) || is_io_space)
+                             ? info->size
+                             : PAGE_SIZE;
+        status_t res = alloc->GetRegion(align_size, align_size, info->allocation);
 
-        alloc_start    = io_range->io.bus_addr + io_range->used;
-        real_alloc_start = ROUNDUP(alloc_start, align_size);
-        align_overhead = real_alloc_start - alloc_start;
-
-        if ((avail < align_overhead) ||
-           ((avail - align_overhead) < info->size)) {
-
-            if (io_range == &bus_drv->mmio_hi) {
+        if (res != NO_ERROR) {
+            if ((res == ERR_NOT_FOUND) && (alloc == &bus_drv->mmio_hi_regions)) {
                 LTRACEF("Insufficient space to map 64-bit MMIO BAR in high region while "
                         "configuring BARs for device at %02x:%02x.%01x (cfg vaddr = %p).  Falling "
                         "back on low memory region.\n",
                         dev.bus_id, dev.dev_id, dev.func_id, cfg);
-                io_range = &bus_drv->mmio_lo;
+                alloc = &bus_drv->mmio_lo_regions;
                 continue;
             }
 
-            TRACEF("Insufficient space to map BAR region while configuring BARs for device at "
-                   "%02x:%02x.%01x (cfg vaddr = %p)\n",
-                   dev.bus_id, dev.dev_id, dev.func_id, cfg);
-            TRACEF("BAR region size %#" PRIx64 " Alignment overhead %#" PRIx64
-                   " Space available %#" PRIx64 "\n",
-                   info->size, align_overhead, avail);
+            TRACEF("Failed to map BAR region (size 0x%#" PRIx64 ") while configuring BARs for "
+                   "device at %02x:%02x.%01x (cfg vaddr = %p, res = %d)\n",
+                   info->size, dev.bus_id, dev.dev_id, dev.func_id, cfg, res);
 
             return false;
         }
@@ -614,21 +608,18 @@ static bool pcie_allocate_bar(pcie_device_state_t& dev, pcie_bar_info_t* info) {
         break;
     }
 
-    /* Looks like we have enough space.  Update our range bookkeeping,
-     * and record our allocated and aligned physical address in our
-     * BAR(s) */
+    /* Allocation succeeded.  Record our allocated and aligned physical address
+     * in our BAR(s) */
+    DEBUG_ASSERT(info->allocation != nullptr);
     volatile uint32_t* bar_reg = &cfg->base.base_addresses[info->first_bar_reg];
 
-    io_range->used += (size_t)(align_overhead + align_size);
-    DEBUG_ASSERT(!(real_alloc_start & ~addr_mask));
+    info->bus_addr = info->allocation->base;
 
-    pcie_write32(bar_reg, (uint32_t)(real_alloc_start & 0xFFFFFFFF) | (pcie_read32(bar_reg) & ~addr_mask));
+    pcie_write32(bar_reg, static_cast<uint32_t>((info->bus_addr & 0xFFFFFFFF) |
+                                                (pcie_read32(bar_reg) & ~addr_mask)));
     if (info->is_64bit)
-        pcie_write32(bar_reg + 1, (uint32_t)(real_alloc_start >> 32));
+        pcie_write32(bar_reg + 1, static_cast<uint32_t>(info->bus_addr >> 32));
 
-    /* Success!  Fill out the info structure and we are done. */
-    info->bus_addr     = real_alloc_start;
-    info->is_allocated = true;
     return true;
 }
 
@@ -1225,13 +1216,6 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
         goto bailout;
     }
 
-    bus_drv->mmio_lo.io   = init_info->mmio_window_lo;
-    bus_drv->mmio_hi.io   = init_info->mmio_window_hi;
-    bus_drv->pio.io       = init_info->pio_window;
-    bus_drv->mmio_lo.used = 0;
-    bus_drv->mmio_hi.used = 0;
-    bus_drv->pio.used     = 0;
-
     /* Sanity check the init info provided by the platform.  If anything goes
      * wrong in this section, the error will be INVALID_ARGS, so just set the
      * status to that for now to save typing. */
@@ -1286,28 +1270,67 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
     }
 
     /* The MMIO low memory region must be below the physical 4GB mark */
-    if (((bus_drv->mmio_lo.io.bus_addr + 0ull) >= 0x100000000ull) ||
-        ((bus_drv->mmio_lo.io.size     + 0ull) >= 0x100000000ull) ||
-         (bus_drv->mmio_lo.io.bus_addr         > (0x100000000ull - bus_drv->mmio_lo.io.size))) {
+    if (((init_info->mmio_window_lo.bus_addr + 0ull) >= 0x100000000ull) ||
+        ((init_info->mmio_window_lo.size     + 0ull) >= 0x100000000ull) ||
+         (init_info->mmio_window_lo.bus_addr > (0x100000000ull - init_info->mmio_window_lo.size))) {
         TRACEF("Low mem MMIO region [%zx, %zx) does not exist entirely below 4GB mark.\n",
-                (size_t)bus_drv->mmio_lo.io.bus_addr,
-                (size_t)bus_drv->mmio_lo.io.bus_addr + bus_drv->mmio_lo.io.size);
+                (size_t)init_info->mmio_window_lo.bus_addr,
+                (size_t)init_info->mmio_window_lo.bus_addr + init_info->mmio_window_lo.size);
         goto bailout;
     }
 
     /* The PIO region must fit somewhere in the architecture's I/O bus region */
-    if (((bus_drv->pio.io.bus_addr + 0ull) >= PCIE_PIO_ADDR_SPACE_SIZE) ||
-        ((bus_drv->pio.io.size     + 0ull) >= PCIE_PIO_ADDR_SPACE_SIZE) ||
-         (bus_drv->pio.io.bus_addr         > (PCIE_PIO_ADDR_SPACE_SIZE - bus_drv->pio.io.size))) {
+    if (((init_info->pio_window.bus_addr + 0ull) >= PCIE_PIO_ADDR_SPACE_SIZE) ||
+        ((init_info->pio_window.size     + 0ull) >= PCIE_PIO_ADDR_SPACE_SIZE) ||
+         (init_info->pio_window.bus_addr > (PCIE_PIO_ADDR_SPACE_SIZE - init_info->pio_window.size)))
+    {
         TRACEF("PIO region [%zx, %zx) too large for architecture's PIO address space size (%zx)\n",
-                (size_t)bus_drv->pio.io.bus_addr,
-                (size_t)bus_drv->pio.io.bus_addr + bus_drv->pio.io.size,
+                (size_t)init_info->pio_window.bus_addr,
+                (size_t)init_info->pio_window.bus_addr + init_info->pio_window.size,
                 (size_t)PCIE_PIO_ADDR_SPACE_SIZE);
         goto bailout;
     }
 
     /* Init parameters look good, go back to assuming NO_ERROR for now. */
     status = NO_ERROR;
+
+    /* Create the RegionPool we will use to supply the memory for the
+     * bookkeeping for all of our region tracking and allocation needs.
+     * Then assign it to each of our allocators. */
+    bus_drv->region_bookkeeping = RegionAllocator::RegionPool::Create(REGION_BOOKKEEPING_SLAB_SIZE,
+                                                                      REGION_BOOKKEEPING_MAX_MEM);
+    if (bus_drv->region_bookkeeping == nullptr) {
+        TRACEF("Failed to create pool allocator for Region bookkeeping!\n");
+        goto bailout;
+    }
+
+    bus_drv->mmio_lo_regions.SetRegionPool(bus_drv->region_bookkeeping);
+    bus_drv->mmio_hi_regions.SetRegionPool(bus_drv->region_bookkeeping);
+    bus_drv->pio_regions.SetRegionPool(bus_drv->region_bookkeeping);
+
+    /* Add the regions of the MMIO and PIO busses provided by platform to the
+     * allocators */
+    {
+        struct {
+            RegionAllocator& alloc;
+            const pcie_io_range_t& range;
+        } ALLOC_INIT[] = {
+            { .alloc = bus_drv->mmio_lo_regions, .range = init_info->mmio_window_lo },
+            { .alloc = bus_drv->mmio_hi_regions, .range = init_info->mmio_window_hi },
+            { .alloc = bus_drv->pio_regions,     .range = init_info->pio_window },
+        };
+        for (const auto& iter : ALLOC_INIT) {
+            if (iter.range.size) {
+                status = iter.alloc.AddRegion({ .base = iter.range.bus_addr,
+                                                .size = iter.range.size });
+                if (status != NO_ERROR) {
+                    TRACEF("Failed to initilaize region allocator (0x%#" PRIx64 ", size 0x%zx\n",
+                           iter.range.bus_addr, iter.range.size);
+                    goto bailout;
+                }
+            }
+        }
+    }
 
     /* Stash the ECAM window info and map the ECAM windows into the bus driver's
      * address space so we can access config space. */

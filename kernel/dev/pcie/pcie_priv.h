@@ -202,11 +202,6 @@ typedef struct pcie_kmap_ecam_range {
     void*             vaddr;
 } pcie_kmap_ecam_range_t;
 
-typedef struct pcie_io_range_alloc {
-    pcie_io_range_t  io;
-    size_t           used;
-} pcie_io_range_alloc_t;
-
 typedef struct pcie_legacy_irq_handler_state {
     pcie_bus_driver_state_t*      bus_drv;
     struct list_node              legacy_irq_list_node;
@@ -226,9 +221,10 @@ struct pcie_bus_driver_state_t {
     mxtl::unique_ptr<pcie_kmap_ecam_range_t[]> ecam_windows;
     size_t                                     ecam_window_count;
 
-    pcie_io_range_alloc_t           mmio_lo;
-    pcie_io_range_alloc_t           mmio_hi;
-    pcie_io_range_alloc_t           pio;
+    RegionAllocator::RegionPool::RefPtr region_bookkeeping;
+    RegionAllocator                     mmio_lo_regions;
+    RegionAllocator                     mmio_hi_regions;
+    RegionAllocator                     pio_regions;
 
     platform_legacy_irq_swizzle_t   legacy_irq_swizzle;
     spin_lock_t                     legacy_irq_handler_lock;
