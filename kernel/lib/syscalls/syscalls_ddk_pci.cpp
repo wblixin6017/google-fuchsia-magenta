@@ -62,6 +62,7 @@ static status_t pcie_irq_swizzle_from_table(uint bus_id,
     return NO_ERROR;
 }
 
+extern void DEBUG_LSPCI();
 mx_status_t sys_pci_init(mx_handle_t handle, user_ptr<mx_pci_init_arg_t> init_buf, uint32_t len) {
 
     // TODO: finer grained validation
@@ -191,7 +192,13 @@ mx_status_t sys_pci_init(mx_handle_t handle, user_ptr<mx_pci_init_arg_t> init_bu
         init_info.legacy_irq_swizzle = pcie_irq_swizzle_from_table;
     }
 
+#if 0
     return pcie_init(&init_info);
+#else
+    mx_status_t ret = pcie_init(&init_info);
+    DEBUG_LSPCI();
+    return ret;
+#endif
 }
 
 mx_handle_t sys_pci_get_nth_device(mx_handle_t hrsrc, uint32_t index, mx_pcie_get_nth_info_t* out_info) {

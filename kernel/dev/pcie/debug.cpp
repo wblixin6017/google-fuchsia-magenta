@@ -557,6 +557,23 @@ static int cmd_lspci(int argc, const cmd_args *argv)
     return NO_ERROR;
 }
 
+void DEBUG_LSPCI() {
+    static const cmd_args ARGS[] = {
+        { .str = "lspci", .u = 0, .p = NULL, .i = 0, .b = false },
+        { .str = "-l",    .u = 0, .p = NULL, .i = 0, .b = false },
+        { .str = "0x0",   .u = 0, .p = NULL, .i = 0, .b = false },
+        { .str = "0x14",  .u = 0x14, .p = NULL, .i = 0x14, .b = false },
+        //{ .str = "0x2",  .u = 0x2, .p = NULL, .i = 0x2, .b = false },
+        { .str = "0x0",   .u = 0, .p = NULL, .i = 0, .b = false },
+    };
+
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+    cmd_lspci((int)countof(ARGS), ARGS);
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+}
+
 static int cmd_pciunplug(int argc, const cmd_args *argv)
 {
     bool confused = false;

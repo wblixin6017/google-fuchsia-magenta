@@ -1269,6 +1269,15 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
         }
     }
 
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+    printf("Lo  region %#" PRIx64 " :: 0x%zu\n",
+            init_info->mmio_window_lo.bus_addr, init_info->mmio_window_lo.size);
+    printf("Hi  region %#" PRIx64 " :: 0x%zu\n",
+            init_info->mmio_window_hi.bus_addr, init_info->mmio_window_hi.size);
+    printf("PIO region %#" PRIx64 " :: 0x%zu\n",
+            init_info->pio_window.bus_addr, init_info->pio_window.size);
+    printf("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n");
+
     /* The MMIO low memory region must be below the physical 4GB mark */
     if (((init_info->mmio_window_lo.bus_addr + 0ull) >= 0x100000000ull) ||
         ((init_info->mmio_window_lo.size     + 0ull) >= 0x100000000ull) ||
@@ -1321,12 +1330,23 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
         };
         for (const auto& iter : ALLOC_INIT) {
             if (iter.range.size) {
-                status = iter.alloc.AddRegion({ .base = iter.range.bus_addr,
-                                                .size = iter.range.size });
-                if (status != NO_ERROR) {
-                    TRACEF("Failed to initilaize region allocator (0x%#" PRIx64 ", size 0x%zx\n",
-                           iter.range.bus_addr, iter.range.size);
-                    goto bailout;
+                if (iter.range.bus_addr == 0x8b400000) {
+                    printf("XXXXXXXXXXXXXXx TRIGGER XXXXXXXXXXXXXXXXXXXXXXXX\n");
+#if 0
+                    iter.alloc.AddRegion({ .base = 0x8c000000, .size = 0x1000000 });
+                    iter.alloc.AddRegion({ .base = 0x90000000, .size = 0x10000000 });
+                    iter.alloc.AddRegion({ .base = 0xb0000000, .size = 0x10000000 });
+#else
+                    iter.alloc.AddRegion({ .base = 0xa0000000, .size = 0x30000000 });
+#endif
+                } else {
+                    status = iter.alloc.AddRegion({ .base = iter.range.bus_addr,
+                                                    .size = iter.range.size });
+                    if (status != NO_ERROR) {
+                        TRACEF("Failed to initilaize region allocator (0x%#" PRIx64 ", size 0x%zx\n",
+                               iter.range.bus_addr, iter.range.size);
+                        goto bailout;
+                    }
                 }
             }
         }
