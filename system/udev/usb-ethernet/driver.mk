@@ -5,4 +5,5 @@
 LOCAL_DIR := $(GET_LOCAL_DIR)
 
 DRIVER_SRCS += \
+    $(LOCAL_DIR)/asix-88179.c \
     $(LOCAL_DIR)/usb-ethernet.c

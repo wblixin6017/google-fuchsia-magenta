@@ -152,6 +152,7 @@ static void queue_interrupt_requests_locked(usb_ethernet_t* eth) {
 }
 
 static void usb_ethernet_read_complete(iotxn_t* request, void* cookie) {
+    printf("%s\n", __func__);
     usb_ethernet_t* eth = (usb_ethernet_t*)cookie;
 
     if (request->status == ERR_REMOTE_CLOSED) {
