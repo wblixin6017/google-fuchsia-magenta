@@ -13,6 +13,7 @@
 #include <magenta/listnode.h>
 #include <sys/param.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -53,10 +54,11 @@ static void uint8_to_guid_string(char* dst, uint8_t* src) {
     sprintf(dst, "%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X", guid->data1, guid->data2, guid->data3, guid->data4[0], guid->data4[1], guid->data4[2], guid->data4[3], guid->data4[4], guid->data4[5], guid->data4[6], guid->data4[7]);
 }
 
-static void utf16_to_cstring(char* dst, uint8_t* src, size_t count) {
-    while (count--) {
+static void utf16_to_cstring(char* dst, uint8_t* src, size_t charcount) {
+    while (charcount > 0) {
         *dst++ = *src;
         src += 2; // FIXME cheesy
+        charcount -= 2;
     }
 }
 
@@ -73,19 +75,19 @@ static ssize_t gpt_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t 
     switch (op) {
     case IOCTL_BLOCK_GET_SIZE: {
         uint64_t* size = reply;
-        if (max < sizeof(*size)) return ERR_NOT_ENOUGH_BUFFER;
+        if (max < sizeof(*size)) return ERR_BUFFER_TOO_SMALL;
         *size = getsize(device);
         return sizeof(*size);
     }
     case IOCTL_BLOCK_GET_BLOCKSIZE: {
         uint64_t* blksize = reply;
-        if (max < sizeof(*blksize)) return ERR_NOT_ENOUGH_BUFFER;
+        if (max < sizeof(*blksize)) return ERR_BUFFER_TOO_SMALL;
         *blksize = device->blksize;
         return sizeof(*blksize);
     }
     case IOCTL_BLOCK_GET_GUID: {
         char* guid = reply;
-        if (max < GPT_GUID_STRLEN) return ERR_NOT_ENOUGH_BUFFER;
+        if (max < GPT_GUID_STRLEN) return ERR_BUFFER_TOO_SMALL;
         uint8_to_guid_string(guid, device->gpt_entry.type);
         return GPT_GUID_STRLEN;
     }
@@ -108,7 +110,7 @@ static void gpt_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     uint64_t first = device->gpt_entry.first_lba;
     uint64_t last = device->gpt_entry.last_lba;
     if (first + off_lba > last) {
-        xprintf("%s: offset 0x%llx is past the end of partition!\n", dev->name, txn->offset);
+        xprintf("%s: offset 0x%" PRIx64 " is past the end of partition!\n", dev->name, txn->offset);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
@@ -167,7 +169,7 @@ static int gpt_bind_thread(void* arg) {
 
     // sanity check the default txn size with the block size
     if (TXN_SIZE % blksize) {
-        xprintf("gpt: default txn size=%d is not aligned to blksize=%llu!\n", TXN_SIZE, blksize);
+        xprintf("gpt: default txn size=%d is not aligned to blksize=%" PRIu64 "!\n", TXN_SIZE, blksize);
     }
 
     // allocate an iotxn to read the partition table
@@ -204,7 +206,7 @@ static int gpt_bind_thread(void* arg) {
         goto unbind;
     }
 
-    xprintf("gpt: found gpt header %u entries @ lba%llu\n", header.entries_count, header.entries);
+    xprintf("gpt: found gpt header %u entries @ lba%" PRIu64 "\n", header.entries_count, header.entries);
 
     // read partition table entries
     size_t table_sz = header.entries_count * header.entries_sz;
@@ -234,7 +236,7 @@ static int gpt_bind_thread(void* arg) {
             goto unbind;
         }
 
-        char name[16];
+        char name[128];
         snprintf(name, sizeof(name), "%sp%u", dev->name, partitions);
         device_init(&device->device, drv, name, &gpt_proto);
 
@@ -242,17 +244,21 @@ static int gpt_bind_thread(void* arg) {
         txn->ops->copyfrom(txn, &device->gpt_entry, sizeof(gpt_entry_t), sizeof(gpt_entry_t) * partitions);
         if (device->gpt_entry.type[0] == 0) {
             free(device);
-            break;
+            continue;
         }
-
-        device->device.protocol_id = MX_PROTOCOL_BLOCK;
-        device_add(&device->device, dev);
 
         char guid[40];
         uint8_to_guid_string(guid, device->gpt_entry.type);
         char pname[40];
         utf16_to_cstring(pname, device->gpt_entry.name, GPT_NAME_LEN);
         xprintf("gpt: partition %u (%s) type=%s name=%s\n", partitions, device->device.name, guid, pname);
+
+        device->device.protocol_id = MX_PROTOCOL_BLOCK;
+        if (device_add(&device->device, dev) != NO_ERROR) {
+            printf("gpt device_add failed\n");
+            free(device);
+            continue;
+        }
     }
 
     txn->ops->release(txn);
@@ -280,16 +286,13 @@ static mx_status_t gpt_bind(mx_driver_t* drv, mx_device_t* dev) {
     return NO_ERROR;
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_BLOCK),
-};
-
-mx_driver_t _driver_gpt BUILTIN_DRIVER = {
-    .name = "gpt",
+mx_driver_t _driver_gpt= {
     .ops = {
         .bind = gpt_bind,
     },
     .flags = DRV_FLAG_NO_AUTOBIND,
-    .binding = binding,
-    .binding_size = sizeof(binding),
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_gpt, "gpt", "magenta", "0.1", 1)
+    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_BLOCK),
+MAGENTA_DRIVER_END(_driver_gpt)

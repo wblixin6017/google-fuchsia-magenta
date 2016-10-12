@@ -113,11 +113,9 @@ int unittest_set_verbosity_level(int new_level);
         unittest_printf_critical("\nCASE %-50s [STARTED] \n", #case_name);
 
 #define DEFINE_REGISTER_TEST_CASE(case_name)                            \
-    static void _register_##case_name(void) {                           \
+    __attribute__((constructor)) static void _register_##case_name(void) { \
         unittest_register_test_case(&_##case_name##_element);           \
-    }                                                                   \
-    void (*_register_##case_name##_ptr)(void) __SECTION(".ctors") =     \
-        _register_##case_name;
+    }
 
 #define END_TEST_CASE(case_name)                                        \
     if (all_success) {                                                  \
@@ -155,6 +153,18 @@ int unittest_set_verbosity_level(int new_level);
  */
 #define BEGIN_TEST current_test_info->all_ok = true
 #define END_TEST return current_test_info->all_ok
+
+/*
+ * BEGIN_HELPER and END_HELPER go in helper programs.
+ * For example, if a test needs to start a second helper program, and you want
+ * to use the ASSERT_*,EXPECT_* macros in the helper program, then surround the
+ * usage with these macros.
+ */
+#define BEGIN_HELPER \
+    struct test_info _test_info; \
+    current_test_info = &_test_info; \
+    current_test_info->all_ok = true
+#define END_HELPER return current_test_info->all_ok
 
 #ifdef __cplusplus
 #define AUTO_TYPE_VAR(type) auto&

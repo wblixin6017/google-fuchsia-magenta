@@ -60,14 +60,6 @@ static int checksocket(int fd, int sock_err, int err) {
     return 0;
 }
 
-// no plumbing for these yet
-int truncate(const char* path, off_t len) {
-    return checkfile(path, ENOSYS);
-}
-int ftruncate(int fd, off_t len) {
-    return checkfd(fd, ENOSYS);
-}
-
 // not supported by any filesystems yet
 int link(const char* path, const char* newpath) {
     errno = ENOSYS;
@@ -115,6 +107,11 @@ int access(const char* path, int mode) {
     return checkfile(path, 0);
 }
 
+// TODO(kulakowski) No symlinks to ignore yet.
+int lstat(const char* path, struct stat* buf) {
+    return stat(path, buf);
+}
+
 void sync(void) {
 }
 int fsync(int fd) {
@@ -124,21 +121,12 @@ int fdatasync(int fd) {
     return checkfd(fd, 0);
 }
 
-int rename(const char* oldpath, const char* newpath) {
-    return checkfile(oldpath, ENOSYS);
-}
-
 // at the moment our unlink works on all fs objects
 int rmdir(const char* path) {
     return unlink(path);
 }
 
 // Socket stubbing.
-
-int socket(int domain, int type, int protocol) {
-    errno = ENOSYS;
-    return -1;
-}
 
 int socketpair(int domain, int type, int protocol, int fd[2]) {
     errno = ENOSYS;
@@ -149,30 +137,6 @@ int socketpair(int domain, int type, int protocol, int fd[2]) {
 // indeed fds, and if so, are indeed sockets.
 
 int shutdown(int fd, int how) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int bind(int fd, const struct sockaddr* addr, socklen_t len) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int connect(int fd, const struct sockaddr* addr, socklen_t len) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int listen(int fd, int backlog) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int accept4(int fd, struct sockaddr* restrict addr, socklen_t* restrict len, int flags) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int getsockname(int fd, struct sockaddr* restrict addr, socklen_t* restrict len) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int getpeername(int fd, struct sockaddr* restrict addr, socklen_t* restrict len) {
     return checksocket(fd, ENOTSOCK, ENOSYS);
 }
 
@@ -197,14 +161,6 @@ int sendmmsg(int fd, struct mmsghdr* msgvec, unsigned int vlen, unsigned int fla
 }
 
 int recvmmsg(int fd, struct mmsghdr* msgvec, unsigned int vlen, unsigned int flags, struct timespec* timeout) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int getsockopt(int fd, int level, int optname, void* restrict optval, socklen_t* restrict optlen) {
-    return checksocket(fd, ENOTSOCK, ENOSYS);
-}
-
-int setsockopt(int fd, int level, int optname, const void* optval, socklen_t optlen) {
     return checksocket(fd, ENOTSOCK, ENOSYS);
 }
 

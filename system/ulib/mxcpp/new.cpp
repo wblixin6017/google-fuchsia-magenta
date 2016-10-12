@@ -34,19 +34,35 @@ bool AllocChecker::check() {
     return (state_ & alloc_ok) == alloc_ok;
 }
 
-void *operator new(size_t s, AllocChecker* ac) {
+void* operator new(size_t s) {
+    auto mem = ::malloc(s);
+    if (!mem) {
+        PANIC("Out of memory (new)\n");
+    }
+    return mem;
+}
+
+void* operator new[](size_t s) {
+    auto mem = ::malloc(s);
+    if (!mem) {
+        PANIC("Out of memory (new[])\n");
+    }
+    return mem;
+}
+
+void* operator new(size_t s, AllocChecker* ac) {
     auto mem = ::malloc(s);
     ac->arm(s, mem != nullptr);
     return mem;
 }
 
-void *operator new[](size_t s, AllocChecker* ac) {
+void* operator new[](size_t s, AllocChecker* ac) {
     auto mem = ::malloc(s);
     ac->arm(s, mem != nullptr);
     return mem;
 }
 
-void *operator new(size_t , void *p) {
+void* operator new(size_t , void *p) {
     return p;
 }
 
@@ -55,6 +71,14 @@ void operator delete(void *p) {
 }
 
 void operator delete[](void *p) {
+    return ::free(p);
+}
+
+void operator delete(void *p, size_t s) {
+    return ::free(p);
+}
+
+void operator delete[](void *p, size_t s) {
     return ::free(p);
 }
 

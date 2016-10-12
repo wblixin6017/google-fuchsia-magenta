@@ -30,10 +30,10 @@ static inline void unlock(volatile int* l) {
         __wake(l, 1);
 }
 
-static inline void unlock_requeue(volatile int* l, volatile int* r) {
+static inline void unlock_requeue(volatile int* l, mx_futex_t* r) {
     a_store(l, 0);
-    mx_futex_requeue((void*)l, /* wake count */ 0, /* l futex value */ 0, (void*)r,
-                     /* requeue count */ 1);
+    _mx_futex_requeue((void*)l, /* wake count */ 0, /* l futex value */ 0,
+                      r, /* requeue count */ 1);
 }
 
 enum {
@@ -42,7 +42,7 @@ enum {
 };
 
 int cnd_timedwait(cnd_t* restrict c, mtx_t* restrict mutex,
-                             const struct timespec* restrict ts) {
+                  const struct timespec* restrict ts) {
     mxr_mutex_t* m = (mxr_mutex_t*)mutex;
     struct waiter node = {0};
     int e, seq, clock = c->_c_clock, oldstate;

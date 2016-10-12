@@ -33,6 +33,10 @@ static void acpi_handle_close(acpi_handle_t* h) {
     mtx_unlock(&h->lock);
 }
 
+// Obtain an additional acpi service handle
+//
+mx_status_t acpi_clone_handle(acpi_handle_t* h);
+
 // List the children of the ACPI node.
 //
 // *rsp* is a pointer to store the response into.  The response can be released
@@ -63,6 +67,12 @@ mx_status_t acpi_get_pci_init_arg(acpi_handle_t* h,
 //
 // This command will only succeed if the handle is the ACPI root handle.
 // TODO(teisenbe): Perhaps open this up to a different handle.
-mx_status_t acpisvc_s_state_transition(acpi_handle_t* h, uint8_t target_state);
+mx_status_t acpi_s_state_transition(acpi_handle_t* h, uint8_t target_state);
+
+// Execute PS0 for an ACPI node.
+//
+// *path* is a full path to an ACPI object.
+// NOTE: this is a temporary interface that will be removed soon.
+mx_status_t acpi_ps0(acpi_handle_t* h, char* path, size_t len);
 
 __END_CDECLS

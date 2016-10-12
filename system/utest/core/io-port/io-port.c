@@ -78,7 +78,7 @@ static bool basic_test(void)
     EXPECT_EQ(out.hdr.type, MX_PORT_PKT_TYPE_USER, "type mismatch");
     EXPECT_EQ(out.hdr.extra, 10u, "key mismatch");
 
-    //EXPECT_EQ(memcmp(&in.payload, &out.payload, 8u), 0, "data must be the same");
+    EXPECT_EQ(memcmp(&in.payload, &out.payload, 8u), 0, "data must be the same");
 
     status = mx_handle_close(io_port);
     EXPECT_EQ(status, NO_ERROR, "failed to close ioport");
@@ -195,6 +195,7 @@ static bool bind_basic_test(void)
 }
 
 typedef struct io_info {
+    int count;
     volatile mx_status_t error;
     mx_handle_t io_port;
     mx_handle_t reply_pipe;
@@ -203,6 +204,7 @@ typedef struct io_info {
 typedef struct report {
     uint64_t key;
     uint64_t type;
+    uint32_t size;
     mx_signals_t signals;
 } report_t;
 
@@ -216,25 +218,21 @@ static int io_reply_thread(void* arg)
 
     // Wait for the other thread to poke at the events and send each key/signal back to
     // the thread via a message pipe.
-    while (true) {
+    for (int ix = 0; ix != info->count; ++ix) {
         status = mx_port_wait(info->io_port, &io_pkt, sizeof(io_pkt));
+
         if (status != NO_ERROR) {
             info->error = status;
             break;
         }
-        if (io_pkt.hdr.key == 0) {
-            // Normal exit.
-            break;
-        }
 
-        report_t report = { io_pkt.hdr.key, io_pkt.hdr.type, io_pkt.signals };
+        report_t report = { io_pkt.hdr.key, io_pkt.hdr.type, io_pkt.bytes, io_pkt.signals };
         status = mx_msgpipe_write(info->reply_pipe, &report, sizeof(report), NULL, 0, 0u);
         if (status != NO_ERROR) {
             info->error = status;
             break;
         }
-
-    };
+    }
 
     return 0;
 }
@@ -255,6 +253,11 @@ static bool bind_pipes_test(void)
     mx_handle_t recv_pipe = h[0];
     info.reply_pipe = h[1];
 
+    // Poke at the pipes in some order. Note that we bound the even pipes so we
+    // write to the odd ones.
+    int order[] = {1, 3, 3, 1, 5, 7, 1, 5, 3, 3, 3, 9};
+    info.count = countof(order);
+
     mx_handle_t pipes[10];
     for (int ix = 0; ix != countof(pipes) / 2; ++ix) {
         status = mx_msgpipe_create(&pipes[ix * 2], 0u);
@@ -264,36 +267,39 @@ static bool bind_pipes_test(void)
     }
 
     thrd_t thread;
-    int ret = thrd_create_with_name(&thread, io_reply_thread, &info, "reply");
+    int ret = thrd_create_with_name(&thread, io_reply_thread, &info, "reply1");
     EXPECT_EQ(ret, thrd_success, "could not create thread");
 
     char msg[] = "=msg0=";
 
-    // Poke at the pipes in some order, mesages with the events should arrive in order.
-    // note that we bound the even pipes so we write to the odd ones.
-    int order[] = {1, 3, 3, 1, 5, 7, 1, 5, 3, 3, 3, 9};
+    struct pair { int actual; int expected; };
+    struct pair arrivals[10] = {0};
+
     for (int ix = 0; ix != countof(order); ++ix) {
         msg[4] = (char)ix;
         status = mx_msgpipe_write(pipes[order[ix]], msg, sizeof(msg), NULL, 0, 0u);
         EXPECT_EQ(status, NO_ERROR, "could not signal");
+        ++arrivals[order[ix]].expected;
     }
-
-    // Queue a final packet to make io_reply_thread exit.
-    mx_io_packet_t io_pkt = {0};
-    status = mx_port_queue(info.io_port, &io_pkt, sizeof(io_pkt));
 
     report_t report;
     uint32_t bytes = sizeof(report);
 
-    // The messages should match the pipe poke order.
+    // Check the received packets are reasonable.
     for (int ix = 0; ix != countof(order); ++ix) {
-        status = mx_handle_wait_one(recv_pipe, MX_SIGNAL_READABLE, 1000000000ULL, NULL);
+        status = mx_handle_wait_one(recv_pipe, MX_SIGNAL_READABLE, MX_TIME_INFINITE, NULL);
         EXPECT_EQ(status, NO_ERROR, "failed to wait for pipe");
         status = mx_msgpipe_read(recv_pipe, &report, &bytes, NULL, NULL, 0u);
         EXPECT_EQ(status, NO_ERROR, "expected valid message");
         EXPECT_EQ(report.signals, MX_SIGNAL_READABLE, "invalid signal");
         EXPECT_EQ(report.type, MX_PORT_PKT_TYPE_IOSN, "invalid type");
-        EXPECT_EQ(report.key, (unsigned long long)order[ix], "wrong order");
+        ++arrivals[(int)report.key].actual;
+    }
+
+    // Check that all messages arrived, even though the relative order might be
+    // different.
+    for (int ix = 0; ix != countof(arrivals); ++ix) {
+        EXPECT_EQ(arrivals[ix].actual, arrivals[ix].expected, "missing packet");
     }
 
     ret = thrd_join(thread, NULL);
@@ -315,12 +321,121 @@ static bool bind_pipes_test(void)
     END_TEST;
 }
 
+static bool bind_sockets_test(void)
+{
+    BEGIN_TEST;
+    mx_status_t status;
+    mx_ssize_t sz;
+
+    mx_handle_t io_port = mx_port_create(0u);
+    EXPECT_GT(io_port, 0, "");
+
+    mx_handle_t socket[2];
+    status = mx_socket_create(socket, 0u);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_port_bind(io_port, 1ull, socket[1], MX_SIGNAL_READABLE | MX_SIGNAL_SIGNAL3);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    sz = mx_socket_write(socket[0], 0u, 2, "ab");
+    EXPECT_EQ(sz, 2, "");
+    sz = mx_socket_write(socket[0], 0u, 2, "bc");
+    EXPECT_EQ(sz, 2, "");
+
+    mx_handle_t pipe[2];
+    status = mx_msgpipe_create(pipe, 0u);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    io_info_t info = {2, 0, io_port, pipe[1]};
+
+    thrd_t thread;
+    int ret = thrd_create_with_name(&thread, io_reply_thread, &info, "reply2");
+    EXPECT_EQ(ret, thrd_success, "");
+
+    report_t report;
+    uint32_t bytes = sizeof(report);
+
+    for (int ix = 0; ix != 2; ++ix) {
+        status = mx_handle_wait_one(pipe[0], MX_SIGNAL_READABLE, MX_TIME_INFINITE, NULL);
+        EXPECT_EQ(status, NO_ERROR, "");
+        status = mx_msgpipe_read(pipe[0], &report, &bytes, NULL, NULL, 0u);
+        EXPECT_EQ(status, NO_ERROR, "");
+        EXPECT_EQ(report.signals, MX_SIGNAL_READABLE, "");
+        EXPECT_EQ(report.type, MX_PORT_PKT_TYPE_IOSN, "");
+        // TODO(cpu): No longer we return the size. It seems we can get this back.
+        EXPECT_EQ(report.size, 0u, "");
+    }
+
+    ret = thrd_join(thread, NULL);
+    EXPECT_EQ(ret, thrd_success, "");
+
+    mx_io_packet_t io_pkt = {0};
+    status = mx_object_signal(socket[0], 0u, MX_SIGNAL_SIGNAL3);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_port_wait(io_port, &io_pkt, sizeof(io_pkt));
+    EXPECT_EQ(status, NO_ERROR, "");
+    EXPECT_EQ(io_pkt.signals, MX_SIGNAL_SIGNAL3, "");
+
+    status = mx_handle_close(io_port);
+    EXPECT_EQ(status, NO_ERROR, "");
+    status = mx_handle_close(socket[0]);
+    EXPECT_EQ(status, NO_ERROR, "");
+    status = mx_handle_close(socket[1]);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    END_TEST;
+}
+
+static bool bind_pipes_playback(void)
+{
+    BEGIN_TEST;
+    mx_status_t status;
+    mx_handle_t port;
+    mx_handle_t h[2];
+
+    port = mx_port_create(0u);
+    EXPECT_GT(port, 0, "");
+
+    status = mx_msgpipe_create(h, 0);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_msgpipe_write(h[0], "abcd", 4, NULL, 0, 0u);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_msgpipe_write(h[0], "def", 3, NULL, 0, 0u);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_port_bind(port, 3ull, h[1], MX_SIGNAL_READABLE);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    mx_io_packet_t io_pkt;
+    for (int ix = 0; ix != 2; ++ix) {
+        status = mx_port_wait(port, &io_pkt, sizeof(io_pkt));
+        EXPECT_EQ(status, NO_ERROR, "");
+        EXPECT_EQ(io_pkt.signals, MX_SIGNAL_READABLE, "");
+    }
+
+    status = mx_handle_close(port);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_handle_close(h[0]);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    status = mx_handle_close(h[1]);
+    EXPECT_EQ(status, NO_ERROR, "");
+
+    END_TEST;
+}
+
 BEGIN_TEST_CASE(io_port_tests)
 RUN_TEST(basic_test)
 RUN_TEST(queue_and_close_test)
 RUN_TEST(thread_pool_test)
 RUN_TEST(bind_basic_test)
 RUN_TEST(bind_pipes_test)
+RUN_TEST(bind_sockets_test)
+RUN_TEST(bind_pipes_playback)
 END_TEST_CASE(io_port_tests)
 
 #ifndef BUILD_COMBINED_TESTS

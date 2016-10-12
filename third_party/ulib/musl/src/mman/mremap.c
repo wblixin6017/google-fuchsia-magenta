@@ -1,11 +1,11 @@
 #define _GNU_SOURCE
 #include "libc.h"
 #include <errno.h>
+#include <magenta/syscalls.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <magenta/syscalls.h>
 #include <unistd.h>
 
 static void dummy(void) {}
@@ -13,7 +13,7 @@ weak_alias(dummy, __vm_wait);
 
 #define ROUND(addr) ((addr + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
 
-static mx_status_t vmo_remap(uintptr_t old_mapping, mx_size_t old_len, mx_size_t new_len, uint32_t flags, uintptr_t *new_mapping) {
+static mx_status_t vmo_remap(uintptr_t old_mapping, mx_size_t old_len, mx_size_t new_len, uint32_t flags, uintptr_t* new_mapping) {
     if (new_len < old_len) {
         // TODO(kulakowski)
         // For now we can't partially unmap.
@@ -21,28 +21,27 @@ static mx_status_t vmo_remap(uintptr_t old_mapping, mx_size_t old_len, mx_size_t
         return NO_ERROR;
     }
 
-    mx_handle_t vmo = mx_vmo_create(new_len);
+    mx_handle_t vmo = _mx_vmo_create(new_len);
     if (vmo < 0) {
         return vmo;
     }
 
-    mx_status_t status = mx_process_map_vm(libc.proc, vmo, 0u, new_len, new_mapping, flags);
-    mx_handle_close(vmo);
+    mx_status_t status = _mx_process_map_vm(libc.proc, vmo, 0u, new_len, new_mapping, flags);
+    _mx_handle_close(vmo);
     if (status != NO_ERROR) {
         return status;
     }
 
     memcpy((void*)*new_mapping, (void*)old_mapping, old_len);
 
-    status = mx_process_unmap_vm(libc.proc, old_mapping, 0);
+    status = _mx_process_unmap_vm(libc.proc, old_mapping, 0);
     if (status != NO_ERROR) {
-        mx_process_unmap_vm(libc.proc, *new_mapping, new_len);
+        _mx_process_unmap_vm(libc.proc, *new_mapping, new_len);
         return status;
     }
 
     return NO_ERROR;
 }
-
 
 // TODO(kulakowski) mremap is a Linux extension. So far as I can see,
 // it's used internally be realloc, but nothing else directly in

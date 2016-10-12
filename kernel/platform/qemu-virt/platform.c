@@ -10,6 +10,7 @@
 #include <debug.h>
 #include <trace.h>
 #include <dev/display.h>
+#include <dev/hw_rng.h>
 #include <dev/interrupt/arm_gicv2m.h>
 #include <dev/interrupt/arm_gicv2m_msi.h>
 #include <dev/pcie.h>
@@ -23,7 +24,6 @@
 #include <platform.h>
 #include <platform/gic.h>
 #include <dev/interrupt.h>
-#include <dev/interrupt_event.h>
 #include <platform/qemu-virt.h>
 #include <libfdt.h>
 #include "platform_p.h"
@@ -257,11 +257,11 @@ void platform_halt(platform_halt_action suggested_action, platform_halt_reason r
         psci_call(psci_call_num, 0, 0, 0);
     } else {
 #if ENABLE_PANIC_SHELL
-        dprintf(ALWAYS, "HALT: starting debug shell... (reason = %d)\n", reason);
+        dprintf(ALWAYS, "HALT: starting debug shell... (reason = %u)\n", reason);
         arch_disable_ints();
         panic_shell_start();
 #else
-        dprintf(ALWAYS, "HALT: spinning forever... (reason = %d)\n", reason);
+        dprintf(ALWAYS, "HALT: spinning forever... (reason = %u)\n", reason);
         arch_disable_ints();
         for (;;);
 #endif

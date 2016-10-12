@@ -12,7 +12,8 @@
 #include <magenta/handle.h>
 #include <magenta/data_pipe.h>
 
-constexpr mx_rights_t kDefaultDataPipeConsumerRights = MX_RIGHT_TRANSFER | MX_RIGHT_READ ;
+constexpr mx_rights_t kDefaultDataPipeConsumerRights =
+        MX_RIGHT_TRANSFER | MX_RIGHT_READ | MX_RIGHT_GET_PROPERTY | MX_RIGHT_SET_PROPERTY;
 
 // static
 mx_status_t DataPipeConsumerDispatcher::Create(mxtl::RefPtr<DataPipe> data_pipe,
@@ -40,19 +41,30 @@ StateTracker* DataPipeConsumerDispatcher::get_state_tracker() {
     return pipe_->get_consumer_state_tracker();
 }
 
-mx_status_t DataPipeConsumerDispatcher::Read(void* buffer, mx_size_t* requested) {
-    return pipe_->ConsumerReadFromUser(buffer, requested);
+mx_status_t DataPipeConsumerDispatcher::Read(user_ptr<void> buffer,
+                                             mx_size_t* requested,
+                                             bool all_or_none,
+                                             bool discard,
+                                             bool peek) {
+    return pipe_->ConsumerReadFromUser(buffer, requested, all_or_none, discard, peek);
 }
 
-mx_status_t DataPipeConsumerDispatcher::BeginRead(mxtl::RefPtr<VmAspace> aspace,
-                                                  void** buffer, mx_size_t* requested) {
-    if (*requested > kMaxDataPipeCapacity) {
-        *requested = kMaxDataPipeCapacity;
-    }
+mx_ssize_t DataPipeConsumerDispatcher::Query() {
+    return pipe_->ConsumerQuery();
+}
 
-    return pipe_->ConsumerReadBegin(mxtl::move(aspace), buffer, requested);
+mx_ssize_t DataPipeConsumerDispatcher::BeginRead(mxtl::RefPtr<VmAspace> aspace, void** buffer) {
+    return pipe_->ConsumerReadBegin(mxtl::move(aspace), buffer);
 }
 
 mx_status_t DataPipeConsumerDispatcher::EndRead(mx_size_t read) {
     return pipe_->ConsumerReadEnd(read);
+}
+
+mx_size_t DataPipeConsumerDispatcher::GetReadThreshold() {
+    return pipe_->ConsumerGetReadThreshold();
+}
+
+mx_status_t DataPipeConsumerDispatcher::SetReadThreshold(mx_size_t threshold) {
+    return pipe_->ConsumerSetReadThreshold(threshold);
 }

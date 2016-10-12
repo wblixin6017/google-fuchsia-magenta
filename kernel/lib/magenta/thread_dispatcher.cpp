@@ -14,7 +14,8 @@
 #define LOCAL_TRACE 0
 
 constexpr mx_rights_t kDefaultThreadRights =
-    MX_RIGHT_READ | MX_RIGHT_WRITE | MX_RIGHT_DUPLICATE | MX_RIGHT_TRANSFER;
+    MX_RIGHT_READ | MX_RIGHT_WRITE | MX_RIGHT_DUPLICATE | MX_RIGHT_TRANSFER |
+    MX_RIGHT_GET_PROPERTY;
 
 // static
 status_t ThreadDispatcher::Create(mxtl::RefPtr<UserThread> thread, mxtl::RefPtr<Dispatcher>* dispatcher,
@@ -24,7 +25,7 @@ status_t ThreadDispatcher::Create(mxtl::RefPtr<UserThread> thread, mxtl::RefPtr<
     if (!ac.check())
         return ERR_NO_MEMORY;
 
-    thread->set_dispatcher(disp->get_thread_dispatcher());
+    thread->set_dispatcher(disp->get_specific<ThreadDispatcher>());
 
     *rights = kDefaultThreadRights;
     *dispatcher = mxtl::AdoptRef<Dispatcher>(disp);

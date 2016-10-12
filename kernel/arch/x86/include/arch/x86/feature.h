@@ -25,6 +25,7 @@ struct cpuid_leaf {
 
 enum x86_cpuid_leaf_num {
     X86_CPUID_BASE = 0,
+    X86_CPUID_MODEL_FEATURES = 0x1,
     X86_CPUID_TOPOLOGY = 0xb,
     X86_CPUID_XSAVE = 0xd,
 
@@ -42,6 +43,7 @@ struct x86_cpuid_bit {
         (struct x86_cpuid_bit){(enum x86_cpuid_leaf_num)(leaf), (word), (bit)}
 
 void x86_feature_init(void);
+
 static inline const struct cpuid_leaf *x86_get_cpuid_leaf(enum x86_cpuid_leaf_num leaf)
 {
     extern struct cpuid_leaf _cpuid[MAX_SUPPORTED_CPUID + 1];
@@ -142,13 +144,25 @@ static inline uint8_t x86_physical_address_width(void)
     return leaf->a & 0xff;
 }
 
+/* cpu vendors */
+enum x86_vendor_list {
+    X86_VENDOR_UNKNOWN,
+    X86_VENDOR_INTEL,
+    X86_VENDOR_AMD
+};
+
+extern enum x86_vendor_list x86_vendor;
+
+/* topology */
+
 #define X86_TOPOLOGY_INVALID 0
 #define X86_TOPOLOGY_SMT 1
 #define X86_TOPOLOGY_CORE 2
 
 struct x86_topology_level {
-    /* The number of bits of the APIC ID that encode this level */
-    uint8_t num_bits;
+    /* The number of bits to right shift to identify the next-higher topological
+     * level */
+    uint8_t right_shift;
     /* The type of relationship this level describes (hyperthread/core/etc) */
     uint8_t type;
 };
@@ -166,5 +180,17 @@ struct x86_topology_level {
  * @return false if the requested level does not exist (and no higher ones do).
  */
 bool x86_topology_enumerate(uint8_t level, struct x86_topology_level *info);
+
+struct x86_model_info {
+    uint8_t processor_type;
+    uint8_t family;
+    uint8_t model;
+    uint8_t stepping;
+
+    uint16_t display_family;
+    uint8_t display_model;
+};
+
+const struct x86_model_info * x86_get_model(void);
 
 __END_CDECLS

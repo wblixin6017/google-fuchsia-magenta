@@ -17,6 +17,7 @@
  */
 #include <debug.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <list.h>
 #include <malloc.h>
 #include <string.h>
@@ -29,6 +30,7 @@
 #include <platform.h>
 #include <target.h>
 #include <lib/heap.h>
+#include <lib/ktrace.h>
 #if WITH_KERNEL_VM
 #include <kernel/vm.h>
 #endif
@@ -68,6 +70,8 @@ static thread_t _idle_thread;
 static void thread_resched(void);
 static int idle_thread_routine(void *) __NO_RETURN;
 static void thread_exit_locked(thread_t *current_thread, int retcode) __NO_RETURN;
+static void thread_block(void);
+static void thread_unblock(thread_t *t, bool resched);
 
 #if PLATFORM_HAS_DYNAMIC_TIMER
 /* preemption timer */
@@ -209,12 +213,6 @@ thread_t *thread_create_etc(
     /* save whether or not we need to free the thread struct and/or stack */
     t->flags = flags;
 
-    /* inheirit thread local storage from the parent */
-    thread_t *current_thread = get_current_thread();
-    int i;
-    for (i=0; i < MAX_TLS_ENTRY; i++)
-        t->tls[i] = current_thread->tls[i];
-
     if (likely(alt_trampoline == NULL)) {
         alt_trampoline = initial_thread_func;
     }
@@ -330,7 +328,7 @@ status_t thread_join(thread_t *t, int *retcode, lk_time_t timeout)
     if (t->flags & THREAD_FLAG_DETACHED) {
         /* the thread is detached, go ahead and exit */
         THREAD_UNLOCK(state);
-        return ERR_THREAD_DETACHED;
+        return ERR_BAD_STATE;
     }
 
     /* wait for the thread to die */
@@ -377,7 +375,7 @@ status_t thread_detach(thread_t *t)
 
     /* if another thread is blocked inside thread_join() on this thread,
      * wake them up with a specific return code */
-    wait_queue_wake_all(&t->retcode_wait_queue, false, ERR_THREAD_DETACHED);
+    wait_queue_wake_all(&t->retcode_wait_queue, false, ERR_BAD_STATE);
 
     /* if it's already dead, then just do what join would have and exit */
     if (t->state == THREAD_DEATH) {
@@ -613,7 +611,7 @@ static thread_t *get_top_thread(int cpu)
  * This is probably not the function you're looking for. See
  * thread_yield() instead.
  */
-void thread_resched(void)
+static void thread_resched(void)
 {
     thread_t *oldthread;
     thread_t *newthread;
@@ -639,8 +637,8 @@ void thread_resched(void)
         return;
 
     lk_bigtime_t now = current_time_hires();
-    oldthread->runtime_us += now - oldthread->last_started_running_us;
-    newthread->last_started_running_us = now;
+    oldthread->runtime_ns += now - oldthread->last_started_running_ns;
+    newthread->last_started_running_ns = now;
 
     /* set up quantum for the new thread if it was consumed */
     if (newthread->remaining_quantum <= 0) {
@@ -674,6 +672,11 @@ void thread_resched(void)
     if (thread_is_idle(newthread)) {
         thread_stats[cpu].last_idle_timestamp = current_time_hires();
     }
+#endif
+
+#if WITH_LIB_KTRACE
+    ktrace(TAG_CONTEXT_SWITCH, (uint32_t)newthread->user_tid, cpu | (oldthread->state << 16),
+           (uint32_t)(uintptr_t)oldthread, (uint32_t)(uintptr_t)newthread);
 #endif
 
     KEVLOG_THREAD_SWITCH(oldthread, newthread);
@@ -760,6 +763,7 @@ void thread_yield(void)
 
     DEBUG_ASSERT(current_thread->magic == THREAD_MAGIC);
     DEBUG_ASSERT(current_thread->state == THREAD_RUNNING);
+    DEBUG_ASSERT(!arch_in_int_handler());
 
     THREAD_LOCK(state);
 
@@ -777,10 +781,7 @@ void thread_yield(void)
 }
 
 /**
- * @brief  Briefly yield cpu to another thread
- *
- * This function is similar to thread_yield(), except that it will
- * restart more quickly.
+ * @brief Preempt the current thread, usually from an interrupt
  *
  * This function places the current thread at the head of the run
  * queue and then yields the cpu to another thread.
@@ -790,17 +791,28 @@ void thread_yield(void)
  *
  * This function will return at some later time. Possibly immediately if
  * no other threads are waiting to execute.
+ *
+ * @param interrupt for tracing purposes set if the preemption is happening
+ * at interrupt context.
+ *
  */
-void thread_preempt(void)
+void thread_preempt(bool interrupt)
 {
     thread_t *current_thread = get_current_thread();
 
     DEBUG_ASSERT(current_thread->magic == THREAD_MAGIC);
     DEBUG_ASSERT(current_thread->state == THREAD_RUNNING);
+    DEBUG_ASSERT(!arch_in_int_handler());
 
 #if THREAD_STATS
-    if (!thread_is_idle(current_thread))
-        THREAD_STATS_INC(preempts); /* only track when a meaningful preempt happens */
+    if (!thread_is_idle(current_thread)) {
+        /* only track when a meaningful preempt happens */
+        if (interrupt) {
+            THREAD_STATS_INC(irq_preempts);
+        } else {
+            THREAD_STATS_INC(preempts);
+        }
+    }
 #endif
 
     KEVLOG_THREAD_PREEMPT(current_thread);
@@ -830,7 +842,7 @@ void thread_preempt(void)
  * from other modules, such as mutex, which will presumably set the thread's
  * state to blocked and add it to some queue or another.
  */
-void thread_block(void)
+static void thread_block(void)
 {
     __UNUSED thread_t *current_thread = get_current_thread();
 
@@ -843,7 +855,7 @@ void thread_block(void)
     thread_resched();
 }
 
-void thread_unblock(thread_t *t, bool resched)
+static void thread_unblock(thread_t *t, bool resched)
 {
     DEBUG_ASSERT(t->magic == THREAD_MAGIC);
     DEBUG_ASSERT(t->state == THREAD_BLOCKED);
@@ -905,7 +917,7 @@ static enum handler_return thread_sleep_handler(timer_t *timer, lk_time_t now, v
  * other threads are running.  When the timer expires, this thread will
  * be placed at the head of the run queue.
  *
- * interruptable argument allows this routine to return early if the thread was signalled
+ * interruptable argument allows this routine to return early if the thread was signaled
  * for something.
  */
 status_t thread_sleep_etc(lk_time_t delay, bool interruptable)
@@ -916,6 +928,7 @@ status_t thread_sleep_etc(lk_time_t delay, bool interruptable)
     DEBUG_ASSERT(current_thread->magic == THREAD_MAGIC);
     DEBUG_ASSERT(current_thread->state == THREAD_RUNNING);
     DEBUG_ASSERT(!thread_is_idle(current_thread));
+    DEBUG_ASSERT(!arch_in_int_handler());
 
     timer_t timer;
     timer_initialize(&timer);
@@ -1070,7 +1083,7 @@ void thread_become_idle(void)
 
 #if WITH_SMP
     char name[16];
-    snprintf(name, sizeof(name), "idle %d", arch_curr_cpu_num());
+    snprintf(name, sizeof(name), "idle %u", arch_curr_cpu_num());
     thread_set_name(name);
 #else
     thread_set_name("idle");
@@ -1098,7 +1111,7 @@ void thread_secondary_cpu_init_early(thread_t *t)
 {
     DEBUG_ASSERT(arch_ints_disabled());
     char name[16];
-    snprintf(name, sizeof(name), "cpu_init %d", arch_curr_cpu_num());
+    snprintf(name, sizeof(name), "cpu_init %u", arch_curr_cpu_num());
     thread_construct_first(t, name);
 }
 
@@ -1118,7 +1131,7 @@ void thread_secondary_cpu_entry(void)
  */
 thread_t *thread_create_idle_thread(uint cpu_num)
 {
-    DEBUG_ASSERT(cpu_num != 0);
+    DEBUG_ASSERT(cpu_num != 0 && cpu_num < SMP_MAX_CPUS);
 
     /* Shouldn't be initialized yet */
     DEBUG_ASSERT(idle_thread(cpu_num)->magic != THREAD_MAGIC);
@@ -1165,9 +1178,9 @@ static const char *thread_state_to_str(enum thread_state state)
  */
 void dump_thread(thread_t *t)
 {
-    lk_bigtime_t runtime = t->runtime_us;
+    lk_bigtime_t runtime = t->runtime_ns;
     if (t->state == THREAD_RUNNING) {
-        runtime += current_time_hires() - t->last_started_running_us;
+        runtime += current_time_hires() - t->last_started_running_ns;
     }
 
     dprintf(INFO, "dump_thread: t %p (%s)\n", t, t->name);
@@ -1178,8 +1191,9 @@ void dump_thread(thread_t *t)
     dprintf(INFO, "\tstate %s, priority %d, remaining quantum %d\n",
             thread_state_to_str(t->state), t->priority, t->remaining_quantum);
 #endif
-    dprintf(INFO, "\truntime_us %lld, runtime_s %lld\n", runtime, runtime / 1000000);
-    dprintf(INFO, "\tstack %p, stack_size %zd\n", t->stack, t->stack_size);
+    dprintf(INFO, "\truntime_ns %" PRIu64 ", runtime_s %" PRIu64 "\n",
+            runtime, runtime / 1000000000);
+    dprintf(INFO, "\tstack %p, stack_size %zu\n", t->stack, t->stack_size);
     dprintf(INFO, "\tentry %p, arg %p, flags 0x%x %s%s%s%s%s%s\n", t->entry, t->arg, t->flags,
             (t->flags & THREAD_FLAG_DETACHED) ? "Dt" :"",
             (t->flags & THREAD_FLAG_FREE_STACK) ? "Fs" :"",
@@ -1187,19 +1201,11 @@ void dump_thread(thread_t *t)
             (t->flags & THREAD_FLAG_REAL_TIME) ? "Rt" :"",
             (t->flags & THREAD_FLAG_IDLE) ? "Id" :"",
             (t->flags & THREAD_FLAG_DEBUG_STACK_BOUNDS_CHECK) ? "Sc" :"");
-    dprintf(INFO, "\twait queue %p, blocked_status %d, interruptable %u\n",
+    dprintf(INFO, "\twait queue %p, blocked_status %d, interruptable %d\n",
             t->blocking_wait_queue, t->blocked_status, t->interruptable);
 #if WITH_KERNEL_VM
     dprintf(INFO, "\taspace %p\n", t->aspace);
 #endif
-    if (MAX_TLS_ENTRY > 0) {
-        dprintf(INFO, "\ttls:");
-        int i;
-        for (i=0; i < MAX_TLS_ENTRY; i++) {
-            dprintf(INFO, " 0x%lx", t->tls[i]);
-        }
-        dprintf(INFO, "\n");
-    }
     arch_dump_thread(t);
 }
 
@@ -1224,6 +1230,23 @@ void dump_all_threads(void)
 
 /** @} */
 
+#if WITH_LIB_KTRACE
+// Used by ktrace at the start of a trace to ensure that all
+// the running threads, processes, and their names are known
+void ktrace_report_live_threads(void) {
+    thread_t* t;
+
+    THREAD_LOCK(state);
+    list_for_every_entry(&thread_list, t, thread_t, thread_list_node) {
+        if (t->user_tid) {
+            ktrace_name(TAG_THREAD_NAME, t->user_tid, t->user_pid, t->name);
+        } else {
+            ktrace_name(TAG_KTHREAD_NAME, (uint32_t)(uintptr_t)t, 0, t->name);
+        }
+    }
+    THREAD_UNLOCK(state);
+}
+#endif
 
 /**
  * @defgroup  wait  Wait Queue
@@ -1428,8 +1451,9 @@ void wait_queue_destroy(wait_queue_t *wait, bool reschedule)
     DEBUG_ASSERT(wait->magic == WAIT_QUEUE_MAGIC);
     DEBUG_ASSERT(arch_ints_disabled());
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
+    DEBUG_ASSERT(list_is_empty(&wait->list));
 
-    wait_queue_wake_all(wait, reschedule, ERR_CANCELLED);
+    wait_queue_wake_all(wait, reschedule, ERR_INTERNAL);
     wait->magic = 0;
 }
 
@@ -1443,7 +1467,7 @@ void wait_queue_destroy(wait_queue_t *wait, bool reschedule)
  * @param wait_queue_error  The return value which the new thread will receive
  *   from wait_queue_block().
  *
- * @return ERR_NOT_BLOCKED if thread was not in any wait queue.
+ * @return ERR_BAD_STATE if thread was not in any wait queue.
  */
 status_t thread_unblock_from_wait_queue(thread_t *t, status_t wait_queue_error)
 {
@@ -1452,7 +1476,7 @@ status_t thread_unblock_from_wait_queue(thread_t *t, status_t wait_queue_error)
     DEBUG_ASSERT(spin_lock_held(&thread_lock));
 
     if (t->state != THREAD_BLOCKED)
-        return ERR_NOT_BLOCKED;
+        return ERR_BAD_STATE;
 
     DEBUG_ASSERT(t->blocking_wait_queue != NULL);
     DEBUG_ASSERT(t->blocking_wait_queue->magic == WAIT_QUEUE_MAGIC);

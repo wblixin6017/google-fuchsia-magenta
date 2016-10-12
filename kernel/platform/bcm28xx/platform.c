@@ -16,11 +16,15 @@
 #include <kernel/spinlock.h>
 #include <dev/timer/arm_generic.h>
 #include <dev/display.h>
+#include <dev/hw_rng.h>
 
 #include <platform.h>
 #include <dev/interrupt.h>
 #include <platform/bcm28xx.h>
 #include <platform/videocore.h>
+#include <platform/atag.h>
+
+#include <target.h>
 
 #include <libfdt.h>
 #include <arch/arm64.h>
@@ -60,6 +64,8 @@ extern void arm_reset(void);
 
 //static uint8_t * vbuff;
 
+static uint8_t * kernel_args;
+
 static pmm_arena_t arena = {
     .name = "sdram",
     .base = SDRAM_BASE,
@@ -82,6 +88,13 @@ void platform_pcie_init_info(pcie_init_info_t *out)
 
 void platform_early_init(void)
 {
+    atag_t * tag;
+
+    tag = atag_find(RPI_ATAG_ATAG_CMDLINE, RPI_ATAGS_ADDRESS);
+    if (tag) {
+        kernel_args = tag->cmdline;
+    }
+
     uart_init_early();
 
     intc_init();
@@ -141,30 +154,7 @@ void platform_early_init(void)
 
 void platform_init(void)
 {
-    dprintf(SPEW,"pre uart init\n");
-
     uart_init();
-
-    dprintf(SPEW,"post uart init\n");
-
-
-#if 0
-//#if WITH_SMP
-    uintptr_t sec_entry = (uintptr_t)0x80000;//&arm_reset - KERNEL_ASPACE_BASE;
-    uintptr_t *spin_table = (void *)(KERNEL_ASPACE_BASE + 0xd8);
-
-    for (uint i = 1; i <= 3; i++) {
-        spin_table[i] = sec_entry;
-        __asm__ __volatile__ ("" : : : "memory");
-        arch_clean_cache_range(0xffff000000000000,256);
-        __asm__ __volatile__("sev");
-        //printf("writing spin entry %lx with %lx\n",(uintptr_t)&spin_table[i],sec_entry);
-    }
-#endif
-
-
-
-
 
     /* Get framebuffer for jraphics */
 
@@ -282,7 +272,7 @@ __WEAK int platform_pgetc(char *c, bool wait)
     return platform_dgetc(c, wait);
 }
 
-/* stub out the hardware rng entropy generator, which doesn't eixst on this platform */
+/* stub out the hardware rng entropy generator, which doesn't exist on this platform */
 size_t hw_rng_get_entropy(void* buf, size_t len, bool block) {
     return 0;
 }

@@ -17,6 +17,7 @@
  */
 
 #include <debug.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <kernel/thread.h>
@@ -66,9 +67,10 @@ static int cmd_threadstats(int argc, const cmd_args *argv)
         if (!mp_is_cpu_active(i))
             continue;
 
-        printf("thread stats (cpu %d):\n", i);
-        printf("\ttotal idle time: %lld\n", thread_stats[i].idle_time);
-        printf("\ttotal busy time: %lld\n", current_time_hires() - thread_stats[i].idle_time);
+        printf("thread stats (cpu %u):\n", i);
+        printf("\ttotal idle time: %" PRIu64 "\n", thread_stats[i].idle_time);
+        printf("\ttotal busy time: %" PRIu64 "\n",
+               current_time_hires() - thread_stats[i].idle_time);
         printf("\treschedules: %lu\n", thread_stats[i].reschedules);
 #if WITH_SMP
         printf("\treschedule_ipis: %lu\n", thread_stats[i].reschedule_ipis);
@@ -103,13 +105,15 @@ static enum handler_return threadload(struct timer *t, lk_time_t now, void *arg)
         }
 
         lk_bigtime_t delta_time = idle_time - last_idle_time[i];
-        lk_bigtime_t busy_time = 1000000ULL - (delta_time > 1000000ULL ? 1000000ULL : delta_time);
-        uint busypercent = (busy_time * 10000) / (1000000);
+        lk_bigtime_t busy_time = 1000000000ULL - (delta_time > 1000000000ULL ? 1000000000ULL : delta_time);
+        uint busypercent = (busy_time * 10000) / (1000000000);
 
         printf("cpu %u LOAD: "
                "%u.%02u%%, "
                "cs %lu, "
+               "ylds %lu, "
                "pmpts %lu, "
+               "irq_pmpts %lu, "
 #if WITH_SMP
                "rs_ipis %lu, "
 #endif
@@ -119,7 +123,9 @@ static enum handler_return threadload(struct timer *t, lk_time_t now, void *arg)
                i,
                busypercent / 100, busypercent % 100,
                thread_stats[i].context_switches - old_stats[i].context_switches,
+               thread_stats[i].yields - old_stats[i].yields,
                thread_stats[i].preempts - old_stats[i].preempts,
+               thread_stats[i].irq_preempts - old_stats[i].irq_preempts,
 #if WITH_SMP
                thread_stats[i].reschedule_ipis - old_stats[i].reschedule_ipis,
 #endif

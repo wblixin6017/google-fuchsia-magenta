@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-LOCAL_DIR := system/uapp/devmgr
+LOCAL_DIR := system/core/devmgr
 
 MODULE := system/ulib/driver
 
@@ -10,22 +10,14 @@ MODULE_NAME := driver
 
 MODULE_TYPE := userlib
 
-MODULE_DEFINES += LIBDRIVER=1
+MODULE_SO_NAME := driver
 
-MODULE_SRCS := \
-	$(LOCAL_DIR)/devmgr.c \
-	$(LOCAL_DIR)/devhost.c \
-	$(LOCAL_DIR)/binding.c \
-	$(LOCAL_DIR)/rpc-device.c \
-	$(LOCAL_DIR)/api.c \
-	system/udev/kpci/kpci.c \
-	system/udev/kpci/protocol.c \
-	$(LOCAL_DIR)/main.c \
+MODULE_COMPILEFLAGS := -fvisibility=hidden
 
-MODULE_HEADER_DEPS := ulib/ddk
+MODULE_SRCS := $(LOCAL_DIR)/driver-api.c
 
-MODULE_DEPS := ulib/musl ulib/mxio ulib/magenta
+MODULE_STATIC_LIBS := ulib/ddk
 
-MODULE_EXPORT := driver
+#MODULE_LIBS := ulib/mxio ulib/launchpad ulib/magenta ulib/musl
 
 include make/module.mk

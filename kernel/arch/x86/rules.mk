@@ -10,7 +10,6 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 MODULE := $(LOCAL_DIR)
 
 WITH_KERNEL_VM=1
-WITH_LINKER_GC ?= 1
 
 ifeq ($(SUBARCH),x86-32)
 MEMBASE ?= 0x00000000
@@ -69,6 +68,8 @@ MODULE_SRCS += \
 \
 	$(LOCAL_DIR)/arch.c \
 	$(LOCAL_DIR)/cache.c \
+	$(LOCAL_DIR)/cpu_topology.c \
+	$(LOCAL_DIR)/debugger.c \
 	$(LOCAL_DIR)/descriptor.c \
 	$(LOCAL_DIR)/faults.c \
 	$(LOCAL_DIR)/feature.c \
@@ -80,6 +81,7 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/lapic.c \
 	$(LOCAL_DIR)/mmu.cpp \
 	$(LOCAL_DIR)/mmu_mem_types.c \
+	$(LOCAL_DIR)/mmu_tests.cpp \
 	$(LOCAL_DIR)/mp.c \
 	$(LOCAL_DIR)/registers.c \
 	$(LOCAL_DIR)/thread.c \
@@ -126,12 +128,12 @@ endif # SUBARCH x86-64
 #$(warning ARCH_x86_64_TOOLCHAIN_PREFIX = $(ARCH_x86_64_TOOLCHAIN_PREFIX))
 #$(warning TOOLCHAIN_PREFIX = $(TOOLCHAIN_PREFIX))
 
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 ifeq ($(LIBGCC),)
 $(error cannot find runtime library, please set LIBGCC)
 endif
 else
-LIBGCC := $(shell $(TOOLCHAIN_PREFIX)gcc $(CFLAGS) -print-libgcc-file-name)
+LIBGCC := $(shell $(TOOLCHAIN_PREFIX)gcc $(GLOBAL_COMPILEFLAGS) $(CFLAGS) -print-libgcc-file-name)
 endif
 
 cc-option = $(shell if test -z "`$(1) $(2) -S -o /dev/null -xc /dev/null 2>&1`"; \
@@ -140,28 +142,26 @@ cc-option = $(shell if test -z "`$(1) $(2) -S -o /dev/null -xc /dev/null 2>&1`";
 # disable SSP if the compiler supports it; it will break stuff
 GLOBAL_CFLAGS += $(call cc-option,$(CC),-fno-stack-protector,)
 
-GLOBAL_COMPILEFLAGS += -gdwarf-2
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 GLOBAL_LDFLAGS += -m elf_x86_64
 GLOBAL_MODULE_LDFLAGS += -m elf_x86_64
 endif
 GLOBAL_LDFLAGS += -z max-page-size=4096
-ifneq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),false)
 KERNEL_COMPILEFLAGS += -falign-jumps=1 -falign-loops=1 -falign-functions=4
 endif
 
 # hard disable floating point in the kernel
 KERNEL_COMPILEFLAGS += -msoft-float -mno-mmx -mno-sse -mno-sse2 -mno-3dnow -mno-avx -mno-avx2 -DWITH_NO_FP=1
-ifneq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),false)
 KERNEL_COMPILEFLAGS += -mno-80387 -mno-fp-ret-in-387
 endif
 
-ifeq ($(CLANG),1)
-ifeq ($(FUCHSIA),1)
-GLOBAL_COMPILEFLAGS += --target=x86_64-fuchsia
-else
-GLOBAL_COMPILEFLAGS += --target=x86_64-fuchsia -integrated-as
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
+ifndef ARCH_x86_64_CLANG_TARGET
+ARCH_x86_64_CLANG_TARGET := x86_64-fuchsia
 endif
+GLOBAL_COMPILEFLAGS += --target=$(ARCH_x86_64_CLANG_TARGET)
 endif
 
 ifeq ($(SUBARCH),x86-32)
@@ -175,7 +175,7 @@ KERNEL_COMPILEFLAGS += -mno-red-zone
 
 # optimization: since fpu is disabled, do not pass flag in rax to varargs routines
 # that floating point args are in use.
-ifneq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),false)
 KERNEL_COMPILEFLAGS += -mskip-rax-setup
 endif
 endif # SUBARCH x86-64

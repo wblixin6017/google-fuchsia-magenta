@@ -7,13 +7,16 @@
 #include <magenta/message_pipe.h>
 
 #include <err.h>
+#include <new.h>
 #include <stddef.h>
 
 #include <kernel/auto_lock.h>
 
 #include <magenta/handle.h>
+#include <magenta/io_port_dispatcher.h>
 #include <magenta/io_port_client.h>
 #include <magenta/magenta.h>
+#include <magenta/message_packet.h>
 
 namespace {
 
@@ -23,19 +26,8 @@ size_t other_side(size_t side) {
 
 }  // namespace
 
-void MessagePacket::ReturnHandles() {
-    handles.reset();
-}
-
-MessagePacket::~MessagePacket() {
-    for (size_t ix = 0; ix != handles.size(); ++ix) {
-        DeleteHandle(handles[ix]);
-    }
-}
-
-MessagePipe::MessagePipe(mx_koid_t koid)
-    : koid_(koid),
-      dispatcher_alive_{true, true} {
+MessagePipe::MessagePipe()
+    : dispatcher_alive_{true, true} {
     state_tracker_[0].set_initial_signals_state(
             mx_signals_state_t{MX_SIGNAL_WRITABLE,
                                MX_SIGNAL_READABLE | MX_SIGNAL_WRITABLE | MX_SIGNAL_PEER_CLOSED});
@@ -73,24 +65,34 @@ void MessagePipe::OnDispatcherDestruction(size_t side) {
     messages_to_destroy.clear();
 }
 
-status_t MessagePipe::Read(size_t side, mxtl::unique_ptr<MessagePacket>* msg) {
-    bool other_alive;
+status_t MessagePipe::Read(size_t side,
+                           uint32_t* msg_size,
+                           uint32_t* msg_handle_count,
+                           mxtl::unique_ptr<MessagePacket>* msg) {
+    auto max_size = *msg_size;
+    auto max_handle_count = *msg_handle_count;
     auto other = other_side(side);
 
-    {
-        AutoLock lock(&lock_);
-        *msg = messages_[side].pop_front();
-        other_alive = dispatcher_alive_[other];
+    AutoLock lock(&lock_);
 
-        if (messages_[side].is_empty()) {
-            state_tracker_[side].UpdateState(MX_SIGNAL_READABLE, 0u,
-                                             !other_alive ? MX_SIGNAL_READABLE : 0u, 0u);
-        }
+    bool other_alive = dispatcher_alive_[other];
+
+    if (messages_[side].is_empty())
+        return other_alive ? ERR_BAD_STATE : ERR_REMOTE_CLOSED;
+
+    *msg_size = static_cast<uint32_t>(messages_[side].front().data.size());
+    *msg_handle_count = static_cast<uint32_t>(messages_[side].front().handles.size());
+    if (*msg_size > max_size || *msg_handle_count > max_handle_count)
+        return ERR_BUFFER_TOO_SMALL;
+
+    *msg = messages_[side].pop_front();
+
+    if (messages_[side].is_empty()) {
+        state_tracker_[side].UpdateState(MX_SIGNAL_READABLE, 0u,
+                                         !other_alive ? MX_SIGNAL_READABLE : 0u, 0u);
     }
 
-    if (*msg)
-        return NO_ERROR;
-    return other_alive ? ERR_BAD_STATE : ERR_CHANNEL_CLOSED;
+    return NO_ERROR;
 }
 
 status_t MessagePipe::Write(size_t side, mxtl::unique_ptr<MessagePacket> msg) {
@@ -105,11 +107,12 @@ status_t MessagePipe::Write(size_t side, mxtl::unique_ptr<MessagePacket> msg) {
         return ERR_BAD_STATE;
     }
 
+    auto size = msg->data.size();
     messages_[other].push_back(mxtl::move(msg));
 
     state_tracker_[other].UpdateSatisfied(0u, MX_SIGNAL_READABLE);
     if (iopc_[other])
-        iopc_[other]->Signal(MX_SIGNAL_READABLE, &lock_);
+        iopc_[other]->Signal(MX_SIGNAL_READABLE, size, &lock_);
     return NO_ERROR;
 }
 
@@ -117,16 +120,20 @@ StateTracker* MessagePipe::GetStateTracker(size_t side) {
     return &state_tracker_[side];
 }
 
-status_t MessagePipe::SetIOPort(size_t side, mxtl::RefPtr<IOPortDispatcher> io_port,
-                                uint64_t key, mx_signals_t signals) {
+status_t MessagePipe::SetIOPort(size_t side, mxtl::unique_ptr<IOPortClient> client) {
     AutoLock lock(&lock_);
     if (iopc_[side])
         return ERR_BAD_STATE;
 
-    if ((signals & ~(MX_SIGNAL_READABLE | MX_SIGNAL_PEER_CLOSED)) != 0)
+    if ((client->get_trigger_signals() & ~(MX_SIGNAL_READABLE | MX_SIGNAL_PEER_CLOSED)) != 0)
         return ERR_INVALID_ARGS;
 
-    AllocChecker ac;
-    iopc_[side].reset(new (&ac) IOPortClient(mxtl::move(io_port), key, signals));
-    return ac.check()? NO_ERROR : ERR_NO_MEMORY;
+    iopc_[side] = mxtl::move(client);
+
+    // Replay the messages that are pending.
+    for (auto& msg : messages_[side]) {
+        iopc_[side]->Signal(MX_SIGNAL_READABLE, msg.data.size(), &lock_);
+    }
+
+    return NO_ERROR;
 }

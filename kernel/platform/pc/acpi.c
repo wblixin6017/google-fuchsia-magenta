@@ -54,7 +54,7 @@ void platform_init_acpi_tables(uint level)
 /* initialize ACPI tables as soon as we have a working VM */
 LK_INIT_HOOK(acpi_tables, &platform_init_acpi_tables, LK_INIT_LEVEL_VM + 1);
 
-status_t acpi_get_madt_record_limits(uintptr_t *start, uintptr_t *end)
+static status_t acpi_get_madt_record_limits(uintptr_t *start, uintptr_t *end)
 {
     ACPI_TABLE_HEADER *table = NULL;
     ACPI_STATUS status = AcpiGetTable((char *)ACPI_SIG_MADT, 1, &table);
@@ -67,12 +67,12 @@ status_t acpi_get_madt_record_limits(uintptr_t *start, uintptr_t *end)
     uintptr_t records_end = ((uintptr_t)madt) + madt->Header.Length;
     if (records_start >= records_end) {
         TRACEF("MADT wraps around address space\n");
-        return ERR_NOT_VALID;
+        return ERR_INTERNAL;
     }
     // Shouldn't be too many records
     if (madt->Header.Length > 4096) {
-        TRACEF("MADT suspiciously long: %d\n", madt->Header.Length);
-        return ERR_NOT_VALID;
+        TRACEF("MADT suspiciously long: %u\n", madt->Header.Length);
+        return ERR_INTERNAL;
     }
     *start = records_start;
     *end = records_end;
@@ -127,7 +127,7 @@ status_t platform_enumerate_cpus(
     }
     if (addr != records_end) {
       TRACEF("malformed MADT\n");
-      return ERR_NOT_VALID;
+      return ERR_INTERNAL;
     }
     *num_cpus = count;
     return NO_ERROR;
@@ -181,7 +181,7 @@ status_t platform_enumerate_io_apics(
     }
     if (addr != records_end) {
       TRACEF("malformed MADT\n");
-      return ERR_NOT_VALID;
+      return ERR_INVALID_ARGS;
     }
     *num_io_apics = count;
     return NO_ERROR;
@@ -242,7 +242,7 @@ status_t platform_enumerate_interrupt_source_overrides(
                             isos[count].pol = IRQ_POLARITY_ACTIVE_LOW;
                             break;
                         default:
-                            panic("Unknown IRQ polarity in override: %d\n",
+                            panic("Unknown IRQ polarity in override: %u\n",
                                   polarity);
                     }
 
@@ -255,7 +255,7 @@ status_t platform_enumerate_interrupt_source_overrides(
                             isos[count].tm = IRQ_TRIGGER_MODE_LEVEL;
                             break;
                         default:
-                            panic("Unknown IRQ trigger in override: %d\n",
+                            panic("Unknown IRQ trigger in override: %u\n",
                                   trigger);
                     }
                 }
@@ -268,7 +268,7 @@ status_t platform_enumerate_interrupt_source_overrides(
     }
     if (addr != records_end) {
       TRACEF("malformed MADT\n");
-      return ERR_NOT_VALID;
+      return ERR_INVALID_ARGS;
     }
     *num_isos = count;
     return NO_ERROR;
@@ -303,58 +303,5 @@ status_t platform_find_hpet(struct acpi_hpet_descriptor *hpet)
         default: return ERR_NOT_SUPPORTED;
     }
 
-    return NO_ERROR;
-}
-
-/* @brief Find the PCIE config (returns the first one found)
- *
- * @param config The structure to populate with the found config.
- *
- * @return NO_ERROR on success.
- */
-status_t platform_find_pcie_config(struct acpi_pcie_config *config)
-{
-    ACPI_TABLE_HEADER *raw_table = NULL;
-    ACPI_STATUS status = AcpiGetTable((char *)ACPI_SIG_MCFG, 1, &raw_table);
-    if (status != AE_OK) {
-        TRACEF("could not find MCFG\n");
-        return ERR_NOT_FOUND;
-    }
-    ACPI_TABLE_MCFG *mcfg = (ACPI_TABLE_MCFG *)raw_table;
-    ACPI_MCFG_ALLOCATION *table_start = ((void *)mcfg) + sizeof(*mcfg);
-    ACPI_MCFG_ALLOCATION *table_end = ((void *)mcfg) + mcfg->Header.Length;
-    uintptr_t table_bytes = (uintptr_t)table_end - (uintptr_t)table_start;
-    if (table_bytes % sizeof(*table_start) != 0) {
-        TRACEF("MCFG has unexpected size\n");
-        return ERR_NOT_VALID;
-    }
-    int num_entries = table_end - table_start;
-    if (num_entries == 0) {
-        TRACEF("MCFG has no entries\n");
-        return ERR_NOT_FOUND;
-    }
-    if (num_entries > 1) {
-        TRACEF("MCFG has more than one entry, just taking the first\n");
-    }
-
-    size_t size_per_bus = PCIE_EXTENDED_CONFIG_SIZE *
-            PCIE_MAX_DEVICES_PER_BUS * PCIE_MAX_FUNCTIONS_PER_DEVICE;
-    int num_buses = table_start->EndBusNumber - table_start->StartBusNumber + 1;
-
-    config->segment_group = table_start->PciSegment;
-    config->start_bus = table_start->StartBusNumber;
-    config->end_bus = table_start->EndBusNumber;
-    // We need to adjust the physical address we received to align to the proper
-    // bus number.
-    //
-    // Citation from PCI Firmware Spec 3.0:
-    // For PCI-X and PCI Express platforms utilizing the enhanced
-    // configuration access method, the base address of the memory mapped
-    // configuration space always corresponds to bus number 0 (regardless
-    // of the start bus number decoded by the host bridge).
-    config->ecam_phys = table_start->Address + size_per_bus * config->start_bus;
-    // The size of this mapping is defined in the PCI Firmware v3 spec to be
-    // big enough for all of the buses in this config.
-    config->ecam_size = size_per_bus * num_buses;
     return NO_ERROR;
 }

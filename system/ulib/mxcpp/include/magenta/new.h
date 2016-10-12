@@ -16,10 +16,17 @@ private:
     unsigned state_;
 };
 
-void *operator new(size_t, AllocChecker* ac);
-void *operator new(size_t, void *ptr);
-void *operator new[](size_t, AllocChecker* ac);
-void *operator new[](size_t, void *ptr);
+void* operator new(size_t);
+void* operator new[](size_t);
+
+void* operator new(size_t, AllocChecker* ac);
+void* operator new(size_t, void *ptr);
+
+void* operator new[](size_t, AllocChecker* ac);
+void* operator new[](size_t, void *ptr);
+
 void operator delete(void *p);
 void operator delete[](void *p);
+void operator delete(void *p, size_t);
+void operator delete[](void *p, size_t);
 

@@ -11,6 +11,7 @@
 #include <err.h>
 #include <trace.h>
 #include <arch/x86/apic.h>
+#include <arch/x86/cpu_topology.h>
 #include <arch/x86/mmu.h>
 #include <platform.h>
 #include "platform_p.h"
@@ -18,7 +19,6 @@
 #include <platform/pc/acpi.h>
 #include <platform/console.h>
 #include <platform/keyboard.h>
-#include <dev/interrupt_event.h>
 #include <dev/pcie.h>
 #include <dev/uart.h>
 #include <arch/mmu.h>
@@ -96,7 +96,7 @@ static bool early_console_disabled;
  * kernel in a way that would to badly interact with a Linux kernel booting
  * from the same loader.
  */
-void platform_save_bootloader_data(void)
+static void platform_save_bootloader_data(void)
 {
     uint32_t *zp = (void*) ((uintptr_t)_zero_page_boot_params + KERNEL_BASE);
 
@@ -156,14 +156,14 @@ status_t display_get_info(struct display_info *info) {
     return gfxconsole_display_get_info(info);
 }
 
-void platform_early_display_init(void) {
+static void platform_early_display_init(void) {
     struct display_info info;
     void *bits;
 
     if (bootloader_fb_base == 0) {
         return;
     }
-    if (cmdline_get_bool("gfxconsole.early", true) == false) {
+    if (cmdline_get_bool("gfxconsole.early", false) == false) {
         early_console_disabled = true;
         return;
     }
@@ -210,6 +210,7 @@ static void platform_ensure_display_memtype(uint level)
             ROUNDUP(info.stride * info.height * 4, PAGE_SIZE),
             &addr,
             PAGE_SIZE_SHIFT,
+            0 /* min alloc gap */,
             bootloader_fb_base,
             0 /* vmm flags */,
             ARCH_MMU_FLAG_WRITE_COMBINING | ARCH_MMU_FLAG_PERM_READ |
@@ -245,14 +246,65 @@ void platform_early_init(void)
 }
 
 #if WITH_SMP
-void platform_init_smp(void)
+static void platform_init_smp(void)
 {
     uint32_t num_cpus = 0;
+
     status_t status = platform_enumerate_cpus(NULL, 0, &num_cpus);
     if (status != NO_ERROR) {
         TRACEF("failed to enumerate CPUs, disabling SMP\n");
         return;
     }
+
+    // allocate 2x the table for temporary work
+    uint32_t *apic_ids = malloc(sizeof(*apic_ids) * num_cpus * 2);
+    if (apic_ids == NULL) {
+        TRACEF("failed to allocate apic_ids table, disabling SMP\n");
+        return;
+    }
+
+    // a temporary list used before we filter out hyperthreaded pairs
+    uint32_t *apic_ids_temp = apic_ids + num_cpus;
+
+    // find the list of all cpu apic ids into a temporary list
+    uint32_t real_num_cpus;
+    status = platform_enumerate_cpus(apic_ids_temp, num_cpus, &real_num_cpus);
+    if (status != NO_ERROR || num_cpus != real_num_cpus) {
+        TRACEF("failed to enumerate CPUs, disabling SMP\n");
+        free(apic_ids);
+        return;
+    }
+
+    // Filter out hyperthreads if we've been told not to init them
+    bool use_ht = cmdline_get_bool("smp.ht", true);
+
+    // we're implicitly running on the BSP
+    uint32_t bsp_apic_id = apic_local_id();
+
+    // iterate over all the cores and optionally disable some of them
+    dprintf(INFO, "cpu topology:\n");
+    uint32_t using_count = 0;
+    for (uint32_t i = 0; i < num_cpus; ++i) {
+        x86_cpu_topology_t topo;
+        x86_cpu_topology_decode(apic_ids_temp[i], &topo);
+
+        // filter it out if it's a HT pair that we dont want to use
+        bool keep = true;
+        if (!use_ht && topo.smt_id != 0)
+            keep = false;
+
+        dprintf(INFO, "\t%u: apic id 0x%x package %u core %u smt %u%s%s\n",
+                i, apic_ids_temp[i], topo.package_id, topo.core_id, topo.smt_id,
+                (apic_ids_temp[i] == bsp_apic_id) ? " BSP" : "",
+                keep ? "" : " (not using)");
+
+        if (!keep)
+            continue;
+
+        // save this apic id into the primary list
+        apic_ids[using_count++] = apic_ids_temp[i];
+    }
+    num_cpus = using_count;
 
     // Find the CPU count limit
     uint32_t max_cpus = cmdline_get_uint32("smp.maxcpus", SMP_MAX_CPUS);
@@ -261,29 +313,15 @@ void platform_init_smp(void)
         max_cpus = SMP_MAX_CPUS;
     }
 
-    printf("Found %d cpus\n", num_cpus);
+    dprintf(INFO, "Found %u cpus\n", num_cpus);
     if (num_cpus > max_cpus) {
-        TRACEF("Clamping number of CPUs to %d\n", max_cpus);
+        TRACEF("Clamping number of CPUs to %u\n", max_cpus);
         num_cpus = max_cpus;
     }
 
-    uint32_t *apic_ids = malloc(sizeof(*apic_ids) * num_cpus);
-    if (apic_ids == NULL) {
-        TRACEF("failed to allocate apic_ids table, disabling SMP\n");
-        return;
-    }
-    uint32_t real_num_cpus;
-    status = platform_enumerate_cpus(apic_ids, num_cpus, &real_num_cpus);
-    if (status != NO_ERROR) {
-        TRACEF("failed to enumerate CPUs, disabling SMP\n");
-        free(apic_ids);
-        return;
-    }
-
-    uint32_t bsp_apic_id = apic_local_id();
-    if (num_cpus == max_cpus) {
-        // If we are at the max number of CPUs, sanity check that the bootstrap
-        // processor is in that set, to make sure clamping didn't go awry.
+    if (num_cpus == max_cpus || !use_ht) {
+        // If we are at the max number of CPUs, or have filtered out
+        // hyperthreads, sanity check that the bootstrap processor is in the set.
         bool found_bp = false;
         for (unsigned int i = 0; i < num_cpus; ++i) {
             if (apic_ids[i] == bsp_apic_id) {

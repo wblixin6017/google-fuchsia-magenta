@@ -10,6 +10,7 @@
 #include <debug.h>
 #include <dev/pcie.h>
 #include <err.h>
+#include <inttypes.h>
 #include <kernel/mutex.h>
 #include <kernel/spinlock.h>
 #include <kernel/vm.h>
@@ -562,7 +563,8 @@ static bool pcie_allocate_bar(pcie_bar_info_t* info) {
             TRACEF("Insufficient space to map BAR region while configuring BARs for device at "
                    "%02x:%02x.%01x (cfg vaddr = %p)\n",
                    dev->bus_id, dev->dev_id, dev->func_id, cfg);
-            TRACEF("BAR region size 0x%llx Alignment overhead 0x%llx Space available 0x%llx\n",
+            TRACEF("BAR region size %#" PRIx64 " Alignment overhead %#" PRIx64
+                   " Space available %#" PRIx64 "\n",
                    info->size, align_overhead, avail);
 
             return false;
@@ -609,7 +611,7 @@ static status_t pcie_allocate_bars(pcie_device_state_t* dev) {
 
     /* Has the device been unplugged already? */
     if (!dev->plugged_in) {
-        ret = ERR_NOT_MOUNTED;
+        ret = ERR_UNAVAILABLE;
         goto finished;
     }
 
@@ -663,15 +665,17 @@ static status_t pcie_claim_device(pcie_device_state_t* dev,
     DEBUG_ASSERT(dev);
     DEBUG_ASSERT(driver && driver->fn_table);
     DEBUG_ASSERT(is_mutex_held(&dev->start_claim_lock));
-    DEBUG_ASSERT(!dev->driver);
+
+    if (dev->driver) {
+        return ERR_ALREADY_BOUND;
+    }
 
     status_t ret;
     MUTEX_ACQUIRE(dev, dev_lock);
 
     /* Has the device been unplugged? */
     if (!dev->plugged_in) {
-        // TODO(johngro) : It would be nice to have a better error code for this.
-        ret = ERR_NOT_MOUNTED;
+        ret = ERR_UNAVAILABLE;
         goto finished;
     }
 
@@ -809,7 +813,7 @@ static bool pcie_start_devices_helper(struct pcie_device_state* dev, void* ctx, 
     return true;
 }
 
-void pcie_start_devices(pcie_bus_driver_state_t* bus_drv) {
+static void pcie_start_devices(pcie_bus_driver_state_t* bus_drv) {
     pcie_foreach_device(bus_drv, pcie_start_devices_helper, NULL);
 }
 
@@ -847,7 +851,7 @@ pcie_device_state_t* pcie_get_nth_device(uint32_t index) {
 }
 
 /*
- * Attaches a driver to a PCI device. Returns ERR_BUSY if the device has already been
+ * Attaches a driver to a PCI device. Returns ERR_ALREADY_BOUND if the device has already been
  * claimed by another driver.
  */
 status_t pcie_claim_and_start_device(pcie_device_state_t* dev,
@@ -927,7 +931,7 @@ status_t pcie_do_function_level_reset(pcie_device_state_t* dev) {
     // a long time (more than a second).  We should not hold the device lock for
     // the entire duration of the operation.  This should be re-done so that the
     // device can be placed into a "resetting" state (and other API calls can
-    // fail with ERR_BUSY, or some-such) and the lock can be released while the
+    // fail with ERR_BAD_STATE, or some-such) and the lock can be released while the
     // reset timeouts run.  This way, a spontaneous unplug event can occur and
     // not block the whole world because the device unplugged was in the process
     // of a FLR.
@@ -935,7 +939,7 @@ status_t pcie_do_function_level_reset(pcie_device_state_t* dev) {
 
     // Make certain to check to see if the device is still plugged in.
     if (!dev->plugged_in) {
-        ret = ERR_NOT_MOUNTED;
+        ret = ERR_UNAVAILABLE;
         goto finished;
     }
 
@@ -948,7 +952,7 @@ status_t pcie_do_function_level_reset(pcie_device_state_t* dev) {
     ret = pcie_get_irq_mode_internal(dev, &irq_mode_info);
     DEBUG_ASSERT(NO_ERROR == ret);
     if (irq_mode_info.mode != PCIE_IRQ_MODE_DISABLED) {
-        ret = ERR_BUSY;
+        ret = ERR_BAD_STATE;
         goto finished;
     }
     DEBUG_ASSERT(!irq_mode_info.registered_handlers);
@@ -1160,7 +1164,7 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
 
     if (bus_drv->ecam_windows) {
         TRACEF("Failed to initialize PCIe bus driver; driver already initialized\n");
-        return ERR_ALREADY_STARTED;
+        return ERR_BAD_STATE;
     }
 
     /* Initialize our state */
@@ -1287,7 +1291,7 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
         if ((ecam->io_range.size     & ((size_t)PAGE_SIZE   - 1)) ||
             (ecam->io_range.bus_addr & ((uint64_t)PAGE_SIZE - 1))) {
             TRACEF("Failed to initialize PCIe bus driver; Invalid ECAM window "
-                   "(0x%zx @ 0x%llx).  Windows must be page aligned and a "
+                   "%#zx @ %#" PRIx64 ").  Windows must be page aligned and a "
                    "multiple of pages in length.\n",
                    ecam->io_range.size, ecam->io_range.bus_addr);
             status = ERR_INVALID_ARGS;
@@ -1303,13 +1307,14 @@ status_t pcie_init(const pcie_init_info_t* init_info) {
                 ecam->io_range.size,
                 &window->vaddr,
                 PAGE_SIZE_SHIFT,
+                0 /* min alloc gap */,
                 ecam->io_range.bus_addr,
                 0 /* vmm flags */,
                 ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ |
                     ARCH_MMU_FLAG_PERM_WRITE);
         if (status != NO_ERROR) {
             TRACEF("Failed to initialize PCIe bus driver; Failed to map ECAM window "
-                   "(0x%zx @ 0x%llx).  Status = %d.\n",
+                   "(%#zx @ %#" PRIx64 ").  Status = %d.\n",
                    ecam->io_range.size, ecam->io_range.bus_addr, status);
             goto bailout;
         }
@@ -1391,7 +1396,7 @@ status_t pcie_modify_cmd(pcie_device_state_t* dev, uint16_t clr_bits, uint16_t s
         pcie_modify_cmd_internal(dev, clr_bits, set_bits);
         ret = NO_ERROR;
     } else {
-        ret = ERR_NOT_MOUNTED;
+        ret = ERR_UNAVAILABLE;
     }
 
     MUTEX_RELEASE(dev, dev_lock);

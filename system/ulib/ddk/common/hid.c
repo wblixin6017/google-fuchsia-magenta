@@ -5,6 +5,8 @@
 #include <ddk/common/hid.h>
 #include <ddk/common/hid-fifo.h>
 
+#include <magenta/listnode.h>
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,7 +148,7 @@ static mx_status_t hid_get_report_size(mx_hid_device_t* hid, const void* in_buf,
 }
 
 static mx_status_t hid_get_max_reportsize(mx_hid_device_t* hid, void* out_buf, size_t out_len) {
-    if (out_len < sizeof(int)) return ERR_INVALID_ARGS;
+    if (out_len < sizeof(input_report_size_t)) return ERR_INVALID_ARGS;
 
     input_report_size_t* reply = out_buf;
     *reply = 0;
@@ -170,7 +172,7 @@ static mx_status_t hid_get_report(mx_hid_device_t* hid, const void* in_buf, size
 
     input_report_size_t needed = hid_get_report_size_by_id(hid, inp->id, inp->type);
     if (needed == 0) return ERR_INVALID_ARGS;
-    if (out_len < (size_t)needed) return ERR_NOT_ENOUGH_BUFFER;
+    if (out_len < (size_t)needed) return ERR_BUFFER_TOO_SMALL;
 
     return hid->ops->get_report(hid, inp->type, inp->id, out_buf, out_len);
 }
@@ -211,12 +213,43 @@ static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_o
     mx_hid_instance_t* hid = to_hid_instance(dev);
 
     if (hid->flags & HID_FLAGS_DEAD) {
-        return ERR_CHANNEL_CLOSED;
+        return ERR_REMOTE_CLOSED;
     }
 
     size_t left;
     mtx_lock(&hid->fifo.lock);
-    ssize_t r = mx_hid_fifo_read(&hid->fifo, buf, count);
+    size_t xfer;
+    uint8_t rpt_id = 0;
+    if (hid->root->num_reports > 1) {
+        ssize_t r = mx_hid_fifo_peek(&hid->fifo, &rpt_id);
+        if (r < 1) {
+            printf("error reading hid device: fifo empty!\n");
+            mtx_unlock(&hid->fifo.lock);
+            return ERR_BAD_STATE;
+        }
+    }
+    xfer = hid_get_report_size_by_id(hid->root, rpt_id, INPUT_REPORT_INPUT);
+    if (xfer == 0) {
+        printf("error reading hid device: unknown report id (%u)!\n", rpt_id);
+        mtx_unlock(&hid->fifo.lock);
+        return ERR_BAD_STATE;
+    }
+#if BOOT_MOUSE_HACK
+    if (hid->root->dev_class != HID_DEV_CLASS_POINTER) {
+#endif
+    if (hid->root->num_reports > 1) {
+        // account for the report id
+        xfer++;
+    }
+#if BOOT_MOUSE_HACK
+    }
+#endif
+    if (xfer > count) {
+        printf("next report: %zd, read count: %zd\n", xfer, count);
+        mtx_unlock(&hid->fifo.lock);
+        return ERR_BUFFER_TOO_SMALL;
+    }
+    ssize_t r = mx_hid_fifo_read(&hid->fifo, buf, xfer);
     left = mx_hid_fifo_size(&hid->fifo);
     if (left == 0) {
         device_state_clr(&hid->dev, DEV_STATE_READABLE);
@@ -228,7 +261,7 @@ static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_o
 static ssize_t hid_ioctl_instance(mx_device_t* dev, uint32_t op,
         const void* in_buf, size_t in_len, void* out_buf, size_t out_len) {
     mx_hid_instance_t* hid = to_hid_instance(dev);
-    if (hid->flags & HID_FLAGS_DEAD) return ERR_CHANNEL_CLOSED;
+    if (hid->flags & HID_FLAGS_DEAD) return ERR_REMOTE_CLOSED;
 
     switch (op) {
     case IOCTL_INPUT_GET_PROTOCOL:
@@ -354,33 +387,84 @@ static int hid_find_report_id(input_report_id_t report_id, mx_hid_device_t* dev)
     return -1;
 }
 
+typedef struct hid_global_state {
+    uint32_t rpt_size;
+    uint32_t rpt_count;
+    input_report_id_t rpt_id;
+    list_node_t node;
+} hid_global_state_t;
+
+static mx_status_t hid_push_global_state(list_node_t* stack, hid_global_state_t* state) {
+    hid_global_state_t* entry = malloc(sizeof(*entry));
+    if (entry == NULL) {
+        return ERR_NO_MEMORY;
+    }
+    entry->rpt_size = state->rpt_size;
+    entry->rpt_count = state->rpt_count;
+    entry->rpt_id = state->rpt_id;
+    list_add_tail(stack, &entry->node);
+    return NO_ERROR;
+}
+
+static mx_status_t hid_pop_global_state(list_node_t* stack, hid_global_state_t* state) {
+    hid_global_state_t* entry = list_remove_tail_type(stack, hid_global_state_t, node);
+    if (entry == NULL) {
+        return ERR_BAD_STATE;
+    }
+    state->rpt_size = entry->rpt_size;
+    state->rpt_count = entry->rpt_count;
+    state->rpt_id = entry->rpt_id;
+    free(entry);
+    return NO_ERROR;
+}
+
+static void hid_clear_global_state(list_node_t* stack) {
+    hid_global_state_t* state, *tmp;
+    list_for_every_entry_safe(stack, state, tmp, hid_global_state_t, node) {
+        list_delete(&state->node);
+        free(state);
+    }
+}
+
 static mx_status_t hid_process_hid_report_desc(mx_hid_device_t* dev) {
     const uint8_t* buf = dev->hid_report_desc;
     const uint8_t* end = buf + dev->hid_report_desc_len;
+    mx_status_t status = NO_ERROR;
     hid_item_t item;
-    uint32_t rpt_size = 0;
-    uint32_t rpt_count = 0;
-    input_report_id_t rpt_id = 0;
+
+    hid_global_state_t state;
+    memset(&state, 0, sizeof(state));
+    list_node_t global_stack;
+    list_initialize(&global_stack);
     while (buf < end) {
         buf = hid_parse_short_item(buf, end, &item);
         switch (item.bType) {
         case HID_ITEM_TYPE_MAIN: {
-            input_report_size_t inc = rpt_size * rpt_count;
+            input_report_size_t inc = state.rpt_size * state.rpt_count;
             int idx;
             switch (item.bTag) {
             case HID_ITEM_MAIN_TAG_INPUT:
-                idx = hid_find_report_id(rpt_id, dev);
-                if (idx < 0) return ERR_NOT_SUPPORTED;
+                idx = hid_find_report_id(state.rpt_id, dev);
+                if (idx < 0) {
+                    status = ERR_NOT_SUPPORTED;
+                    goto done;
+                }
                 dev->sizes[idx].in_size += inc;
                 break;
             case HID_ITEM_MAIN_TAG_OUTPUT:
-                idx = hid_find_report_id(rpt_id, dev);
-                if (idx < 0) return ERR_NOT_SUPPORTED;
+                idx = hid_find_report_id(state.rpt_id, dev);
+                if (idx < 0) {
+                    status = ERR_NOT_SUPPORTED;
+                    goto done;
+                }
                 dev->sizes[idx].out_size += inc;
                 break;
             case HID_ITEM_MAIN_TAG_FEATURE:
-                idx = hid_find_report_id(rpt_id, dev);
-                if (idx < 0) return ERR_NOT_SUPPORTED;
+                idx = hid_find_report_id(state.rpt_id, dev);
+                if (idx < 0) {
+                    status = ERR_NOT_SUPPORTED;
+                    goto done;
+                }
                 dev->sizes[idx].feat_size += inc;
                 break;
             default:
@@ -391,18 +475,26 @@ static mx_status_t hid_process_hid_report_desc(mx_hid_device_t* dev) {
         case HID_ITEM_TYPE_GLOBAL:
             switch (item.bTag) {
             case HID_ITEM_GLOBAL_TAG_REPORT_SIZE:
-                rpt_size = (uint32_t)item.data;
+                state.rpt_size = (uint32_t)item.data;
                 break;
             case HID_ITEM_GLOBAL_TAG_REPORT_ID:
-                rpt_id = (input_report_id_t)item.data;
+                state.rpt_id = (input_report_id_t)item.data;
                 break;
             case HID_ITEM_GLOBAL_TAG_REPORT_COUNT:
-                rpt_count = (uint32_t)item.data;
+                state.rpt_count = (uint32_t)item.data;
                 break;
             case HID_ITEM_GLOBAL_TAG_PUSH:
+                status = hid_push_global_state(&global_stack, &state);
+                if (status != NO_ERROR) {
+                    goto done;
+                }
+                break;
             case HID_ITEM_GLOBAL_TAG_POP:
-                printf("HID push/pop not supported!\n");
-                return ERR_NOT_SUPPORTED;
+                status = hid_pop_global_state(&global_stack, &state);
+                if (status != NO_ERROR) {
+                    goto done;
+                }
+                break;
             default:
                 break;
             }
@@ -410,7 +502,9 @@ static mx_status_t hid_process_hid_report_desc(mx_hid_device_t* dev) {
             break;
         }
     }
-    return NO_ERROR;
+done:
+    hid_clear_global_state(&global_stack);
+    return status;
 }
 
 static inline void hid_init_report_sizes(mx_hid_device_t* dev) {
@@ -516,13 +610,11 @@ mx_status_t hid_add_device(mx_driver_t* drv, mx_hid_device_t* dev, mx_device_t* 
             return ERR_NOT_SUPPORTED;
         }
 
+        // Disable numlock
         if (dev->dev_class == HID_DEV_CLASS_KBD) {
             uint8_t zero = 0;
-            status = dev->ops->set_report(dev, HID_REPORT_TYPE_OUTPUT, 0, &zero, sizeof(zero));
-            if (status < 0) {
-                printf("W: could not disable NUMLOCK: %d\n", status);
-                // continue anyway
-            }
+            dev->ops->set_report(dev, HID_REPORT_TYPE_OUTPUT, 0, &zero, sizeof(zero));
+            // ignore failure for now
         }
     }
 
@@ -554,7 +646,7 @@ mx_status_t hid_add_device(mx_driver_t* drv, mx_hid_device_t* dev, mx_device_t* 
 
     status = dev->ops->set_idle(dev, 0, 0);
     if (status != NO_ERROR) {
-        printf("W: set_idle failed: %d\n", status);
+        printf("W: set_idle failed for %s: %d\n", name, status);
         // continue anyway
     }
 

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,24 +31,24 @@
 #define MALLOC_SIZE SMALL_MALLOC_SIZE
 #endif
 
-static volatile int xlock = 0;
+static atomic_int xlock = ATOMIC_VAR_INIT(0);
 
-static void _lock(volatile int* lock) {
-    while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE) != 0)
+static void _lock(atomic_int* lock) {
+    while (atomic_exchange(lock, 1) != 0)
         ;
 }
-static void _unlock(volatile int* lock) {
-    __atomic_store_n(lock, 0, __ATOMIC_RELEASE);
+static void _unlock(atomic_int* lock) {
+    atomic_store(lock, 0);
 }
 
-static void _ftxlock(volatile int* lock) {
-    while (__atomic_exchange_n(lock, 1, __ATOMIC_ACQUIRE) != 0) {
-        mx_futex_wait((int*)lock, 1, MX_TIME_INFINITE);
+static void _ftxlock(atomic_int* lock) {
+    while (atomic_exchange(lock, 1) != 0) {
+        mx_futex_wait(lock, 1, MX_TIME_INFINITE);
     }
 }
-static void _ftxunlock(volatile int* lock) {
-    __atomic_store_n(lock, 0, __ATOMIC_RELEASE);
-    mx_futex_wake((int*)lock, 1);
+static void _ftxunlock(atomic_int* lock) {
+    atomic_store(lock, 0);
+    mx_futex_wake(lock, 1);
 }
 
 #if USE_PTHREAD_MUTEXES
@@ -95,7 +97,7 @@ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 typedef struct info {
     pthread_t t;
     int n;
-    int lock;
+    atomic_int lock;
     int size[BUCKETS];
     void* bucket[BUCKETS];
 } info_t;
@@ -155,8 +157,7 @@ void* blaster(void* arg) {
 }
 
 int heapblaster(int count, int locking) {
-    info_t info[THREADS];
-    memset(info, 0, sizeof(info));
+    info_t info[THREADS] = {};
     if (count < 1)
         count = 1;
     if (count >= THREADS)
@@ -194,11 +195,11 @@ int writespam(int opt) {
     for (;;) {
         count++;
         if ((r = mx_msgpipe_write(p[0], data, sizeof(data), NULL, 0, 0)) < 0) {
-            printf("evil-tests: SUCCESS, writespammer error %d after only %llu writes\n", r, count);
+            printf("evil-tests: SUCCESS, writespammer error %d after only %" PRIu64 " writes\n", r, count);
             return 0;
         }
         if ((count % 1000) == 0) {
-            printf("evil-tests: wrote %llu messages (%llu bytes).\n", count, count * sizeof(data));
+            printf("evil-tests: wrote %" PRIu64 " messages (%" PRIu64 " bytes).\n", count, count * sizeof(data));
         }
     }
     if (opt == 0) {
@@ -219,12 +220,12 @@ int handlespam(void) {
     for (;;) {
         mx_status_t status;
         if ((status = mx_msgpipe_create(p, 0)) < 0) {
-            printf("evil-tests: SUCCESS, pipe create failed %d after %llu created\n", status, count);
+            printf("evil-tests: SUCCESS, pipe create failed %d after %" PRIu64 " created\n", status, count);
             return 0;
         }
         count++;
         if ((count % 1000) == 0) {
-            printf("evil-tests: created %llu message pipes\n", count);
+            printf("evil-tests: created %" PRIu64 " message pipes\n", count);
         }
     }
     return 0;

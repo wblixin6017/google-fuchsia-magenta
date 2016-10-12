@@ -14,6 +14,7 @@
 // in one fails.
 
 #include <stddef.h>
+#include <threads.h>
 #include <magenta/types.h>
 #include <magenta/compiler.h>
 
@@ -22,8 +23,6 @@ __BEGIN_CDECLS
 // Basic watchdog/timeout duration.
 #define TU_WATCHDOG_DURATION_SECONDS 2
 #define TU_WATCHDOG_DURATION_NANOSECONDS ((int64_t) TU_WATCHDOG_DURATION_SECONDS * 1000 * 1000 * 1000)
-
-typedef intptr_t (*tu_thread_start_func_t)(void*);
 
 void* tu_malloc(size_t size);
 
@@ -56,10 +55,10 @@ mx_handle_t tu_launch_mxio_etc(const char* name,
                                size_t num_handles, mx_handle_t* handles,
                                uint32_t* handle_ids);
 
-// A wrapper on mx_thread_create.
+// A wrapper on C11 thrd_create.
 
-mx_handle_t tu_thread_create(tu_thread_start_func_t entry, void* arg,
-                             const char* name);
+void tu_thread_create_c11(thrd_t* thread, thrd_start_t entry, void* arg,
+                          const char* name);
 
 // A wrapper on mx_msgpipe_create.
 // For callers that have separate variables for each side of the pipe, this takes two pointers
@@ -82,10 +81,10 @@ void tu_message_read(mx_handle_t handle, void* bytes, uint32_t* num_bytes,
 // The call fails and the process terminates if the call times out within TU_WATCHDOG_DURATION_NANOSECONDS.
 bool tu_wait_readable(mx_handle_t handle);
 
-// Wait for |handle| to be signalled (MX_SIGNAL_SIGNALED).
+// Wait for |handle| to be signaled (MX_SIGNAL_SIGNALED).
 // The call fails and the process terminates if the call times out within TU_WATCHDOG_DURATION_NANOSECONDS.
 
-void tu_wait_signalled(mx_handle_t handle);
+void tu_wait_signaled(mx_handle_t handle);
 
 // Fetch the return code of |process|.
 
@@ -105,10 +104,10 @@ void tu_set_system_exception_port(mx_handle_t eport, uint64_t key);
 
 // Set the exception port for |handle| which is a process or thread.
 
-void tu_set_exception_port(mx_handle_t handle, mx_handle_t eport, uint64_t key);
+void tu_set_exception_port(mx_handle_t handle, mx_handle_t eport, uint64_t key, uint32_t options);
 
 // Get basic handle info for |handle|.
 
-void tu_handle_get_basic_info(mx_handle_t handle, mx_handle_basic_info_t* info);
+void tu_handle_get_basic_info(mx_handle_t handle, mx_info_handle_basic_t* info);
 
 __END_CDECLS

@@ -70,10 +70,10 @@ static void hci_event_complete(iotxn_t* txn, void* cookie) {
         uint8_t* buffer;
         txn->ops->mmap(txn, (void **)&buffer);
         size_t length = txn->actual;
+        size_t packet_size = buffer[1] + 2;
 
         // simple case - packet fits in received data
         if (hci->event_buffer_offset == 0 && length >= 2) {
-            size_t packet_size = buffer[1] + 2;
             if (packet_size == length) {
                 mx_status_t status = mx_msgpipe_write(hci->control_pipe[0], buffer, length,
                                                             NULL, 0, 0);
@@ -92,9 +92,7 @@ static void hci_event_complete(iotxn_t* txn, void* cookie) {
         }
 
         memcpy(&hci->event_buffer[hci->event_buffer_offset], buffer, length);
-        size_t packet_size;
         if (hci->event_buffer_offset == 0) {
-            packet_size = buffer[1] + 2;
             hci->event_buffer_packet_length = packet_size;
         } else {
             packet_size = hci->event_buffer_packet_length;
@@ -102,7 +100,6 @@ static void hci_event_complete(iotxn_t* txn, void* cookie) {
         hci->event_buffer_offset += length;
 
         // check to see if we have a full packet
-        packet_size = hci->event_buffer[1] + 2;
         if (packet_size <= hci->event_buffer_offset) {
             mx_status_t status = mx_msgpipe_write(hci->control_pipe[0], hci->event_buffer,
                                                         packet_size, NULL, 0, 0);
@@ -236,6 +233,22 @@ static void hci_unbind(mx_device_t* device) {
 
 static mx_status_t hci_release(mx_device_t* device) {
     hci_t* hci = get_hci(device);
+
+    iotxn_t* txn;
+    while ((txn = list_remove_head_type(&hci->free_event_reqs, iotxn_t, node)) != NULL) {
+        txn->ops->release(txn);
+    }
+    while ((txn = list_remove_head_type(&hci->free_acl_read_reqs, iotxn_t, node)) != NULL) {
+        txn->ops->release(txn);
+    }
+    while ((txn = list_remove_head_type(&hci->free_acl_write_reqs, iotxn_t, node)) != NULL) {
+        txn->ops->release(txn);
+    }
+
+    mx_handle_close(hci->control_pipe[0]);
+    mx_handle_close(hci->control_pipe[1]);
+    mx_handle_close(hci->acl_pipe[0]);
+    mx_handle_close(hci->acl_pipe[1]);
     free(hci);
 
     return NO_ERROR;
@@ -294,15 +307,11 @@ static mx_status_t hci_bind(mx_driver_t* driver, mx_device_t* device) {
 
     mx_status_t status = mx_msgpipe_create(hci->control_pipe, 0);
     if (status < 0) {
-        free(hci);
-        return ERR_NO_MEMORY;
+        goto fail;
     }
     status = mx_msgpipe_create(hci->acl_pipe, 0);
     if (status < 0) {
-        mx_handle_close(hci->control_pipe[0]);
-        mx_handle_close(hci->control_pipe[1]);
-        free(hci);
-        return ERR_NO_MEMORY;
+        goto fail;
     }
 
     list_initialize(&hci->free_event_reqs);
@@ -313,8 +322,10 @@ static mx_status_t hci_bind(mx_driver_t* driver, mx_device_t* device) {
 
     for (int i = 0; i < EVENT_REQ_COUNT; i++) {
         iotxn_t* txn = usb_alloc_iotxn(intr_addr, intr_max_packet, 0);
-        if (!txn)
-            return ERR_NO_MEMORY;
+        if (!txn) {
+            status = ERR_NO_MEMORY;
+            goto fail;
+        }
         txn->length = intr_max_packet;
         txn->complete_cb = hci_event_complete;
         txn->cookie = hci;
@@ -322,8 +333,10 @@ static mx_status_t hci_bind(mx_driver_t* driver, mx_device_t* device) {
     }
     for (int i = 0; i < ACL_READ_REQ_COUNT; i++) {
         iotxn_t* txn = usb_alloc_iotxn(bulk_in_addr, ACL_BUF_SIZE, 0);
-        if (!txn)
-            return ERR_NO_MEMORY;
+        if (!txn) {
+            status = ERR_NO_MEMORY;
+            goto fail;
+        }
         txn->length = ACL_BUF_SIZE;
         txn->complete_cb = hci_acl_read_complete;
         txn->cookie = hci;
@@ -331,8 +344,10 @@ static mx_status_t hci_bind(mx_driver_t* driver, mx_device_t* device) {
     }
     for (int i = 0; i < ACL_WRITE_REQ_COUNT; i++) {
         iotxn_t* txn = usb_alloc_iotxn(bulk_out_addr, ACL_BUF_SIZE, 0);
-        if (!txn)
-            return ERR_NO_MEMORY;
+        if (!txn) {
+            status = ERR_NO_MEMORY;
+            goto fail;
+        }
         txn->length = ACL_BUF_SIZE;
         txn->complete_cb = hci_acl_write_complete;
         txn->cookie = hci;
@@ -352,28 +367,30 @@ static mx_status_t hci_bind(mx_driver_t* driver, mx_device_t* device) {
 
     hci->device.protocol_id = MX_PROTOCOL_BLUETOOTH_HCI;
     hci->device.protocol_ops = &hci_proto;
-    device_add(&hci->device, device);
+    status = device_add(&hci->device, device);
+    if (status == NO_ERROR) return NO_ERROR;
 
-    return NO_ERROR;
+fail:
+    printf("hci_bind failed: %d\n", status);
+    hci_release(&hci->device);
+    return status;
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_USB_DEVICE),
+mx_driver_t _driver_usb_bt_hci = {
+    .ops = {
+        .bind = hci_bind,
+    },
+};
+
+MAGENTA_DRIVER_BEGIN(_driver_usb_bt_hci, "usb-bt-hci", "magenta", "0.1", 4)
+    BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_USB),
 #if defined(USB_VID) && defined(USB_PID)
     BI_ABORT_IF(NE, BIND_USB_VID, USB_VID),
     BI_MATCH_IF(EQ, BIND_USB_PID, USB_PID),
+    BI_ABORT(),
 #else
     BI_ABORT_IF(NE, BIND_USB_CLASS, 224),
     BI_ABORT_IF(NE, BIND_USB_SUBCLASS, 1),
     BI_MATCH_IF(EQ, BIND_USB_PROTOCOL, 1),
 #endif
-};
-
-mx_driver_t _driver_usb_bt_hci BUILTIN_DRIVER = {
-    .name = "usb_bt_hci",
-    .ops = {
-        .bind = hci_bind,
-    },
-    .binding = binding,
-    .binding_size = sizeof(binding),
-};
+MAGENTA_DRIVER_END(_driver_usb_bt_hci)

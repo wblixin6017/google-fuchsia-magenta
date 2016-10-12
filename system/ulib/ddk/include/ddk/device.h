@@ -5,6 +5,7 @@
 #pragma once
 
 #include <magenta/compiler.h>
+#include <magenta/device/device.h>
 #include <magenta/syscalls.h>
 #include <magenta/types.h>
 #include <ddk/iotxn.h>
@@ -23,15 +24,10 @@ typedef struct mx_protocol_device mx_protocol_device_t;
 
 typedef struct vnode vnode_t;
 
-//TODO: multi-char constants are implementation-specific
-//      move to something more ABI-stable
-
-#define MX_DEVICE_NAME_MAX 32
+#define MX_DEVICE_NAME_MAX 31
 
 struct mx_device {
     uintptr_t magic;
-
-    const char* name;
 
     mx_protocol_device_t* ops;
 
@@ -39,8 +35,7 @@ struct mx_device {
     uint32_t refcount;
 
     mx_handle_t event;
-    mx_handle_t remote;
-    uintptr_t remote_id;
+    mx_handle_t rpc;
 
     // most devices implement a single
     // protocol beyond the base device protocol
@@ -66,14 +61,14 @@ struct mx_device {
     // for list of all unmatched devices, if not bound
     // TODO: use this for general lifecycle tracking
 
-    vnode_t* vnode;
-    // used by devmgr internals
-
     mx_device_prop_t* props;
     uint32_t prop_count;
     // properties for driver binding
 
-    char namedata[MX_DEVICE_NAME_MAX + 1];
+    void* ctx;
+    // internal use
+
+    char name[MX_DEVICE_NAME_MAX + 1];
 };
 
 // mx_device_t objects must be created or initialized by the driver manager's
@@ -95,11 +90,25 @@ typedef struct mx_protocol_device {
     //
     // The per-instance child should be created with device_create() or device_init(),
     // but added with device_add_instance() instead of device_add().
+    //
+    // open is also called whenever a device is cloned (a new handle is obtained).
+
+    mx_status_t (*openat)(mx_device_t* dev, mx_device_t** dev_out, const char* path, uint32_t flags);
+    // Experimental open variant where a sub-device path is specified.
+    // Otherwise identical operation as open.  The default implementation
+    // simply returns ERR_NOT_SUPPORTED.
 
     mx_status_t (*close)(mx_device_t* dev);
+    // close is called whenever a handle to the device is closed (or the process
+    // holding it exits).  Usually there's no need for a specific close hook, just
+    // handling release() which is called after the final handle is closed and the
+    // device is unbound is sufficient.
 
     void (*unbind)(mx_device_t* dev);
     // Notifies the device that its parent is being removed (has been hot unplugged, etc).
+    // Usually the device should then remove any children it has created.
+    // When unbind() is called, the device is no longer open()able except by cloning
+    // or openat()ing existing open handles.
 
     mx_status_t (*release)(mx_device_t* dev);
     // Release any resources held by the mx_device_t and free() it.
@@ -133,11 +142,10 @@ static inline mx_status_t device_get_protocol(mx_device_t* dev, uint32_t proto_i
 }
 
 // State change functions
-// Used by driver to indicate if there's data available to read,
-// or room to write, or an error condition.
-#define DEV_STATE_READABLE MX_SIGNAL_SIGNAL0
-#define DEV_STATE_WRITABLE MX_SIGNAL_SIGNAL1
-#define DEV_STATE_ERROR MX_SIGNAL_SIGNAL2
+
+#define DEV_STATE_READABLE DEVICE_SIGNAL_READABLE
+#define DEV_STATE_WRITABLE DEVICE_SIGNAL_WRITABLE
+#define DEV_STATE_ERROR DEVICE_SIGNAL_ERROR
 
 static inline void device_state_set(mx_device_t* dev, mx_signals_t stateflag) {
     mx_object_signal(dev->event, 0, stateflag);

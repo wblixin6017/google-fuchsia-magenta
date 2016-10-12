@@ -3,7 +3,9 @@
 // found in the LICENSE file.
 
 #include <ctype.h>
+#include <dirent.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -11,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <launchpad/launchpad.h>
@@ -58,6 +61,7 @@ void beep(void) {
 
 #define CTRL_C 3
 #define BACKSPACE 8
+#define TAB 9
 #define NL 10
 #define CTRL_L 12
 #define CR 13
@@ -167,6 +171,123 @@ void settitle(const char* title) {
     cputs(str, n + 1);
 }
 
+static void tab_complete(editstate* es) {
+    size_t token_start = 0;
+    bool in_token = false;
+    bool in_env = false;
+    bool found_command = false;
+    char tmp[2048];
+    const char* path = NULL;
+    char* prefix = NULL;
+    size_t prefix_len;
+    DIR* dir;
+    struct dirent *de;
+    char result[2048];
+    size_t result_count = 0;
+    size_t result_len;
+    struct stat s;
+
+    for (size_t i = 0; i < (size_t)es->pos; i++) {
+        if (es->line[i] == ' ') {
+            token_start = i + 1;
+
+            if (in_token && ! in_env) {
+                found_command = true;
+            }
+
+            in_token = false;
+            in_env = false;
+            continue;
+        }
+
+        in_token = true;
+        in_env = in_env || es->line[i] == '=';
+    }
+
+    if (in_env) {
+        return;
+    }
+
+    strcpy(tmp, es->line + token_start);
+    tmp[es->pos - token_start] = '\0';
+
+    prefix = strrchr(tmp, '/');
+
+    if (prefix) {
+        *(prefix++) = '\0';
+        path = tmp;
+
+        if (!*path) {
+            path = "/";
+        }
+    } else {
+        prefix = tmp;
+
+        if (!found_command) {
+            path = "/boot/bin";
+        } else {
+            path = ".";
+        }
+    }
+
+    prefix_len = strlen(prefix);
+
+    dir = opendir(path);
+
+    if (!dir) {
+        return;
+    }
+
+    while ((de = readdir(dir)) != NULL) {
+        if (strncmp(prefix, de->d_name, prefix_len)) {
+            continue;
+        }
+
+        if (!(result_count++)) {
+            strcpy(result, de->d_name);
+            result_len = strlen(result);
+            continue;
+        }
+
+        for (result_len = 0;
+             de->d_name[result_len] &&
+                 result[result_len] == de->d_name[result_len];
+             result_len++);
+
+        if (result_len <= prefix_len) {
+            closedir(dir);
+            return;
+        }
+
+        result[result_len] = '\0';
+    }
+
+    if (result_count == 0) {
+        closedir(dir);
+        return;
+    }
+
+    if (result_count == 1
+        && result_len < sizeof(result) - 1
+        && snprintf(tmp, sizeof(tmp), "%s/%s", path, result) < (int)sizeof(tmp)) {
+
+        if (stat(tmp, &s) < 0 || !(s.st_mode & S_IFDIR)) {
+            strcat(result, " ");
+        } else {
+            strcat(result, "/");
+        }
+
+        result_len++;
+    }
+
+    memmove(es->line + es->pos + result_len - prefix_len,
+            es->line + es->pos, es->len - es->pos);
+    memcpy(es->line + es->pos - prefix_len, result, result_len);
+    es->pos += result_len - prefix_len;
+    es->len += result_len - prefix_len;
+    closedir(dir);
+}
+
 int readline(editstate* es) {
     int a, b, c;
     es->len = 0;
@@ -208,6 +329,10 @@ again:
             continue;
         }
         switch (c) {
+        case TAB:
+            tab_complete(es);
+            cputs(erase_line, sizeof(erase_line));
+            goto again;
         case CTRL_C:
             es->len = 0;
             es->pos = 0;
@@ -219,7 +344,6 @@ again:
             goto again;
         case BACKSPACE:
         case DELETE:
-        backspace:
             if (es->pos > 0) {
                 es->pos--;
                 es->len--;
@@ -312,12 +436,13 @@ void joinproc(mx_handle_t p) {
     }
 
     // read the return code
-    mx_process_info_t proc_info;
-    mx_ssize_t ret = mx_handle_get_info(p, MX_INFO_PROCESS, &proc_info, sizeof(proc_info));
+    mx_info_process_t proc_info;
+    mx_ssize_t ret = mx_object_get_info(p, MX_INFO_PROCESS, sizeof(proc_info.rec),
+            &proc_info, sizeof(proc_info));
     if (ret != sizeof(proc_info)) {
-        fprintf(stderr, "[process(%x): handle_get_info failed? %ld]\n", p, ret);
+        fprintf(stderr, "[process(%x): object_get_info failed? %" PRIdPTR "]\n", p, ret);
     } else {
-        fprintf(stderr, "[process(%x): status: %d]\n", p, proc_info.return_code);
+        fprintf(stderr, "[process(%x): status: %d]\n", p, proc_info.rec.return_code);
     }
 
     settitle("mxsh");
@@ -419,7 +544,7 @@ mx_status_t command(int argc, char** argv, bool runbg) {
     }
 
     //TODO: some kind of PATH processing
-    if (argv[0][0] != '/') {
+    if (argv[0][0] != '/' && argv[0][0] != '.') {
         snprintf(tmp, sizeof(tmp), "%s%s", "/boot/bin/", argv[0]);
         argv[0] = tmp;
     }
@@ -437,6 +562,12 @@ mx_status_t command(int argc, char** argv, bool runbg) {
     if ((status = launchpad_load_vdso(lp, MX_HANDLE_INVALID)) < 0) {
         fprintf(stderr, "could not load vDSO after binary '%s' (%d)\n",
                 argv[0], status);
+        goto done;
+    }
+
+    status = launchpad_clone_mxio_cwd(lp);
+    if(status != NO_ERROR) {
+        fprintf(stderr, "could not copy cwd handle: (%d)\n", status);
         goto done;
     }
 
@@ -488,7 +619,7 @@ static void send_debug_command(const char* cmd) {
         return;
     }
 
-    int fd = open("/dev/dmctl", O_WRONLY);
+    int fd = open("/dev/class/misc/dmctl", O_WRONLY);
     if (fd < 0) {
         return;
     }
@@ -499,6 +630,19 @@ static void send_debug_command(const char* cmd) {
 
     write(fd, buf, len);
     close(fd);
+}
+
+static void mojo_launch(const char* url) {
+    int fd = open("/dev/class/misc/dmctl", O_WRONLY);
+    if (fd >= 0) {
+        int r = write(fd, url, strlen(url));
+        if (r < 0) {
+            fprintf(stderr, "error: cannot write dmctl: %d\n", r);
+        }
+        close(fd);
+    } else {
+        fprintf(stderr, "error: cannot open dmctl: %d\n", fd);
+    }
 }
 
 void execline(char* line) {
@@ -517,6 +661,11 @@ void execline(char* line) {
     while ((len > 0) && (line[len - 1] <= ' ')) {
         len--;
         line[len] = 0;
+    }
+
+    if (!strncmp(line, "mojo:", 5)) {
+        mojo_launch(line);
+        return;
     }
 
     // handle backgrounding
@@ -546,6 +695,14 @@ void execscript(const char* fn) {
     }
 }
 
+void greet(void) {
+    const char* banner = "\033]2;mxsh\007\nMXCONSOLE...\n";
+    cputs(banner, strlen(banner));
+
+    char cmd[] = "motd";
+    execline(cmd);
+}
+
 void console(void) {
     editstate es;
 
@@ -565,8 +722,7 @@ int main(int argc, char** argv) {
     }
 
     interactive = true;
-    const char* banner = "\033]2;mxsh\007\nMXCONSOLE...\n";
-    cputs(banner, strlen(banner));
+    greet();
     console();
     return 0;
 }

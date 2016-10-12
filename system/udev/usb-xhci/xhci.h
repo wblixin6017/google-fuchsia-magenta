@@ -5,45 +5,25 @@
 #pragma once
 
 #include <ddk/completion.h>
-#include <ddk/protocol/usb-device.h>
-#include <magenta/hw/usb-hub.h>
 #include <magenta/hw/usb.h>
+#include <magenta/hw/usb-hub.h>
 #include <magenta/types.h>
-#include <stdbool.h>
-#include <magenta/compiler.h>
 #include <magenta/listnode.h>
+#include <stdbool.h>
 #include <threads.h>
 
 #include "xhci-hw.h"
+#include "xhci-root-hub.h"
+#include "xhci-trb.h"
 
 #define COMMAND_RING_SIZE 8
 #define EVENT_RING_SIZE 64
 #define TRANSFER_RING_SIZE 64
 #define ERST_ARRAY_SIZE 1
 
-// used for both command ring and transfer rings
-typedef struct xhci_transfer_ring {
-    xhci_trb_t* start;
-    xhci_trb_t* current;        // next to be filled by producer
-    uint8_t pcs;                // producer cycle status
-    xhci_trb_t* dequeue_ptr;    // next to be processed by consumer
-                                // (not used for command ring)
-    size_t size;                // number of TRBs in ring
-
-    mtx_t mutex;
-    list_node_t pending_requests;   // pending transfers that should be completed when ring is dead
-    completion_t completion;        // signaled when pending_requests is empty
-    bool dead;
-    list_node_t deferred_txns;      // used by upper layer to defer iotxns when ring is full
-} xhci_transfer_ring_t;
-
-typedef struct xhci_event_ring {
-    xhci_trb_t* start;
-    xhci_trb_t* current;
-    xhci_trb_t* end;
-    erst_entry_t* erst_array;
-    uint8_t ccs; // consumer cycle status
-} xhci_event_ring_t;
+#define XHCI_RH_USB_2 0 // index of USB 2.0 virtual root hub device
+#define XHCI_RH_USB_3 1 // index of USB 2.0 virtual root hub device
+#define XHCI_RH_COUNT 2 // number of virtual root hub devices
 
 typedef struct xhci_slot {
     xhci_slot_context_t* sc;
@@ -54,7 +34,6 @@ typedef struct xhci_slot {
     uint32_t port;
     uint32_t rh_port;
     usb_speed_t speed;
-    bool enabled;
 } xhci_slot_t;
 
 typedef struct xhci xhci_t;
@@ -66,20 +45,6 @@ typedef struct {
     xhci_command_complete_cb callback;
     void* data;
 } xhci_command_context_t;
-
-typedef void (*xhci_transfer_complete_cb)(mx_status_t result, void* data);
-
-typedef struct {
-    xhci_transfer_complete_cb callback;
-    void* data;
-
-    // transfer ring we are queued on
-    xhci_transfer_ring_t* transfer_ring;
-    // TRB following this transaction, for updating transfer ring dequeue_ptr
-    xhci_trb_t* dequeue_ptr;
-    // for transfer ring's list of pending requests
-    list_node_t node;
-} xhci_transfer_context_t;
 
 struct xhci {
     // MMIO data structures
@@ -98,12 +63,25 @@ struct xhci {
     // One event ring for now, but we will have multiple if we use multiple interruptors
     xhci_event_ring_t event_rings[1];
 
+    size_t page_size;
     size_t max_slots;
     size_t max_interruptors;
     size_t context_size;
+    // true if controller supports large ESIT payloads
+    bool large_esit;
 
-    // Root hub state
+    // total number of ports for the root hub
     uint32_t rh_num_ports;
+
+    // state for virtual root hub devices
+    // one for USB 2.0 and the other for USB 3.0
+    xhci_root_hub_t root_hubs[XHCI_RH_COUNT];
+
+    // Maps root hub port index to the index of their virtual root hub
+    uint8_t* rh_map;
+
+    // Maps root hub port index to index relative to their virtual root hub
+    uint8_t* rh_port_map;
 
     // device thread stuff
     thrd_t device_thread;
@@ -117,7 +95,13 @@ struct xhci {
     // DMA buffers used by xhci_device_thread in xhci-device-manager.c
     uint8_t* input_context;
     usb_device_descriptor_t* device_descriptor;
-    usb_configuration_descriptor_t* config_descriptor;
+
+    // for xhci_get_current_frame()
+    mtx_t mfindex_mutex;
+    // number of times mfindex has wrapped
+    uint64_t mfindex_wrap_count;
+   // time of last mfindex wrap
+    mx_time_t last_mfindex_wrap;
 };
 
 mx_status_t xhci_init(xhci_t* xhci, void* mmio);
@@ -125,42 +109,19 @@ void xhci_start(xhci_t* xhci);
 void xhci_handle_interrupt(xhci_t* xhci, bool legacy);
 void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t control_bits,
                        xhci_command_context_t* context);
+void xhci_wait_bits(volatile uint32_t* ptr, uint32_t bits, uint32_t expected);
+
+// returns monotonically increasing frame count
+uint64_t xhci_get_current_frame(xhci_t* xhci);
 
 uint8_t xhci_endpoint_index(uint8_t ep_address);
 
-// xhci-device-manager.c
-mx_status_t xhci_enumerate_device(xhci_t* xhci, uint32_t hub_address, uint32_t port, usb_speed_t speed);
-mx_status_t xhci_device_disconnected(xhci_t* xhci, uint32_t hub_address, uint32_t port);
-void xhci_start_device_thread(xhci_t* xhci);
-mx_status_t xhci_configure_hub(xhci_t* xhci, int slot_id, usb_speed_t speed,
-                               usb_hub_descriptor_t* descriptor);
-mx_status_t xhci_rh_port_connected(xhci_t* xhci, uint32_t port);
-mx_status_t xhci_rh_port_disconnected(xhci_t* xhci, uint32_t port);
+// returns index into xhci->root_hubs[], or -1 if not a root hub
+int xhci_get_root_hub_index(xhci_t* xhci, uint32_t device_id);
 
-// xhci-root-hub.c
-void xhci_handle_port_changed_event(xhci_t* xhci, xhci_trb_t* trb);
-void xhci_handle_rh_port_connected(xhci_t* xhci, int port);
-
-// xhci-transfer.c
-mx_status_t xhci_queue_transfer(xhci_t* xhci, int slot_id, usb_setup_t* setup, mx_paddr_t data,
-                                uint16_t length, int ep, int direction,
-                                xhci_transfer_context_t* context, list_node_t* txn_node);
-mx_status_t xhci_control_request(xhci_t* xhci, int slot_id, uint8_t request_type, uint8_t request,
-                                 uint16_t value, uint16_t index, mx_paddr_t data, uint16_t length);
-void xhci_cancel_transfers(xhci_t* xhci, xhci_transfer_ring_t* ring);
-mx_status_t xhci_get_descriptor(xhci_t* xhci, int slot_id, uint8_t type, uint16_t value,
-                                uint16_t index, void* data, uint16_t length);
-void xhci_handle_transfer_event(xhci_t* xhci, xhci_trb_t* trb);
-
-// xhci-trb.c
-mx_status_t xhci_transfer_ring_init(xhci_t* xhci, xhci_transfer_ring_t* tr, int count);
-void xhci_transfer_ring_free(xhci_t* xhci, xhci_transfer_ring_t* ring);
-size_t xhci_transfer_ring_free_trbs(xhci_transfer_ring_t* ring);
-mx_status_t xhci_event_ring_init(xhci_t* xhci, int interruptor, int count);
-void xhci_clear_trb(xhci_trb_t* trb);
-void* xhci_read_trb_ptr(xhci_t* xhci, xhci_trb_t* trb);
-xhci_trb_t* xhci_get_next_trb(xhci_t* xhci, xhci_trb_t* trb);
-void xhci_increment_ring(xhci_t* xhci, xhci_transfer_ring_t* ring);
+inline bool xhci_is_root_hub(xhci_t* xhci, uint32_t device_id) {
+    return xhci_get_root_hub_index(xhci, device_id) >= 0;
+}
 
 // upper layer routines in usb-xhci.c
 void* xhci_malloc(xhci_t* xhci, size_t size);
@@ -170,8 +131,6 @@ void xhci_free_phys(xhci_t* xhci, mx_paddr_t addr);
 mx_paddr_t xhci_virt_to_phys(xhci_t* xhci, mx_vaddr_t addr);
 mx_vaddr_t xhci_phys_to_virt(xhci_t* xhci, mx_paddr_t addr);
 
-mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed,
-                            usb_device_descriptor_t* device_descriptor,
-                            usb_configuration_descriptor_t** config_descriptors);
+mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed);
 void xhci_remove_device(xhci_t* xhci, int slot_id);
-void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring);
+void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool closed);

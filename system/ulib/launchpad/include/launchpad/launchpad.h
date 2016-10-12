@@ -42,6 +42,7 @@ mx_status_t launchpad_add_handle(launchpad_t* lp, mx_handle_t h, uint32_t id);
 mx_status_t launchpad_add_handles(launchpad_t* lp, size_t n,
                                   const mx_handle_t h[], const uint32_t id[]);
 
+
 // Set the arguments or environment to be passed in the bootstrap
 // message.  All the strings are copied into the launchpad by this
 // call, with no pointers to these argument strings retained.
@@ -54,10 +55,21 @@ mx_status_t launchpad_environ(launchpad_t* lp, const char* const* envp);
 // This will allow mxio-based filesystem access to work in the new process.
 mx_status_t launchpad_clone_mxio_root(launchpad_t* lp);
 
+// Clone the mxio current working directory handle into the new process
+// This will allow mxio-based filesystem access to inherit the cwd from the
+// launching process. If mxio root is cloned but not mxio cwd, mxio root is
+// treated as the cwd.
+mx_status_t launchpad_clone_mxio_cwd(launchpad_t* lp);
+
 // Attempt to duplicate local descriptor fd into target_fd in the
 // new process.  Returns ERR_BAD_HANDLE if fd is not a valid fd, or
 // ERR_NOT_SUPPORTED if it's not possible to transfer this fd.
 mx_status_t launchpad_clone_fd(launchpad_t* lp, int fd, int target_fd);
+
+// Convenience function to add all mxio handles to the launchpad.
+// This calls launchpad_clone_mxio_root and then launchpad_clone_fd for each
+// fd in the calling process.
+mx_status_t launchpad_add_all_mxio(launchpad_t* lp);
 
 // Attempt to create a pipe and install one end of that pipe as
 // target_fd in the new process and return the other end (if
@@ -182,9 +194,9 @@ mx_handle_t launchpad_start(launchpad_t* lp);
 // handle.  The other end of this message pipe must already be
 // present in the target process, with the given handle value in the
 // target process's handle space.
-mx_status_t launchpad_start_extra(launchpad_t* lp, const char* thread_name,
-                                  mx_handle_t to_child,
-                                  uintptr_t bootstrap_handle_in_child);
+mx_status_t launchpad_start_injected(launchpad_t* lp, const char* thread_name,
+                                     mx_handle_t to_child,
+                                     uintptr_t bootstrap_handle_in_child);
 
 // Convenience interface for launching a process in one call with
 // minimal arguments and handles.  This just calls the functions

@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/types.h>
 
 #include <magenta/listnode.h>
 
@@ -118,6 +117,10 @@ static block_t* _bcache_get(bcache_t* bc, uint32_t bno, void** data, uint32_t mo
         if (blk->bno == bno) {
             if (blk->flags & BLOCK_BUSY) {
                 panic("blk %p bno %u is busy\n", blk, bno);
+            }
+            if (mode == MODE_ZERO) {
+                blk->flags |= BLOCK_DIRTY;
+                memset(blk->data, 0, bc->blocksize);
             }
             // remove from dirty or lru
             list_delete(&blk->listnode);

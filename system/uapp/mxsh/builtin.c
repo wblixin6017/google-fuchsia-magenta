@@ -4,7 +4,9 @@
 
 #include <dirent.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +21,16 @@
 #include <magenta/syscalls.h>
 #include <mxio/vfs.h>
 #include <magenta/listnode.h>
+
+static int mxc_motd(int argc, char** argv) {
+    printf("-----------------------------------------------------------------\n"
+           "Welcome to fuchsia.\n"
+           "  · type 'help' for a list of builtin commands\n"
+           "  · hit enter if you do not see a '>' prompt\n"
+           "  · launch applications from /boot/apps with 'mojo:$APP_NAME'\n"
+           "-----------------------------------------------------------------\n");
+    return 0;
+}
 
 static int mxc_dump(int argc, char** argv) {
     int fd;
@@ -131,7 +143,7 @@ static int mxc_ls(int argc, char** argv) {
             snprintf(tmp, sizeof(tmp), "%s/%s", dirn, de->d_name);
             stat(tmp, &s);
         }
-        printf("%s %8llu %s\n", modestr(s.st_mode), s.st_size, de->d_name);
+        printf("%s %8jd %s\n", modestr(s.st_mode), (intmax_t)s.st_size, de->d_name);
     }
     closedir(dir);
     return 0;
@@ -215,154 +227,77 @@ static int mxc_mkdir(int argc, char** argv) {
     return 0;
 }
 
-static int mxc_rm(int argc, char** argv) {
-    if (argc < 2) {
-        fprintf(stderr, "usage: rm <filename>\n");
+static int mxc_mv(int argc, char** argv) {
+    if (argc != 3) {
+        fprintf(stderr, "usage: mv <old path> <new path>\n");
         return -1;
     }
-    while (argc > 1) {
-        argc--;
-        argv++;
-        if (unlink(argv[0])) {
-            fprintf(stderr, "error: failed to delete '%s'\n", argv[0]);
-        }
+    if (rename(argv[1], argv[2])) {
+        fprintf(stderr, "error: failed to rename '%s' to '%s'\n", argv[1], argv[2]);
     }
     return 0;
 }
 
-typedef struct failure {
-    list_node_t node;
-    int cause;
-    int rc;
-    char name[0];
-} failure_t;
-
-static void mxc_fail_test(list_node_t* failures, const char* name, int cause, int rc) {
-    size_t name_len = strlen(name) + 1;
-    failure_t* failure = malloc(sizeof(failure_t) + name_len);
-    failure->cause = cause;
-    failure->rc = rc;
-    memcpy(failure->name, name, name_len);
-    list_add_tail(failures, &failure->node);
-}
-
-enum {
-    FAILED_TO_LAUNCH,
-    FAILED_TO_WAIT,
-    FAILED_TO_RETURN_CODE,
-    FAILED_NONZERO_RETURN_CODE,
-};
-static int mxc_runtests(int argc, char** argv) {
-    list_node_t failures = LIST_INITIAL_VALUE(failures);
-
-    int total_count = 0;
-    int failed_count = 0;
-
-    const char* dirn = "/boot/test";
-    DIR* dir = opendir(dirn);
-    if (dir == NULL) {
-        printf("error: cannot open '%s'\n", dirn);
+static int mxc_rm_recursive(int atfd, char* path) {
+    struct stat st;
+    if (fstatat(atfd, path, &st, 0)) {
         return -1;
     }
-
-    int verbosity = 0;
-
-    if (argc > 1) {
-        if (strcmp(argv[1], "-v") == 0) {
-            printf("verbose output. enjoy.\n");
-            verbosity = 1;
-        } else {
-            printf("unknown option. usage: %s [-v]\n", argv[0]);
+    if (S_ISDIR(st.st_mode)) {
+        int dfd = openat(atfd, path, 0, O_DIRECTORY | O_RDWR);
+        if (dfd < 0) {
             return -1;
         }
-    }
-
-    struct dirent* de;
-    struct stat stat_buf;
-    while ((de = readdir(dir)) != NULL) {
-        char name[11 + NAME_MAX + 1];
-        snprintf(name, sizeof(name), "/boot/test/%s", de->d_name);
-        if (stat(name, &stat_buf) != 0 || !S_ISREG(stat_buf.st_mode)) {
-            continue;
+        DIR* dir = fdopendir(dfd);
+        if (!dir) {
+            close(dfd);
+            return -1;
         }
-
-        total_count++;
-        if (verbosity) {
-            printf(
-                "\n------------------------------------------------\n"
-                "RUNNING TEST: %s\n\n",
-                de->d_name);
-        }
-
-        char opts[] = {'v','=', verbosity + '0', 0};
-
-        const char* argv[] = {name, opts};
-        mx_handle_t handle = launchpad_launch_mxio(name, 2, argv);
-        if (handle < 0) {
-            printf("FAILURE: Failed to launch %s: %d\n", de->d_name, handle);
-            mxc_fail_test(&failures, de->d_name, FAILED_TO_LAUNCH, 0);
-            failed_count++;
-            continue;
-        }
-
-        mx_status_t status = mx_handle_wait_one(handle, MX_SIGNAL_SIGNALED,
-                                                      MX_TIME_INFINITE, NULL);
-        if (status != NO_ERROR) {
-            printf("FAILURE: Failed to wait for process exiting %s: %d\n", de->d_name, status);
-            mxc_fail_test(&failures, de->d_name, FAILED_TO_WAIT, 0);
-            failed_count++;
-            continue;
-        }
-
-        // read the return code
-        mx_process_info_t proc_info;
-        mx_ssize_t info_status = mx_handle_get_info(handle, MX_INFO_PROCESS, &proc_info, sizeof(proc_info));
-        mx_handle_close(handle);
-
-        if (info_status != sizeof(proc_info)) {
-            printf("FAILURE: Failed to get process return code %s: %ld\n", de->d_name, info_status);
-            mxc_fail_test(&failures, de->d_name, FAILED_TO_RETURN_CODE, 0);
-            failed_count++;
-            continue;
-        }
-
-        if (proc_info.return_code == 0) {
-            printf("PASSED: %s passed\n", de->d_name);
-        } else {
-            printf("FAILED: %s exited with nonzero status: %d\n", de->d_name, proc_info.return_code);
-            mxc_fail_test(&failures, de->d_name, FAILED_NONZERO_RETURN_CODE, proc_info.return_code);
-            failed_count++;
-        }
-    }
-
-    closedir(dir);
-
-    printf("\nSUMMARY: Ran %d tests: %d failed\n", total_count, failed_count);
-
-    if (failed_count) {
-        printf("\nThe following tests failed:\n");
-        failure_t* failure = NULL;
-        failure_t* temp = NULL;
-        list_for_every_entry_safe (&failures, failure, temp, failure_t, node) {
-            switch (failure->cause) {
-            case FAILED_TO_LAUNCH:
-                printf("%s: failed to launch\n", failure->name);
-                break;
-            case FAILED_TO_WAIT:
-                printf("%s: failed to wait\n", failure->name);
-                break;
-            case FAILED_TO_RETURN_CODE:
-                printf("%s: failed to return exit code\n", failure->name);
-                break;
-            case FAILED_NONZERO_RETURN_CODE:
-                printf("%s: returned nonzero: %d\n", failure->name, failure->rc);
-                break;
+        struct dirent* de;
+        while ((de = readdir(dir)) != NULL) {
+            if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) {
+                continue;
             }
-            free(failure);
+            if (mxc_rm_recursive(dfd, de->d_name) < 0) {
+                closedir(dir);
+                return -1;
+            }
+        }
+        closedir(dir);
+    }
+    if (unlinkat(atfd, path, 0)) {
+        return -1;
+    } else {
+        return 0;
+    }
+}
+
+static int mxc_rm(int argc, char** argv) {
+    if (argc < 2) {
+        fprintf(stderr, "usage: rm [-r] <filename>\n");
+        return -1;
+    }
+    bool recursive = false;
+    while (argc > 1) {
+        if (!strcmp(argv[0], "-r")) {
+            recursive = true;
+        }
+        argc--;
+        argv++;
+    }
+    if (recursive) {
+        if (mxc_rm_recursive(AT_FDCWD, argv[0])) {
+            goto err;
+        }
+    } else {
+        if (unlink(argv[0])) {
+            goto err;
         }
     }
-
     return 0;
+err:
+    fprintf(stderr, "error: failed to delete '%s'\n", argv[0]);
+    return -1;
 }
 
 static int mxc_dm(int argc, char** argv) {
@@ -370,7 +305,7 @@ static int mxc_dm(int argc, char** argv) {
         printf("usage: dm <command>\n");
         return -1;
     }
-    int fd = open("/dev/dmctl", O_RDWR);
+    int fd = open("/dev/class/misc/dmctl", O_RDWR);
     if (fd >= 0) {
         int r = write(fd, argv[1], strlen(argv[1]));
         if (r < 0) {
@@ -396,8 +331,9 @@ builtin_t builtins[] = {
     {"list", mxc_list, "display a text file with line numbers"},
     {"ls", mxc_ls, "list directory contents"},
     {"mkdir", mxc_mkdir, "create a directory" },
+    {"motd", mxc_motd, "show the message of the day"},
+    {"mv", mxc_mv, "rename a file or directory" },
     {"rm", mxc_rm, "delete a file"},
-    {"runtests", mxc_runtests, "run all test programs"},
     {"msleep", mxc_msleep, "pause for milliseconds"},
     {NULL, NULL, NULL},
 };

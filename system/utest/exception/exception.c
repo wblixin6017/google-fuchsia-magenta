@@ -2,16 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// N.B. We can't test the system exception handler here as that would
+// interfere with the global crash logger. A good place to test the
+// system exception handler would be in the "core" tests.
+
 #include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <magenta/compiler.h>
 #include <magenta/processargs.h>
 #include <magenta/syscalls.h>
+#include <magenta/threads.h>
 #include <mxio/util.h>
-#include <magenta/compiler.h>
 #include <test-utils/test-utils.h>
 #include <unittest/unittest.h>
 
@@ -20,9 +25,11 @@
 // 5 seconds
 #define WATCHDOG_DURATION_TICKS 10
 
-static intptr_t thread_func(void* arg);
+static int thread_func(void* arg);
 
-static const char test_child_path[] = "/boot/test/exception-test";
+// argv[0]
+static char* program_path;
+
 static const char test_child_name[] = "exceptions_test_child";
 
 // Setting to true when done turns off the watchdog timer.
@@ -33,10 +40,10 @@ enum message {
     MSG_CRASH,
     MSG_PING,
     MSG_PONG,
-    MSG_NEW_THREAD,
-    MSG_NEW_THREAD_HANDLE,
-    MSG_CRASH_NEW_THREAD,
-    MSG_SHUTDOWN_THREAD
+    MSG_CREATE_AUX_THREAD,
+    MSG_AUX_THREAD_HANDLE,
+    MSG_CRASH_AUX_THREAD,
+    MSG_SHUTDOWN_AUX_THREAD
 };
 
 static void crash_me(void)
@@ -48,7 +55,8 @@ static void crash_me(void)
 
 static void send_msg_new_thread_handle(mx_handle_t handle, mx_handle_t thread)
 {
-    uint64_t data = MSG_NEW_THREAD_HANDLE;
+    // Note: The handle is transferred to the receiver.
+    uint64_t data = MSG_AUX_THREAD_HANDLE;
     unittest_printf("sending new thread %d message on handle %u\n", thread, handle);
     tu_message_write(handle, &data, sizeof(data), &thread, 1, 0);
 }
@@ -97,7 +105,7 @@ static bool recv_msg_new_thread_handle(mx_handle_t handle, mx_handle_t* thread)
 
     enum message msg = data;
     // TODO(dje): WTF
-    ASSERT_EQ((int)msg, (int)MSG_NEW_THREAD_HANDLE, "expected MSG_NEW_THREAD_HANDLE");
+    ASSERT_EQ((int)msg, (int)MSG_AUX_THREAD_HANDLE, "expected MSG_AUX_THREAD_HANDLE");
 
     unittest_printf("received thread handle %d\n", *thread);
     return true;
@@ -110,7 +118,8 @@ static bool recv_msg_new_thread_handle(mx_handle_t handle, mx_handle_t* thread)
 
 static void resume_thread_from_exception(mx_handle_t process, mx_koid_t tid)
 {
-    mx_status_t status = mx_process_handle_exception(process, tid, MX_EXCEPTION_STATUS_NOT_HANDLED);
+    mx_handle_t thread = mx_debug_task_get_child(process, tid);
+    mx_status_t status = mx_task_resume(thread, MX_RESUME_EXCEPTION | MX_RESUME_NOT_HANDLED);
     if (status < 0)
         tu_fatal("mx_mark_exception_handled", status);
 }
@@ -131,40 +140,25 @@ static bool test_received_exception(mx_handle_t eport,
 
     EXPECT_EQ(packet.hdr.key, 0u, "bad report key");
 
-    if (strcmp(kind, "system") == 0) {
-        // Test mx_process_debug. System exception handlers don't already have
-        // a handle on the process so this is a good place to test this.
-        mx_handle_t debug_child = mx_process_debug(MX_HANDLE_INVALID, report->context.pid);
+    if (strcmp(kind, "process") == 0) {
+        mx_handle_t debug_child = mx_debug_task_get_child(MX_HANDLE_INVALID, report->context.pid);
         if (debug_child < 0)
             tu_fatal("mx_process_debug", debug_child);
-        mx_handle_basic_info_t process_info;
+        mx_info_handle_basic_t process_info;
         tu_handle_get_basic_info(debug_child, &process_info);
-        ASSERT_EQ(process_info.koid, report->context.pid, "mx_process_debug got pid mismatch");
-        tu_handle_close(debug_child);
-    } else if (strcmp(kind, "process") == 0) {
-#if 0 // MX_HND_TYPE_PROC_SELF doesn't work yet
-        mx_handle_t self = mxio_get_startup_handle(MX_HND_TYPE_PROC_SELF);
-        if (self == MX_HANDLE_INVALID)
-            tu_fatal("mxio_get_startup_handle", ERR_BAD_HANDLE - 1000);
-#else
-        mx_handle_t self = MX_HANDLE_INVALID;
-#endif
-        mx_handle_t debug_child = mx_process_debug(self, report->context.pid);
-        if (debug_child < 0)
-            tu_fatal("mx_process_debug", debug_child);
-        mx_handle_basic_info_t process_info;
-        tu_handle_get_basic_info(debug_child, &process_info);
-        ASSERT_EQ(process_info.koid, report->context.pid, "mx_process_debug got pid mismatch");
+        ASSERT_EQ(process_info.rec.koid, report->context.pid, "mx_process_debug got pid mismatch");
         tu_handle_close(debug_child);
     } else if (strcmp(kind, "thread") == 0) {
         // TODO(dje)
+    } else {
+        // process/thread done, nothing to do
     }
 
     // Verify the exception was from |process|.
     if (process != MX_HANDLE_INVALID) {
-        mx_handle_basic_info_t process_info;
+        mx_info_handle_basic_t process_info;
         tu_handle_get_basic_info(process, &process_info);
-        ASSERT_EQ(process_info.koid, report->context.pid, "wrong process in exception report");
+        ASSERT_EQ(process_info.rec.koid, report->context.pid, "wrong process in exception report");
     }
 
     unittest_printf("exception received from %s handler: pid %llu, tid %llu\n",
@@ -195,21 +189,23 @@ static bool msg_loop(mx_handle_t pipe)
         case MSG_PING:
             send_msg(pipe, MSG_PONG);
             break;
-        case MSG_NEW_THREAD:
+        case MSG_CREATE_AUX_THREAD:
             // Spin up a thread that we can talk to.
             {
                 ASSERT_EQ(pipe_to_thread, MX_HANDLE_INVALID, "previous thread connection not shutdown");
                 mx_handle_t pipe_from_thread;
                 tu_message_pipe_create(&pipe_to_thread, &pipe_from_thread);
-                mx_handle_t thread =
-                    tu_thread_create(thread_func, (void*) (uintptr_t) pipe_from_thread, "msg-loop-subthread");
-                send_msg_new_thread_handle(pipe, thread);
+                thrd_t thread;
+                tu_thread_create_c11(&thread, thread_func, (void*) (uintptr_t) pipe_from_thread, "msg-loop-subthread");
+                mx_handle_t thread_handle = thrd_get_mx_handle(thread);
+                mx_handle_t copy = mx_handle_duplicate(thread_handle, MX_RIGHT_SAME_RIGHTS);
+                send_msg_new_thread_handle(pipe, copy);
             }
             break;
-        case MSG_CRASH_NEW_THREAD:
+        case MSG_CRASH_AUX_THREAD:
             send_msg(pipe_to_thread, MSG_CRASH);
             break;
-        case MSG_SHUTDOWN_THREAD:
+        case MSG_SHUTDOWN_AUX_THREAD:
             send_msg(pipe_to_thread, MSG_DONE);
             mx_handle_close(pipe_to_thread);
             pipe_to_thread = MX_HANDLE_INVALID;
@@ -222,7 +218,7 @@ static bool msg_loop(mx_handle_t pipe)
     return true;
 }
 
-static intptr_t thread_func(void* arg)
+static int thread_func(void* arg)
 {
     unittest_printf("test thread starting\n");
     mx_handle_t msg_pipe = (mx_handle_t) (uintptr_t) arg;
@@ -249,6 +245,7 @@ static void start_test_child(mx_handle_t* out_child, mx_handle_t* out_pipe)
     unittest_printf("Starting test child.\n");
     mx_handle_t our_pipe, their_pipe;
     tu_message_pipe_create(&our_pipe, &their_pipe);
+    const char* test_child_path = program_path;
     const char* const argv[2] = {
         test_child_path,
         test_child_name
@@ -261,13 +258,13 @@ static void start_test_child(mx_handle_t* out_child, mx_handle_t* out_pipe)
     unittest_printf("Test child started.\n");
 }
 
-static intptr_t watchdog_thread_func(void* arg)
+static int watchdog_thread_func(void* arg)
 {
     for (int i = 0; i < WATCHDOG_DURATION_TICKS; ++i)
     {
         mx_nanosleep(WATCHDOG_DURATION_TICK);
         if (done_tests)
-            mx_thread_exit();
+            return 0;
     }
     unittest_printf("WATCHDOG TIMER FIRED\n");
     // This should *cleanly* kill the entire process, not just this thread.
@@ -275,7 +272,6 @@ static intptr_t watchdog_thread_func(void* arg)
 }
 
 // This returns "bool" because it uses ASSERT_*.
-// |object| < 0 -> test system handler
 // |object| = 0 -> test process handler (TODO(dje: for now)
 // |object| > 0 -> test thread handler (TODO(dje: for now)
 
@@ -324,13 +320,6 @@ static bool test_set_close_set(const char* kind, mx_handle_t object)
     return true;
 }
 
-static bool system_set_close_set_test(void)
-{
-    BEGIN_TEST;
-    test_set_close_set("system", -1);
-    END_TEST;
-}
-
 static bool process_set_close_set_test(void)
 {
     BEGIN_TEST;
@@ -343,11 +332,13 @@ static bool thread_set_close_set_test(void)
     BEGIN_TEST;
     mx_handle_t our_pipe, their_pipe;
     tu_message_pipe_create(&our_pipe, &their_pipe);
-    mx_handle_t thread =
-        tu_thread_create(thread_func, (void*) (uintptr_t) their_pipe, "thread-set-close-set");
-    test_set_close_set("thread", thread);
+    thrd_t thread;
+    tu_thread_create_c11(&thread, thread_func, (void*) (uintptr_t) their_pipe, "thread-set-close-set");
+    mx_handle_t thread_handle = thrd_get_mx_handle(thread);
+    test_set_close_set("thread", thread_handle);
     send_msg(our_pipe, MSG_DONE);
-    tu_wait_signalled(thread);
+    // thrd_join doesn't provide a timeout, but we have the watchdog for that.
+    thrd_join(thread, NULL);
     END_TEST;
 }
 
@@ -359,31 +350,11 @@ static void finish_basic_test(const char* kind, mx_handle_t child,
     mx_koid_t tid;
     test_received_exception(eport, kind, child, false, &tid);
     resume_thread_from_exception(child, tid);
-    tu_wait_signalled(child);
+    tu_wait_signaled(child);
 
     tu_handle_close(child);
     tu_handle_close(eport);
     tu_handle_close(our_pipe);
-}
-
-static bool system_handler_test(void)
-{
-    BEGIN_TEST;
-    unittest_printf("system exception handler basic test\n");
-
-    mx_handle_t child, our_pipe;
-    start_test_child(&child, &our_pipe);
-    mx_handle_t eport = tu_io_port_create(0);
-    tu_set_system_exception_port(eport, 0);
-
-    finish_basic_test("system", child, eport, our_pipe, MSG_CRASH);
-
-#if 1 // TODO(dje): wip, close doesn't yet reset the exception port
-    mx_status_t status = mx_object_bind_exception_port(0, MX_HANDLE_INVALID, 0, 0);
-    ASSERT_EQ(status, NO_ERROR, "error resetting system exception port");
-#endif
-
-    END_TEST;
 }
 
 static bool process_handler_test(void)
@@ -394,7 +365,7 @@ static bool process_handler_test(void)
     mx_handle_t child, our_pipe;
     start_test_child(&child, &our_pipe);
     mx_handle_t eport = tu_io_port_create(0);
-    tu_set_exception_port(child, eport, 0);
+    tu_set_exception_port(child, eport, 0, 0);
 
     finish_basic_test("process", child, eport, our_pipe, MSG_CRASH);
     END_TEST;
@@ -408,12 +379,28 @@ static bool thread_handler_test(void)
     mx_handle_t child, our_pipe;
     start_test_child(&child, &our_pipe);
     mx_handle_t eport = tu_io_port_create(0);
-    send_msg(our_pipe, MSG_NEW_THREAD);
+    send_msg(our_pipe, MSG_CREATE_AUX_THREAD);
     mx_handle_t thread;
     recv_msg_new_thread_handle(our_pipe, &thread);
-    tu_set_exception_port(thread, eport, 0);
+    tu_set_exception_port(thread, eport, 0, 0);
 
-    finish_basic_test("thread", child, eport, our_pipe, MSG_CRASH_NEW_THREAD);
+    finish_basic_test("thread", child, eport, our_pipe, MSG_CRASH_AUX_THREAD);
+
+    tu_handle_close(thread);
+    END_TEST;
+}
+
+static bool debugger_handler_test(void)
+{
+    BEGIN_TEST;
+    unittest_printf("debugger exception handler basic test\n");
+
+    mx_handle_t child, our_pipe;
+    start_test_child(&child, &our_pipe);
+    mx_handle_t eport = tu_io_port_create(0);
+    tu_set_exception_port(child, eport, 0, MX_EXCEPTION_PORT_DEBUGGER);
+
+    finish_basic_test("debugger", child, eport, our_pipe, MSG_CRASH);
     END_TEST;
 }
 
@@ -426,7 +413,7 @@ static bool process_gone_notification_test(void)
     start_test_child(&child, &our_pipe);
 
     mx_handle_t eport = tu_io_port_create(0);
-    tu_set_exception_port(child, eport, 0);
+    tu_set_exception_port(child, eport, 0, 0);
 
     send_msg(our_pipe, MSG_DONE);
     mx_koid_t tid;
@@ -434,7 +421,7 @@ static bool process_gone_notification_test(void)
     ASSERT_EQ(tid, 0u, "tid not zero");
     // there's no reply to a "gone" notification
 
-    tu_wait_signalled(child);
+    tu_wait_signaled(child);
     tu_handle_close(child);
 
     tu_handle_close(eport);
@@ -451,9 +438,10 @@ static bool thread_gone_notification_test(void)
     mx_handle_t our_pipe, their_pipe;
     tu_message_pipe_create(&our_pipe, &their_pipe);
     mx_handle_t eport = tu_io_port_create(0);
-    mx_handle_t thread =
-        tu_thread_create(thread_func, (void*) (uintptr_t) their_pipe, "thread-gone-test-thread");
-    tu_set_exception_port(thread, eport, 0);
+    thrd_t thread;
+    tu_thread_create_c11(&thread, thread_func, (void*) (uintptr_t) their_pipe, "thread-gone-test-thread");
+    mx_handle_t thread_handle = thrd_get_mx_handle(thread);
+    tu_set_exception_port(thread_handle, eport, 0, 0);
 
     send_msg(our_pipe, MSG_DONE);
     // TODO(dje): The passing of "self" here is wip.
@@ -462,8 +450,8 @@ static bool thread_gone_notification_test(void)
     ASSERT_GT(tid, 0u, "tid not >= 0");
     // there's no reply to a "gone" notification
 
-    tu_wait_signalled(thread);
-    tu_handle_close(thread);
+    // thrd_join doesn't provide a timeout, but we have the watchdog for that.
+    thrd_join(thread, NULL);
 
     tu_handle_close(eport);
     tu_handle_close(our_pipe);
@@ -472,10 +460,8 @@ static bool thread_gone_notification_test(void)
 }
 
 BEGIN_TEST_CASE(exceptions_tests)
-RUN_TEST(system_set_close_set_test);
 RUN_TEST(process_set_close_set_test);
 RUN_TEST(thread_set_close_set_test);
-RUN_TEST(system_handler_test);
 RUN_TEST(process_handler_test);
 RUN_TEST(thread_handler_test);
 RUN_TEST(process_gone_notification_test);
@@ -484,16 +470,20 @@ END_TEST_CASE(exceptions_tests)
 
 int main(int argc, char **argv)
 {
+    program_path = argv[0];
+
     if (argc == 2 && strcmp(argv[1], test_child_name) == 0) {
         test_child();
         return 0;
     }
 
-    mx_handle_t watchdog_thread_handle = tu_thread_create(watchdog_thread_func, NULL, "watchdog-thread");
+    thrd_t watchdog_thread;
+    tu_thread_create_c11(&watchdog_thread, watchdog_thread_func, NULL, "watchdog-thread");
 
     bool success = unittest_run_all_tests(argc, argv);
 
     done_tests = true;
-    tu_wait_signalled(watchdog_thread_handle);
+    // TODO: Add an alarm as thrd_join doesn't provide a timeout.
+    thrd_join(watchdog_thread, NULL);
     return success ? 0 : -1;
 }

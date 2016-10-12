@@ -24,8 +24,6 @@
 #define SYS_pselect6 72
 #define SYS_ppoll 73
 #define SYS_readlinkat 78
-#define SYS_fstatat 79
-#define SYS_fstat 80
 #define SYS_utimensat 88
 #define SYS_acct 89
 #define SYS_waitid 95
@@ -105,7 +103,6 @@
 #define SYS_sendmsg 211
 #define SYS_recvmsg 212
 #define SYS_brk 214
-#define SYS_clone 220
 #define SYS_execve 221
 #define SYS_fadvise64 223
 #define SYS_msync 227

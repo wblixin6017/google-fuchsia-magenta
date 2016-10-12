@@ -13,16 +13,20 @@ MODULES += \
     lib/syscalls \
     lib/userboot \
     lib/debuglog \
+    lib/ktrace \
 
-# include all ulib, uapp, and utest from system/...
-MODULES += $(patsubst %/rules.mk,%,$(wildcard system/ulib/*/rules.mk))
+# include all core, uapp, udev, ulib and utest from system/...
+MODULES += $(patsubst %/rules.mk,%,$(wildcard system/core/*/rules.mk))
 MODULES += $(patsubst %/rules.mk,%,$(wildcard system/uapp/*/rules.mk))
+MODULES += $(patsubst %/rules.mk,%,$(wildcard system/udev/*/rules.mk))
+MODULES += $(patsubst %/rules.mk,%,$(wildcard system/ulib/*/rules.mk))
 MODULES += $(patsubst %/rules.mk,%,$(wildcard system/utest/*/rules.mk))
 MODULES := $(patsubst system/%,%,$(MODULES))
 
-# include all all ulib, uapp, and utest from third_party/...
-MODULES += $(patsubst %/rules.mk,%,$(wildcard third_party/ulib/*/rules.mk))
+# include all uapp, udev, ulib and utest from third_party/...
 MODULES += $(patsubst %/rules.mk,%,$(wildcard third_party/uapp/*/rules.mk))
+MODULES += $(patsubst %/rules.mk,%,$(wildcard third_party/udev/*/rules.mk))
+MODULES += $(patsubst %/rules.mk,%,$(wildcard third_party/ulib/*/rules.mk))
 MODULES += $(patsubst %/rules.mk,%,$(wildcard third_party/utest/*/rules.mk))
 MODULES := $(patsubst third_party/%,%,$(MODULES))
 

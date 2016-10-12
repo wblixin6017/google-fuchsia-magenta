@@ -7,6 +7,7 @@
 #include <ddk/driver.h>
 #include <ddk/io-alloc.h>
 #include <ddk/protocol/pci.h>
+#include <ddk/protocol/usb.h>
 #include <ddk/protocol/usb-bus.h>
 #include <ddk/protocol/usb-hci.h>
 
@@ -18,6 +19,8 @@
 #include <string.h>
 
 #include "xhci.h"
+#include "xhci-device-manager.h"
+#include "xhci-root-hub.h"
 #include "xhci-util.h"
 
 //#define TRACE 1
@@ -40,13 +43,14 @@ typedef struct usb_xhci {
     mx_handle_t mmio_handle;
     mx_handle_t cfg_handle;
     thrd_t irq_thread;
+
+    // used by the start thread
+    mx_device_t* parent;
 } usb_xhci_t;
 #define xhci_to_usb_xhci(dev) containerof(dev, usb_xhci_t, xhci)
 #define dev_to_usb_xhci(dev) containerof(dev, usb_xhci_t, device)
 
-mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed,
-                            usb_device_descriptor_t* device_descriptor,
-                            usb_configuration_descriptor_t** config_descriptors) {
+mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed) {
     usb_xhci_t* uxhci = xhci_to_usb_xhci(xhci);
     xprintf("xhci_add_new_device\n");
 
@@ -55,8 +59,7 @@ mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int spee
         return ERR_INTERNAL;
     }
 
-    return uxhci->bus_protocol->add_device(uxhci->bus_device, slot_id, hub_address, speed,
-                                           device_descriptor, config_descriptors);
+    return uxhci->bus_protocol->add_device(uxhci->bus_device, slot_id, hub_address, speed);
 }
 
 void xhci_remove_device(xhci_t* xhci, int slot_id) {
@@ -109,35 +112,65 @@ static int xhci_irq_thread(void* arg) {
     usb_xhci_t* uxhci = (usb_xhci_t*)arg;
     xprintf("xhci_irq_thread start\n");
 
+    // xhci_start will block, so do this part here instead of in usb_xhci_bind
+    xhci_start(&uxhci->xhci);
+
+    device_add(&uxhci->device, uxhci->parent);
+    uxhci->parent = NULL;
+
     while (1) {
         mx_status_t wait_res;
 
-        wait_res = uxhci->pci_proto->pci_wait_interrupt(uxhci->irq_handle);
+        wait_res = mx_handle_wait_one(uxhci->irq_handle,
+                                      MX_SIGNAL_SIGNALED, MX_TIME_INFINITE, NULL);
         if (wait_res != NO_ERROR) {
-            if (wait_res != ERR_CANCELLED)
+            if (wait_res != ERR_HANDLE_CLOSED) {
                 printf("unexpected pci_wait_interrupt failure (%d)\n", wait_res);
+            }
+            mx_interrupt_complete(uxhci->irq_handle);
             break;
         }
+
+        mx_interrupt_complete(uxhci->irq_handle);
         xhci_handle_interrupt(&uxhci->xhci, uxhci->legacy_irq_mode);
     }
     xprintf("xhci_irq_thread done\n");
     return 0;
 }
 
-void xhci_set_bus_device(mx_device_t* device, mx_device_t* busdev) {
+static void xhci_set_bus_device(mx_device_t* device, mx_device_t* busdev) {
     usb_xhci_t* uxhci = dev_to_usb_xhci(device);
     uxhci->bus_device = busdev;
     if (busdev) {
         device_get_protocol(busdev, MX_PROTOCOL_USB_BUS, (void**)&uxhci->bus_protocol);
+        // wait until bus driver has started before doing this
+        xhci_queue_start_root_hubs(&uxhci->xhci);
     } else {
         uxhci->bus_protocol = NULL;
     }
 }
 
-mx_status_t xhci_config_hub(mx_device_t* hci_device, int slot_id, usb_speed_t speed,
+static size_t xhci_get_max_device_count(mx_device_t* device) {
+    usb_xhci_t* uxhci = dev_to_usb_xhci(device);
+    // add one to allow device IDs to be 1-based
+    return uxhci->xhci.max_slots + XHCI_RH_COUNT + 1;
+}
+
+static mx_status_t xhci_enable_ep(mx_device_t* hci_device, uint32_t device_id,
+                                  usb_endpoint_descriptor_t* ep_desc, bool enable) {
+    usb_xhci_t* uxhci = dev_to_usb_xhci(hci_device);
+    return xhci_enable_endpoint(&uxhci->xhci, device_id, ep_desc, enable);
+}
+
+static uint64_t xhci_get_frame(mx_device_t* hci_device) {
+    usb_xhci_t* uxhci = dev_to_usb_xhci(hci_device);
+    return xhci_get_current_frame(&uxhci->xhci);
+}
+
+mx_status_t xhci_config_hub(mx_device_t* hci_device, uint32_t device_id, usb_speed_t speed,
                             usb_hub_descriptor_t* descriptor) {
     usb_xhci_t* uxhci = dev_to_usb_xhci(hci_device);
-    return xhci_configure_hub(&uxhci->xhci, slot_id, speed, descriptor);
+    return xhci_configure_hub(&uxhci->xhci, device_id, speed, descriptor);
 }
 
 mx_status_t xhci_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, int port,
@@ -154,6 +187,9 @@ mx_status_t xhci_hub_device_removed(mx_device_t* hci_device, uint32_t hub_addres
 
 usb_hci_protocol_t xhci_hci_protocol = {
     .set_bus_device = xhci_set_bus_device,
+    .get_max_device_count = xhci_get_max_device_count,
+    .enable_endpoint = xhci_enable_ep,
+    .get_current_frame = xhci_get_frame,
     .configure_hub = xhci_config_hub,
     .hub_device_added = xhci_hub_device_added,
     .hub_device_removed = xhci_hub_device_removed,
@@ -179,6 +215,10 @@ static void xhci_iotxn_callback(mx_status_t result, void* cookie) {
 
 static mx_status_t xhci_do_iotxn_queue(xhci_t* xhci, iotxn_t* txn) {
     usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
+    int rh_index = xhci_get_root_hub_index(xhci, data->device_id);
+    if (rh_index >= 0) {
+        return xhci_rh_iotxn_queue(xhci, txn, rh_index);
+    }
     if (data->device_id > xhci->max_slots) {
          return ERR_INVALID_ARGS;
      }
@@ -205,10 +245,10 @@ static mx_status_t xhci_do_iotxn_queue(xhci_t* xhci, iotxn_t* txn) {
         direction = data->ep_address & USB_ENDPOINT_DIR_MASK;
     }
     return xhci_queue_transfer(xhci, data->device_id, setup, phys_addr, txn->length,
-                                 ep_index, direction, context, &txn->node);
+                                 ep_index, direction, data->frame, context, &txn->node);
 }
 
-void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring) {
+void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool closed) {
     list_node_t list;
     list_node_t* node;
     iotxn_t* txn;
@@ -223,9 +263,9 @@ void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring) {
     list_initialize(&ring->deferred_txns);
     mtx_unlock(&ring->mutex);
 
-    if (ring->dead) {
+    if (closed) {
         while ((txn = list_remove_head_type(&list, iotxn_t, node)) != NULL) {
-            txn->ops->complete(txn, ERR_CHANNEL_CLOSED, 0);
+            txn->ops->complete(txn, ERR_REMOTE_CLOSED, 0);
         }
         return;
     }
@@ -234,7 +274,7 @@ void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring) {
     // this will either add them to the transfer ring or put them back on deferred_txns list
     while ((txn = list_remove_head_type(&list, iotxn_t, node)) != NULL) {
         mx_status_t status = xhci_do_iotxn_queue(xhci, txn);
-        if (status != NO_ERROR && status != ERR_NOT_ENOUGH_BUFFER) {
+        if (status != NO_ERROR && status != ERR_BUFFER_TOO_SMALL) {
             txn->ops->complete(txn, status, 0);
         }
     }
@@ -245,7 +285,7 @@ static void xhci_iotxn_queue(mx_device_t* hci_device, iotxn_t* txn) {
     xhci_t* xhci = &uxhci->xhci;
 
     mx_status_t status = xhci_do_iotxn_queue(xhci, txn);
-    if (status != NO_ERROR && status != ERR_NOT_ENOUGH_BUFFER) {
+    if (status != NO_ERROR && status != ERR_BUFFER_TOO_SMALL) {
         txn->ops->complete(txn, status, 0);
     }
 }
@@ -269,16 +309,6 @@ static mx_protocol_device_t xhci_device_proto = {
     .unbind = xhci_unbind,
     .release = xhci_release,
 };
-
-static int usb_xhci_start_thread(void* arg) {
-    usb_xhci_t* uxhci = (usb_xhci_t*)arg;
-
-    xhci_start(&uxhci->xhci);
-    device_add(&uxhci->device, &uxhci->device);
-
-    thrd_create_with_name(&uxhci->irq_thread, xhci_irq_thread, uxhci, "xhci_irq_thread");
-    return 0;
-}
 
 static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     mx_handle_t irq_handle = MX_HANDLE_INVALID;
@@ -329,7 +359,7 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     }
     if (bar == -1) {
         printf("usb_xhci_bind could not find bar\n");
-        status = ERR_NOT_VALID;
+        status = ERR_INTERNAL;
         goto error_return;
     }
 
@@ -378,6 +408,9 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     uxhci->cfg_handle = cfg_handle;
     uxhci->pci_proto = pci_proto;
 
+    // stash this here for the startup thread to call device_add() with
+    uxhci->parent = dev;
+
     device_init(&uxhci->device, drv, "usb-xhci", &xhci_device_proto);
 
     status = xhci_init(&uxhci->xhci, mmio);
@@ -387,9 +420,8 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     uxhci->device.protocol_id = MX_PROTOCOL_USB_HCI;
     uxhci->device.protocol_ops = &xhci_hci_protocol;
 
-    // start driver on a separate thread to avoid unnecessary blocking here
     thrd_t thread;
-    thrd_create_with_name(&thread, usb_xhci_start_thread, uxhci, "usb_xhci_start_thread");
+    thrd_create_with_name(&thread, xhci_irq_thread, uxhci, "xhci_irq_thread");
     thrd_detach(thread);
 
     return NO_ERROR;
@@ -408,18 +440,15 @@ error_return:
     return status;
 }
 
-static mx_bind_inst_t binding[] = {
+mx_driver_t _driver_usb_xhci = {
+    .ops = {
+        .bind = usb_xhci_bind,
+    },
+};
+
+MAGENTA_DRIVER_BEGIN(_driver_usb_xhci, "usb-xhci", "magenta", "0.1", 4)
     BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_PCI),
     BI_ABORT_IF(NE, BIND_PCI_CLASS, 0x0C),
     BI_ABORT_IF(NE, BIND_PCI_SUBCLASS, 0x03),
     BI_MATCH_IF(EQ, BIND_PCI_INTERFACE, 0x30),
-};
-
-mx_driver_t _driver_usb_xhci BUILTIN_DRIVER = {
-    .name = "usb-xhci",
-    .ops = {
-        .bind = usb_xhci_bind,
-    },
-    .binding = binding,
-    .binding_size = sizeof(binding),
-};
+MAGENTA_DRIVER_END(_driver_usb_xhci)

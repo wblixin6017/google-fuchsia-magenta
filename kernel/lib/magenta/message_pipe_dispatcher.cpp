@@ -13,9 +13,8 @@
 #include <new.h>
 #include <trace.h>
 
-#include <kernel/auto_lock.h>
-
 #include <magenta/handle.h>
+#include <magenta/message_packet.h>
 #include <magenta/message_pipe.h>
 #include <magenta/io_port_client.h>
 
@@ -33,18 +32,24 @@ status_t MessagePipeDispatcher::Create(uint32_t flags,
     LTRACE_ENTRY;
 
     AllocChecker ac;
-    mxtl::RefPtr<MessagePipe> pipe = mxtl::AdoptRef(new (&ac) MessagePipe(GenerateKernelObjectId()));
+    mxtl::RefPtr<MessagePipe> pipe = mxtl::AdoptRef(new (&ac) MessagePipe());
     if (!ac.check()) return ERR_NO_MEMORY;
 
-    Dispatcher* msgp0 = new (&ac) MessagePipeDispatcher((flags & ~MX_FLAG_REPLY_PIPE), 0u, pipe);
+    auto msgp0 = new (&ac) MessagePipeDispatcher((flags & ~MX_FLAG_REPLY_PIPE), 0u, pipe);
     if (!ac.check()) return ERR_NO_MEMORY;
 
-    Dispatcher* msgp1 = new (&ac) MessagePipeDispatcher(flags, 1u, pipe);
-    if (!ac.check()) return ERR_NO_MEMORY;
+    auto msgp1 = new (&ac) MessagePipeDispatcher(flags, 1u, pipe);
+    if (!ac.check()) {
+        delete msgp0;
+        return ERR_NO_MEMORY;
+    }
+
+    msgp0->set_inner_koid(msgp1->get_koid());
+    msgp1->set_inner_koid(msgp0->get_koid());
 
     *rights = kDefaultPipeRights;
-    *dispatcher0 = mxtl::AdoptRef(msgp0);
-    *dispatcher1 = mxtl::AdoptRef(msgp1);
+    *dispatcher0 = mxtl::AdoptRef<Dispatcher>(msgp0);
+    *dispatcher1 = mxtl::AdoptRef<Dispatcher>(msgp1);
     return NO_ERROR;
 }
 
@@ -61,37 +66,11 @@ StateTracker* MessagePipeDispatcher::get_state_tracker() {
     return pipe_->GetStateTracker(side_);
 }
 
-status_t MessagePipeDispatcher::BeginRead(uint32_t* message_size, uint32_t* handle_count) {
+status_t MessagePipeDispatcher::Read(uint32_t* msg_size,
+                                     uint32_t* msg_handle_count,
+                                     mxtl::unique_ptr<MessagePacket>* msg) {
     LTRACE_ENTRY;
-    // Note that a second thread can arrive here before the first thread
-    // calls AcceptRead(). Both threads now race to retrieve this message.
-    status_t result;
-    {
-        AutoLock lock(&lock_);
-        result = pending_ ? NO_ERROR : pipe_->Read(side_, &pending_);
-        if (result == NO_ERROR) {
-            *message_size = static_cast<uint32_t>(pending_->data.size());
-            *handle_count = static_cast<uint32_t>(pending_->handles.size());
-        }
-    }
-    return result;
-}
-
-status_t MessagePipeDispatcher::AcceptRead(mxtl::Array<uint8_t>* data,
-                                           mxtl::Array<Handle*>* handles) {
-    LTRACE_ENTRY;
-
-    mxtl::unique_ptr<MessagePacket> msg;
-    {
-        AutoLock lock(&lock_);
-        msg = mxtl::move(pending_);
-        // if there is no message it means another user thread beat us here.
-        if (!msg) return ERR_BAD_STATE;
-
-        *data = mxtl::move(msg->data);
-        *handles = mxtl::move(msg->handles);
-    }
-    return NO_ERROR;
+    return pipe_->Read(side_, msg_size, msg_handle_count, msg);
 }
 
 status_t MessagePipeDispatcher::Write(mxtl::Array<uint8_t> data, mxtl::Array<Handle*> handles) {
@@ -104,8 +83,7 @@ status_t MessagePipeDispatcher::Write(mxtl::Array<uint8_t> data, mxtl::Array<Han
     return pipe_->Write(side_, mxtl::move(msg));
 }
 
-status_t MessagePipeDispatcher::SetIOPort(mxtl::RefPtr<IOPortDispatcher> io_port,
-                                          uint64_t key, mx_signals_t signals) {
+status_t MessagePipeDispatcher::set_port_client(mxtl::unique_ptr<IOPortClient> client) {
     LTRACE_ENTRY;
-    return pipe_->SetIOPort(side_, mxtl::move(io_port), key, signals);
+    return pipe_->SetIOPort(side_, mxtl::move(client));
 }

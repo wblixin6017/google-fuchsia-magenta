@@ -79,12 +79,12 @@ mx_status_t tpm_request_use(enum locality loc) {
     }
 
     if (val & TPM_ACCESS_REQUEST_USE) {
-        return ERR_BUSY;
+        return ERR_UNAVAILABLE;
     }
 
     if (val & TPM_ACCESS_ACTIVE_LOCALITY) {
         // We're already the active locality
-        return ERR_ALREADY_STARTED;
+        return ERR_BAD_STATE;
     }
 
     mx_status_t status = tpm_enable_irq_type(loc, IRQ_LOCALITY_CHANGE);
@@ -195,8 +195,7 @@ static mx_status_t get_status_data_avail(enum locality loc, bool* data_avail) {
 }
 
 static mx_status_t wait_for_data_avail(enum locality loc) {
-    // TODO(teisenbe): Add a timeout to this?  We need support for timeouts
-    // on the mx_interrupt_wait call below first.
+    // TODO(teisenbe): Add a timeout to this?
     while (1) {
         bool data_avail = false;
         mx_status_t st = get_status_data_avail(loc, &data_avail);
@@ -207,7 +206,7 @@ static mx_status_t wait_for_data_avail(enum locality loc) {
             return NO_ERROR;
         }
 
-        st = mx_interrupt_wait(irq_handle);
+        st = mx_handle_wait_one(irq_handle, MX_SIGNAL_SIGNALED, MX_TIME_INFINITE, NULL);
         if (st < 0) {
             return st;
         }
@@ -220,7 +219,7 @@ static mx_status_t wait_for_data_avail(enum locality loc) {
             // If locality changed, whatever operation we're in the middle of
             // is no longer valid..
             mx_interrupt_complete(irq_handle);
-            return ERR_CANCELLED;
+            return ERR_INTERNAL;
         }
         mx_interrupt_complete(irq_handle);
     }
@@ -260,7 +259,7 @@ mx_status_t tpm_send_cmd(enum locality loc, uint8_t* cmd, size_t len) {
     }
 
     if (!(*TPM_STS(loc) & TPM_STS_CMD_RDY)) {
-        return ERR_BUSY;
+        return ERR_UNAVAILABLE;
     }
 
     // This procedure is described in section 5.5.2.2.1 of the TCG PC Client

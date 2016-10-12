@@ -9,6 +9,7 @@
 #include <trace.h>
 #include <rand.h>
 #include <err.h>
+#include <inttypes.h>
 #include <assert.h>
 #include <string.h>
 #include <app/tests.h>
@@ -27,7 +28,7 @@ static int sleep_thread(void *arg)
     return 0;
 }
 
-int sleep_test(void)
+static int sleep_test(void)
 {
     int i;
     for (i=0; i < 16; i++)
@@ -172,7 +173,7 @@ static int mutex_zerotimeout_thread(void *arg)
     return err;
 }
 
-int mutex_test(void)
+static int mutex_test(void)
 {
     static mutex_t imutex = MUTEX_INITIAL_VALUE(imutex);
     printf("preinitialized mutex:\n");
@@ -227,15 +228,15 @@ int mutex_test(void)
 
 static event_t e;
 
-static int event_signaller(void *arg)
+static int event_signaler(void *arg)
 {
-    printf("event signaller pausing\n");
+    printf("event signaler pausing\n");
     thread_sleep(1000);
 
 //  for (;;) {
-    printf("signalling event\n");
+    printf("signaling event\n");
     event_signal(&e, true);
-    printf("done signalling event\n");
+    printf("done signaling event\n");
     thread_yield();
 //  }
 
@@ -246,15 +247,17 @@ static int event_waiter(void *arg)
 {
     int count = (intptr_t)arg;
 
-    printf("event waiter starting\n");
-
     while (count > 0) {
-        printf("%p: waiting on event...\n", get_current_thread());
-        if (event_wait(&e) < 0) {
-            printf("%p: event_wait() returned error\n", get_current_thread());
+        printf("thread %p: waiting on event...\n", get_current_thread());
+        status_t err = event_wait_timeout(&e, INFINITE_TIME, true);
+        if (err == ERR_INTERRUPTED) {
+            printf("thread %p: killed\n");
+            return -1;
+        } else if (err < 0) {
+            printf("thread %p: event_wait() returned error %d\n", get_current_thread(), err);
             return -1;
         }
-        printf("%p: done waiting on event...\n", get_current_thread());
+        printf("thread %p: done waiting on event\n", get_current_thread());
         thread_yield();
         count--;
     }
@@ -262,7 +265,7 @@ static int event_waiter(void *arg)
     return 0;
 }
 
-void event_test(void)
+static void event_test(void)
 {
     thread_t *threads[5];
 
@@ -272,9 +275,10 @@ void event_test(void)
 
     printf("event tests starting\n");
 
-    /* make sure signalling the event wakes up all the threads */
+    /* make sure signaling the event wakes up all the threads and stays signaled */
+    printf("creating event, waiting on it with 4 threads, signaling it and making sure all threads fall through twice\n");
     event_init(&e, false, 0);
-    threads[0] = thread_create("event signaller", &event_signaller, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    threads[0] = thread_create("event signaler", &event_signaler, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[1] = thread_create("event waiter 0", &event_waiter, (void *)2, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[2] = thread_create("event waiter 1", &event_waiter, (void *)2, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[3] = thread_create("event waiter 2", &event_waiter, (void *)2, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
@@ -283,16 +287,17 @@ void event_test(void)
     for (uint i = 0; i < countof(threads); i++)
         thread_resume(threads[i]);
 
+    for (uint i = 0; i < countof(threads); i++)
+        thread_join(threads[i], NULL, INFINITE_TIME);
+
     thread_sleep(2000);
     printf("destroying event\n");
     event_destroy(&e);
 
-    for (uint i = 0; i < countof(threads); i++)
-        thread_join(threads[i], NULL, INFINITE_TIME);
-
-    /* make sure signalling the event wakes up precisely one thread */
+    /* make sure signaling the event wakes up precisely one thread */
+    printf("creating event, waiting on it with 4 threads, signaling it and making sure only one thread wakes up\n");
     event_init(&e, false, EVENT_FLAG_AUTOUNSIGNAL);
-    threads[0] = thread_create("event signaller", &event_signaller, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    threads[0] = thread_create("event signaler", &event_signaler, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[1] = thread_create("event waiter 0", &event_waiter, (void *)99, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[2] = thread_create("event waiter 1", &event_waiter, (void *)99, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
     threads[3] = thread_create("event waiter 2", &event_waiter, (void *)99, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
@@ -302,10 +307,13 @@ void event_test(void)
         thread_resume(threads[i]);
 
     thread_sleep(2000);
-    event_destroy(&e);
 
-    for (uint i = 0; i < countof(threads); i++)
+    for (uint i = 0; i < countof(threads); i++) {
+        thread_kill(threads[i], true);
         thread_join(threads[i], NULL, INFINITE_TIME);
+    }
+
+    event_destroy(&e);
 
     printf("event tests done\n");
 }
@@ -318,7 +326,7 @@ static int quantum_tester(void *arg)
     return 0;
 }
 
-void quantum_test(void)
+static void quantum_test(void)
 {
     thread_detach_and_resume(thread_create("quantum tester 0", &quantum_tester, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE));
     thread_detach_and_resume(thread_create("quantum tester 1", &quantum_tester, NULL, DEFAULT_PRIORITY, DEFAULT_STACK_SIZE));
@@ -352,7 +360,7 @@ static int context_switch_tester(void *arg)
     return 0;
 }
 
-void context_switch_test(void)
+static void context_switch_test(void)
 {
     event_init(&context_switch_event, false, 0);
     event_init(&context_switch_done_event, false, 0);
@@ -441,7 +449,7 @@ static int preempt_tester(void *arg)
 {
     spin(1000000);
 
-    printf("exiting ts %lld\n", current_time_hires());
+    printf("exiting ts %" PRIu64 " ns\n", current_time_hires());
 
     atomic_add(&preempt_count, -1);
 #undef COUNT

@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <ddk/driver.h>
 #include <magenta/compiler.h>
 #include <stdint.h>
 
@@ -78,6 +79,12 @@ __BEGIN_CDECLS;
 #define BIND_USB_IFC_CLASS    0x0205
 #define BIND_USB_IFC_SUBCLASS 0x0206
 #define BIND_USB_IFC_PROTOCOL 0x0207
+#define BIND_USB_DEVICE_TYPE  0x0208
+
+// TEMPORARY binding variables at 0xfXX
+// I2C_ADDR is a temporary way to bind the i2c touchscreen on the Acer12. This
+// binding will eventually be made via some sort of ACPI device enumeration.
+#define BIND_I2C_ADDR         0x0f00
 
 typedef struct mx_bind_inst {
     uint32_t op;
@@ -100,5 +107,70 @@ mx_bind_inst_t i915_binding[] = {
     BI_ABORT(),
 };
 #endif
+
+#define MAGENTA_NOTE_DRIVER 0x00010000
+
+typedef struct __attribute__((packed)) {
+    uint32_t namesz;
+    uint32_t descsz;
+    uint32_t type;
+    char name[8];
+} magenta_note_header_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t bindcount;
+    uint32_t reserved;
+    char name[32];
+    char vendor[16];
+    char version[16];
+} magenta_note_driver_t;
+
+typedef struct magenta_driver_info {
+    mx_driver_t* driver;
+    const magenta_note_driver_t* note;
+    const mx_bind_inst_t* binding;
+    uint32_t binding_size;
+} magenta_driver_info_t;
+
+#define MAGENTA_DRIVER_PASTE(a,b) a##b
+
+#if MAGENTA_BUILTIN_DRIVERS
+#define MAGENTA_DRIVER_ATTR __ALIGNED(sizeof(void*)) __SECTION("magenta_drivers")
+#define MAGENTA_DRIVER_SYMBOL(Driver) MAGENTA_DRIVER_PASTE(__magenta_driver_info__,Driver)
+#define MAGENTA_DRIVER_NOTE(Driver)
+#else
+#define MAGENTA_DRIVER_ATTR
+#define MAGENTA_DRIVER_NOTE(Driver) __attribute__((section(".note.magenta.driver." #Driver)))
+#define MAGENTA_DRIVER_SYMBOL(Driver) __magenta_driver__
+#endif
+
+#define MAGENTA_DRIVER_BEGIN(Driver,DriverName,VendorName,Version,BindCount) \
+MAGENTA_DRIVER_NOTE(Driver)\
+const struct __attribute__((packed)) {\
+    magenta_note_header_t note;\
+    magenta_note_driver_t driver;\
+    mx_bind_inst_t binding[BindCount];\
+} MAGENTA_DRIVER_PASTE(__magenta_driver_note__,Driver) = {\
+    .note = {\
+        .namesz = 7,\
+        .descsz = sizeof(magenta_note_driver_t) + sizeof(mx_bind_inst_t) * (BindCount),\
+        .type = MAGENTA_NOTE_DRIVER,\
+        .name = "Magenta",\
+    },\
+    .driver = {\
+        .bindcount = (BindCount),\
+        .name = DriverName,\
+        .vendor = VendorName,\
+        .version = Version,\
+    },\
+    .binding = {
+
+#define MAGENTA_DRIVER_END(Driver) }};\
+const magenta_driver_info_t MAGENTA_DRIVER_SYMBOL(Driver) MAGENTA_DRIVER_ATTR = {\
+    .note = &MAGENTA_DRIVER_PASTE(__magenta_driver_note__,Driver).driver,\
+    .driver = &Driver,\
+    .binding = MAGENTA_DRIVER_PASTE(__magenta_driver_note__,Driver).binding,\
+    .binding_size = sizeof(MAGENTA_DRIVER_PASTE(__magenta_driver_note__,Driver)).binding,\
+};
 
 __END_CDECLS;

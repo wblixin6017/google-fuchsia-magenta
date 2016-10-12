@@ -9,38 +9,55 @@
 #include <err.h>
 #include <stdint.h>
 
-#include <kernel/event.h>
+#include <lib/ktrace.h>
 
 #include <magenta/handle.h>
+#include <magenta/io_port_client.h>
 #include <magenta/magenta.h>
 #include <magenta/types.h>
 
 #include <mxtl/ref_counted.h>
 #include <mxtl/ref_ptr.h>
+#include <mxtl/unique_ptr.h>
+
+template <typename T> struct DispatchTag;
+
+#define DECLARE_DISPTAG(T, E)               \
+class T;                                    \
+template <> struct DispatchTag<T> {         \
+    static constexpr mx_obj_type_t ID = E;  \
+};
+
+DECLARE_DISPTAG(ProcessDispatcher, MX_OBJ_TYPE_PROCESS)
+DECLARE_DISPTAG(ThreadDispatcher, MX_OBJ_TYPE_THREAD)
+DECLARE_DISPTAG(VmObjectDispatcher, MX_OBJ_TYPE_VMEM)
+DECLARE_DISPTAG(MessagePipeDispatcher, MX_OBJ_TYPE_MESSAGE_PIPE)
+DECLARE_DISPTAG(EventDispatcher, MX_OBJ_TYPE_EVENT)
+DECLARE_DISPTAG(IOPortDispatcher, MX_OBJ_TYPE_IOPORT)
+DECLARE_DISPTAG(DataPipeProducerDispatcher, MX_OBJ_TYPE_DATA_PIPE_PRODUCER)
+DECLARE_DISPTAG(DataPipeConsumerDispatcher, MX_OBJ_TYPE_DATA_PIPE_CONSUMER)
+DECLARE_DISPTAG(InterruptDispatcher, MX_OBJ_TYPE_INTERRUPT)
+DECLARE_DISPTAG(IoMappingDispatcher, MX_OBJ_TYPE_IOMAP)
+DECLARE_DISPTAG(PciDeviceDispatcher, MX_OBJ_TYPE_PCI_DEVICE)
+DECLARE_DISPTAG(LogDispatcher, MX_OBJ_TYPE_LOG)
+DECLARE_DISPTAG(WaitSetDispatcher, MX_OBJ_TYPE_WAIT_SET)
+DECLARE_DISPTAG(SocketDispatcher, MX_OBJ_TYPE_SOCKET)
+DECLARE_DISPTAG(ResourceDispatcher, MX_OBJ_TYPE_RESOURCE)
+DECLARE_DISPTAG(EventPairDispatcher, MX_OBJ_TYPE_EVENT_PAIR)
+DECLARE_DISPTAG(JobDispatcher, MX_OBJ_TYPE_JOB)
+
+#undef DECLARE_DISPTAG
 
 class StateTracker;
-
-// The Kernel Objects. Keep this list sorted.
-class DataPipeConsumerDispatcher;
-class DataPipeProducerDispatcher;
-class InterruptDispatcher;
-class IoMappingDispatcher;
-class IOPortDispatcher;
-class LogDispatcher;
-class MessagePipeDispatcher;
-class PciDeviceDispatcher;
-class PciInterruptDispatcher;
-class ProcessDispatcher;
-class SocketDispatcher;
-class ThreadDispatcher;
-class VmObjectDispatcher;
-class WaitSetDispatcher;
-class ResourceDispatcher;
 
 class Dispatcher : public mxtl::RefCounted<Dispatcher> {
 public:
     Dispatcher();
-    virtual ~Dispatcher() {}
+    virtual ~Dispatcher() {
+#if WITH_LIB_KTRACE
+        ktrace(TAG_OBJECT_DELETE, (uint32_t)koid_, 0, 0, 0);
+#endif
+    }
 
     mx_koid_t get_koid() const { return koid_; }
 
@@ -48,13 +65,15 @@ public:
 
     void remove_handle();
 
-    virtual mx_obj_type_t GetType() const = 0;
+    virtual mx_obj_type_t get_type() const = 0;
+
+    virtual StateTracker* get_state_tracker() { return nullptr; }
+
+    virtual status_t set_port_client(mxtl::unique_ptr<IOPortClient>) { return ERR_NOT_SUPPORTED; }
 
     virtual void on_zero_handles() { }
 
-    virtual mx_koid_t get_inner_koid() const {
-        return 0ULL;
-    }
+    virtual mx_koid_t get_inner_koid() const { return 0ULL; }
 
     // Note that |set_mask| and |clear_mask| are *not* previously validated. Also note that they may
     // "overlap", and that |clear_mask| should be cleared and then |set_mask| set.
@@ -62,68 +81,9 @@ public:
         return ERR_NOT_SUPPORTED;
     }
 
-    virtual StateTracker* get_state_tracker() {
-        return nullptr;
-    }
-
-    virtual InterruptDispatcher* get_interrupt_dispatcher() {
-        return nullptr;
-    }
-
-    virtual MessagePipeDispatcher* get_message_pipe_dispatcher() {
-        return nullptr;
-    }
-
-    virtual ProcessDispatcher* get_process_dispatcher() {
-        return nullptr;
-    }
-
-    virtual ThreadDispatcher* get_thread_dispatcher() {
-        return nullptr;
-    }
-
-    virtual VmObjectDispatcher* get_vm_object_dispatcher() {
-        return nullptr;
-    }
-
-    virtual PciDeviceDispatcher* get_pci_device_dispatcher() {
-        return nullptr;
-    }
-
-    virtual PciInterruptDispatcher* get_pci_interrupt_dispatcher() {
-        return nullptr;
-    }
-
-    virtual IoMappingDispatcher* get_io_mapping_dispatcher() {
-        return nullptr;
-    }
-
-    virtual LogDispatcher* get_log_dispatcher() {
-        return nullptr;
-    }
-
-    virtual IOPortDispatcher* get_io_port_dispatcher() {
-        return nullptr;
-    }
-
-    virtual DataPipeProducerDispatcher* get_data_pipe_producer_dispatcher() {
-        return nullptr;
-    }
-
-    virtual DataPipeConsumerDispatcher* get_data_pipe_consumer_dispatcher() {
-        return nullptr;
-    }
-
-    virtual WaitSetDispatcher* get_wait_set_dispatcher() {
-        return nullptr;
-    }
-
-    virtual SocketDispatcher* get_socket_dispatcher() {
-        return nullptr;
-    }
-
-    virtual ResourceDispatcher* get_resource_dispatcher() {
-        return nullptr;
+    template <typename T>
+    T* get_specific() {
+        return (DispatchTag<T>::ID == get_type())? static_cast<T*>(this) : nullptr;
     }
 
 protected:
@@ -133,3 +93,10 @@ private:
     const mx_koid_t koid_;
     int handle_count_;
 };
+
+template <typename T>
+mxtl::RefPtr<T> DownCastDispatcher(mxtl::RefPtr<Dispatcher>&& disp) {
+    auto ptr = disp.leak_ref()->get_specific<T>();
+    return mxtl::internal::MakeRefPtrNoAdopt(ptr);
+}
+

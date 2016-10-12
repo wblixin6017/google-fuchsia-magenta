@@ -15,8 +15,8 @@
 #include <magenta/dlfcn.h>
 #include <pthread.h>
 #include <setjmp.h>
-#include <stdatomic.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -482,19 +482,19 @@ static void unmap_library(struct dso* dso) {
 
 static void* choose_load_address(size_t span) {
     // vm_map requires some vm_object handle, so create a dummy one.
-    mx_handle_t vmo = mx_vmo_create(0);
+    mx_handle_t vmo = _mx_vmo_create(0);
 
     // Do a mapping to let the kernel choose an address range.
     // TODO(MG-161): This really ought to be a no-access mapping (PROT_NONE
     // in POSIX terms).  But the kernel currently doesn't allow that, so do
     // a read-only mapping.
     uintptr_t base;
-    mx_status_t status = mx_process_map_vm(libc.proc, vmo, 0, span, &base,
-                                           MX_VM_FLAG_PERM_READ);
-    mx_handle_close(vmo);
+    mx_status_t status = _mx_process_map_vm(libc.proc, vmo, 0, span, &base,
+                                            MX_VM_FLAG_PERM_READ);
+    _mx_handle_close(vmo);
     if (status < 0) {
         error("failed to reserve %zu bytes of address space: %d\n",
-                span, status);
+              span, status);
         errno = ENOMEM;
         return MAP_FAILED;
     }
@@ -507,15 +507,43 @@ static void* choose_load_address(size_t span) {
     // That is, in the general case of dlopen when there are multiple
     // threads, it's racy.  For the startup case (or any time when there
     // is only one thread), it's fine.
-    status = mx_process_unmap_vm(libc.proc, base, 0);
+    status = _mx_process_unmap_vm(libc.proc, base, 0);
     if (status < 0) {
         error("vm_unmap failed on reservation %#" PRIxPTR "+%zu: %d\n",
-                base, span, status);
+              base, span, status);
         errno = ENOMEM;
         return MAP_FAILED;
     }
 
     return (void*)base;
+}
+
+// TODO(mcgrathr): Temporary hack to avoid modifying the file VMO.
+// This will go away when we have copy-on-write.
+static mx_handle_t get_writable_vmo(mx_handle_t vmo, size_t data_size,
+                                    off_t* off_start, size_t* map_size) {
+    mx_handle_t copy_vmo = _mx_vmo_create(data_size);
+    if (copy_vmo < 0)
+        return copy_vmo;
+    uintptr_t window = 0;
+    mx_status_t status = _mx_process_map_vm(libc.proc, vmo,
+                                            *off_start, data_size, &window,
+                                            MX_VM_FLAG_PERM_READ);
+    if (status < 0) {
+        _mx_handle_close(copy_vmo);
+        return status;
+    }
+    mx_ssize_t n = _mx_vmo_write(copy_vmo, (void*)window, 0, data_size);
+    _mx_process_unmap_vm(libc.proc, window, 0);
+    if (n >= 0 && n != (mx_ssize_t)data_size)
+        n = ERR_IO;
+    if (n < 0) {
+        mx_handle_close(copy_vmo);
+        return n;
+    }
+    *off_start = 0;
+    *map_size = data_size;
+    return copy_vmo;
 }
 
 static void* map_library(mx_handle_t vmo, struct dso* dso) {
@@ -533,7 +561,7 @@ static void* map_library(mx_handle_t vmo, struct dso* dso) {
     size_t tls_image = 0;
     size_t i;
 
-    ssize_t l = mx_vmo_read(vmo, buf, 0, sizeof buf);
+    ssize_t l = _mx_vmo_read(vmo, buf, 0, sizeof buf);
     eh = buf;
     if (l < 0)
         return 0;
@@ -544,14 +572,14 @@ static void* map_library(mx_handle_t vmo, struct dso* dso) {
         allocated_buf = malloc(phsize);
         if (!allocated_buf)
             return 0;
-        l = mx_vmo_read(vmo, allocated_buf, eh->e_phoff, phsize);
+        l = _mx_vmo_read(vmo, allocated_buf, eh->e_phoff, phsize);
         if (l < 0)
             goto error;
         if (l != phsize)
             goto noexec;
         ph = ph0 = allocated_buf;
     } else if (eh->e_phoff + phsize > l) {
-        l = mx_vmo_read(vmo, buf + 1, eh->e_phoff, phsize);
+        l = _mx_vmo_read(vmo, buf + 1, eh->e_phoff, phsize);
         if (l < 0)
             goto error;
         if (l != phsize)
@@ -618,9 +646,6 @@ static void* map_library(mx_handle_t vmo, struct dso* dso) {
         this_min = ph->p_vaddr & -PAGE_SIZE;
         this_max = ph->p_vaddr + ph->p_memsz + PAGE_SIZE - 1 & -PAGE_SIZE;
         off_start = ph->p_offset & -PAGE_SIZE;
-        // TODO(mcgrathr): This should use the copy-on-write flag, but
-        // it doesn't exist yet.  Instead, for now this eagerly copies
-        // the data into a new VMO.
         uint32_t mx_flags = MX_VM_FLAG_FIXED;
         mx_flags |= (ph->p_flags & PF_R) ? MX_VM_FLAG_PERM_READ : 0;
         mx_flags |= (ph->p_flags & PF_W) ? MX_VM_FLAG_PERM_WRITE : 0;
@@ -630,67 +655,58 @@ static void* map_library(mx_handle_t vmo, struct dso* dso) {
         size_t map_size = this_max - this_min;
         if (map_size == 0)
             continue;
-#if 1
-        // TODO(mcgrathr): Temporary hack to avoid modifying the file VMO.
-        // This will go away when we have copy-on-write.
+
+        mx_status_t status;
         if (ph->p_flags & PF_W) {
             size_t data_size =
                 ((ph->p_vaddr + ph->p_filesz + PAGE_SIZE - 1) & -PAGE_SIZE) -
                 this_min;
             if (data_size > 0) {
-                mx_handle_t copy_vmo = mx_vmo_create(data_size);
-                if (copy_vmo < 0)
-                    __builtin_trap();
-                uintptr_t window = 0;
-                mx_status_t status = mx_process_map_vm(
-                    0, vmo, off_start, data_size, &window,
-                    MX_VM_FLAG_PERM_READ);
-                if (status < 0)
-                    __builtin_trap();
-                mx_ssize_t n = mx_vmo_write(copy_vmo, (void*)window,
-                                                  0, data_size);
-                mx_process_unmap_vm(0, window, 0);
-                if (n != (mx_ssize_t)data_size)
-                    __builtin_trap();
-                map_vmo = copy_vmo;         // Leak the handle.
-                off_start = 0;
-                map_size = data_size;
+                map_vmo = get_writable_vmo(vmo, data_size,
+                                           &off_start, &map_size);
+                if (map_vmo < 0) {
+                    status = map_vmo;
+                mx_error:
+                    // TODO(mcgrathr): Perhaps this should translate the
+                    // kernel error in 'status' into an errno value.  Or
+                    // perhaps it should just assert that the kernel error
+                    // was among an expected set.  Probably all failures of
+                    // these kernel calls should either be totally fatal or
+                    // should translate into ENOMEM.
+                    errno = ENOMEM;
+                    goto error;
+                }
             }
         }
-#endif
-        mx_status_t status = mx_process_map_vm(libc.proc, map_vmo, off_start,
-                                               map_size, &mapaddr, mx_flags);
-        if (status < 0) {
-        mx_error:
-            // TODO(mcgrathr): Perhaps this should translate the kernel
-            // error in 'status' into an errno value.  Or perhaps it should
-            // just assert that the kernel error was among an expected set.
-            // Probably all failures of these kernel calls should either
-            // be totally fatal or should translate into ENOMEM.
-            errno = ENOMEM;
-            goto error;
-        }
+
+        status = _mx_process_map_vm(libc.proc, map_vmo, off_start,
+                                    map_size, &mapaddr, mx_flags);
+        if (map_vmo != vmo)
+            _mx_handle_close(map_vmo);
+        if (status != NO_ERROR)
+            goto mx_error;
+
         if (ph->p_memsz > ph->p_filesz) {
             size_t brk = (size_t)base + ph->p_vaddr + ph->p_filesz;
             size_t pgbrk = brk + PAGE_SIZE - 1 & -PAGE_SIZE;
             memset((void*)brk, 0, pgbrk - brk & PAGE_SIZE - 1);
             if (pgbrk - (size_t)base < this_max) {
                 size_t bss_len = (size_t)base + this_max - pgbrk;
-                mx_handle_t bss_vmo = mx_vmo_create(bss_len);
+                mx_handle_t bss_vmo = _mx_vmo_create(bss_len);
                 if (bss_vmo < 0) {
                     status = bss_vmo;
                     goto mx_error;
                 }
                 uintptr_t bss_mapaddr = pgbrk;
-                status = mx_process_map_vm(libc.proc, bss_vmo, 0, bss_len,
-                                           &bss_mapaddr, mx_flags);
-                mx_handle_close(bss_vmo);
+                status = _mx_process_map_vm(libc.proc, bss_vmo, 0, bss_len,
+                                            &bss_mapaddr, mx_flags);
+                _mx_handle_close(bss_vmo);
                 if (status < 0)
                     goto mx_error;
             }
         }
     }
-done_mapping:
+
     dso->base = base;
     dso->dynv = laddr(dso, dyn);
     if (dso->tls.size)
@@ -917,7 +933,7 @@ static struct dso* load_library(const char* name, struct dso* needed_by) {
         mx_handle_t vmo = get_library_vmo(name);
         if (vmo >= 0) {
             p = load_library_vmo(vmo, name, needed_by);
-            mx_handle_close(vmo);
+            _mx_handle_close(vmo);
         }
     }
 
@@ -1307,7 +1323,7 @@ static void* dls3(mx_handle_t exec_vmo, int argc, char** argv) {
     }
 
     Ehdr* ehdr = map_library(exec_vmo, &app);
-    mx_handle_close(exec_vmo);
+    _mx_handle_close(exec_vmo);
     if (!ehdr) {
         debugmsg("%s: %s: Not a valid dynamic program\n", ldso.name, argv[0]);
         _exit(1);
@@ -1376,7 +1392,7 @@ static void* dls3(mx_handle_t exec_vmo, int argc, char** argv) {
         void* initial_tls = calloc(libc.tls_size, 1);
         if (!initial_tls) {
             debugmsg("%s: Error getting %zu bytes thread-local storage: %m\n", argv[0],
-                    libc.tls_size);
+                     libc.tls_size);
             _exit(127);
         }
         __init_tp(__copy_tls(initial_tls));
@@ -1440,9 +1456,6 @@ static void* dls3(mx_handle_t exec_vmo, int argc, char** argv) {
 }
 
 dl_start_return_t __dls3(void* start_arg) {
-    // TODO(mcgrathr): Probably can drop this, but not clear yet.
-    __mxr_thread_main();
-
     mx_handle_t bootstrap = (uintptr_t)start_arg;
 
     uint32_t nbytes, nhandles;
@@ -1499,7 +1512,7 @@ dl_start_return_t __dls3(void* start_arg) {
             libc.proc = handles[i];
             break;
         default:
-            mx_handle_close(handles[i]);
+            _mx_handle_close(handles[i]);
             break;
         }
     }
@@ -1520,7 +1533,6 @@ dl_start_return_t __dls3(void* start_arg) {
 
     return DL_START_RETURN(entry, start_arg);
 }
-
 
 static void* dlopen_internal(mx_handle_t vmo, const char* file, int mode) {
     struct dso* volatile p, *orig_tail, *next;
@@ -1762,11 +1774,10 @@ int dladdr(const void* addr, Dl_info* info) {
     return 1;
 }
 
-__attribute__((__visibility__("hidden"))) void* __dlsym(void* restrict p, const char* restrict s,
-                                                        void* restrict ra) {
+void* dlsym(void* restrict p, const char* restrict s) {
     void* res;
     pthread_rwlock_rdlock(&lock);
-    res = do_dlsym(p, s, ra);
+    res = do_dlsym(p, s, __builtin_return_address(0));
     pthread_rwlock_unlock(&lock);
     return res;
 }
@@ -1828,8 +1839,8 @@ static mx_handle_t loader_svc_rpc(uint32_t opcode,
     msg.data[len] = 0;
 
     uint32_t nbytes = sizeof msg.header + len + 1;
-    mx_status_t status = mx_msgpipe_write(loader_svc, &msg, nbytes,
-                                          NULL, 0, 0);
+    mx_status_t status = _mx_msgpipe_write(loader_svc, &msg, nbytes,
+                                           NULL, 0, 0);
     if (status != NO_ERROR) {
         error("mx_msgpipe_write of %u bytes to loader service: %d (%s)",
               nbytes, status, mx_strstatus(status));
@@ -1837,8 +1848,8 @@ static mx_handle_t loader_svc_rpc(uint32_t opcode,
         goto out;
     }
 
-    status = mx_handle_wait_one(loader_svc, MX_SIGNAL_READABLE,
-                                MX_TIME_INFINITE, NULL);
+    status = _mx_handle_wait_one(loader_svc, MX_SIGNAL_READABLE,
+                                 MX_TIME_INFINITE, NULL);
     if (status != NO_ERROR) {
         error("mx_handle_wait_one for loader service reply: %d (%s)",
               status, mx_strstatus(status));
@@ -1848,8 +1859,8 @@ static mx_handle_t loader_svc_rpc(uint32_t opcode,
 
     uint32_t reply_size = sizeof(msg.header);
     uint32_t handle_count = 1;
-    status = mx_msgpipe_read(loader_svc, &msg, &reply_size,
-                             &handle, &handle_count, 0);
+    status = _mx_msgpipe_read(loader_svc, &msg, &reply_size,
+                              &handle, &handle_count, 0);
     if (status != NO_ERROR) {
         error("mx_msgpipe_read of %u bytes for loader service reply: %d (%s)",
               sizeof(msg.header), status, mx_strstatus(status));
@@ -1904,11 +1915,11 @@ static void log_write(const void* buf, size_t len) {
 
     mx_status_t status;
     if (logger != MX_HANDLE_INVALID)
-        status = mx_log_write(logger, len, buf, 0);
+        status = _mx_log_write(logger, len, buf, 0);
     else if (!loader_svc_rpc_in_progress && loader_svc != MX_HANDLE_INVALID)
         status = loader_svc_rpc(LOADER_SVC_OP_DEBUG_PRINT, buf, len);
     else {
-        int n = mx_debug_write(buf, len);
+        int n = _mx_debug_write(buf, len);
         status = n < 0 ? n : NO_ERROR;
     }
     if (status != NO_ERROR)
@@ -1934,7 +1945,8 @@ static int errormsg_vprintf(const char* restrict fmt, va_list ap) {
     FILE f = {
         .lbf = EOF,
         .write = errormsg_write,
-        .buf = (void*)fmt, .buf_size = 0,
+        .buf = (void*)fmt,
+        .buf_size = 0,
         .lock = -1,
     };
     return vfprintf(&f, fmt, ap);

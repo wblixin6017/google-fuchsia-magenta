@@ -1,4 +1,5 @@
 #include <dirent.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -30,6 +31,12 @@ static int stub_open(const char* path, int flags, ...) {
     return -1;
 }
 weak_alias(stub_open, open);
+
+static int stub_openat(int fd, const char* filename, int flags, ...) {
+    errno = ENOSYS;
+    return -1;
+}
+weak_alias(stub_openat, openat);
 
 static off_t stub_lseek(int fd, off_t offset, int whence) {
     errno = ENOSYS;
@@ -85,6 +92,12 @@ static int stub_mkdir(const char* path, mode_t mode) {
 }
 weak_alias(stub_mkdir, mkdir);
 
+static int stub_mkdirat(int fd, const char* path, mode_t mode) {
+    errno = ENOSYS;
+    return -1;
+}
+weak_alias(stub_mkdirat, mkdirat);
+
 static int stub_rmdir(const char* path) {
     errno = ENOSYS;
     return -1;
@@ -103,11 +116,23 @@ static int stub_fstat(int fd, struct stat* s) {
 }
 weak_alias(stub_fstat, fstat);
 
+static int stub_fstatat(int fd, const char* restrict path, struct stat* restrict buf, int flag) {
+    errno = ENOSYS;
+    return -1;
+}
+weak_alias(stub_fstatat, fstatat);
+
 static int stub_stat(const char* fn, struct stat* s) {
     errno = ENOSYS;
     return -1;
 }
 weak_alias(stub_stat, stat);
+
+static int stub_lstat(const char* restrict path, struct stat* restrict buf) {
+    errno = ENOSYS;
+    return -1;
+}
+weak_alias(stub_lstat, lstat);
 
 static int stub_dup(int oldfd) {
     errno = ENOSYS;
@@ -168,6 +193,12 @@ static int stub_access(const char* path, int mode) {
     return -1;
 }
 weak_alias(stub_access, access);
+
+static int stub_faccessat(int fd, const char* path, int amode, int flags) {
+    errno = ENOSYS;
+    return -1;
+}
+weak_alias(stub_faccessat, faccessat);
 
 static int stub_chmod(const char* path, mode_t mode) {
     errno = ENOSYS;

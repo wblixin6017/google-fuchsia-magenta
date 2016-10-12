@@ -106,6 +106,7 @@ void apic_vm_init(void)
             PAGE_SIZE, // size
             &apic_virt_base, // returned virtual address
             PAGE_SIZE_SHIFT, // alignment log2
+            0, // min alloc gap
             APIC_PHYS_BASE, // physical address
             0, // vmm flags
             ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE |
@@ -326,10 +327,8 @@ cleanup:
     return status;
 }
 
-// TODO: Where should this declaration go
-extern enum handler_return platform_handle_timer_tick(void);
 enum handler_return apic_timer_interrupt_handler(void) {
-    return platform_handle_timer_tick();
+    return platform_handle_apic_timer_tick();
 }
 
 static void apic_error_init(void) {

@@ -5,6 +5,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <inttypes.h>
 #include <sys/types.h>
 #include <string.h>
 #include <stdlib.h>
@@ -36,6 +37,7 @@ void arch_thread_initialize(thread_t *t, vaddr_t entry_point)
 
     // make sure the top of the stack is 8 byte aligned for EABI compliance
     stack_top = ROUNDDOWN(stack_top, 8);
+    t->stack_top = stack_top;
 
     struct context_switch_frame *frame = (struct context_switch_frame *)(stack_top);
     frame--;
@@ -66,7 +68,6 @@ void arch_dump_thread(thread_t *t)
 {
     if (t->state != THREAD_RUNNING) {
         dprintf(INFO, "\tarch: ");
-        dprintf(INFO, "sp 0x%lx\n", t->arch.sp);
+        dprintf(INFO, "sp %#" PRIxPTR "\n", t->arch.sp);
     }
 }
-

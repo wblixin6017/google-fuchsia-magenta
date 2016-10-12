@@ -6,9 +6,11 @@
 
 #include <arch/x86/feature.h>
 
-#include <trace.h>
-#include <stdint.h>
 #include <assert.h>
+#include <bits.h>
+#include <stdint.h>
+#include <string.h>
+#include <trace.h>
 
 #include <arch/ops.h>
 
@@ -18,6 +20,10 @@ struct cpuid_leaf _cpuid[MAX_SUPPORTED_CPUID + 1];
 struct cpuid_leaf _cpuid_ext[MAX_SUPPORTED_CPUID_EXT - X86_CPUID_EXT_BASE + 1];
 uint32_t max_cpuid = 0;
 uint32_t max_ext_cpuid = 0;
+
+enum x86_vendor_list x86_vendor;
+
+static struct x86_model_info model_info;
 
 static int initialized = 0;
 
@@ -34,6 +40,23 @@ void x86_feature_init(void)
         max_cpuid = MAX_SUPPORTED_CPUID;
 
     LTRACEF("max cpuid 0x%x\n", max_cpuid);
+
+    /* figure out the vendor */
+    union {
+        uint32_t vendor_id[3];
+        char vendor_string[13];
+    } vu;
+    vu.vendor_id[0] = _cpuid[0].b;
+    vu.vendor_id[1] = _cpuid[0].d;
+    vu.vendor_id[2] = _cpuid[0].c;
+    vu.vendor_string[12] = '\0';
+    if (!strcmp(vu.vendor_string, "GenuineIntel")) {
+        x86_vendor = X86_VENDOR_INTEL;
+    } else if (!strcmp(vu.vendor_string, "AuthenticAMD")) {
+        x86_vendor = X86_VENDOR_AMD;
+    } else {
+        x86_vendor = X86_VENDOR_UNKNOWN;
+    }
 
     /* read in the base cpuids */
     for (uint32_t i = 1; i <= max_cpuid; i++) {
@@ -54,9 +77,24 @@ void x86_feature_init(void)
         cpuid_c(i, 0, &_cpuid_ext[index].a, &_cpuid_ext[index].b, &_cpuid_ext[index].c, &_cpuid_ext[index].d);
     }
 
-#if LK_DEBUGLEVEL > 1
-    x86_feature_debug();
-#endif
+    /* populate the model info */
+    const struct cpuid_leaf* leaf = x86_get_cpuid_leaf(X86_CPUID_MODEL_FEATURES);
+    if (leaf) {
+        model_info.processor_type = BITS_SHIFT(leaf->a, 13, 12);
+        model_info.family = BITS_SHIFT(leaf->a, 11, 8);
+        model_info.model = BITS_SHIFT(leaf->a, 7, 4);
+        model_info.stepping = BITS_SHIFT(leaf->a, 3, 0);
+        model_info.display_family = model_info.family;
+        model_info.display_model = model_info.model;
+
+        if (model_info.family == 0xf) {
+            model_info.display_family += BITS_SHIFT(leaf->a, 27, 20);
+        }
+
+        if (model_info.family == 0xf || model_info.family == 0x6) {
+            model_info.display_model += BITS_SHIFT(leaf->a, 19, 16) << 4;
+        }
+    }
 }
 
 bool x86_get_cpuid_subleaf(
@@ -85,9 +123,14 @@ bool x86_topology_enumerate(uint8_t level, struct x86_topology_level *info)
         return false;
     }
 
-    info->num_bits = eax & 0x1f;
+    info->right_shift = eax & 0x1f;
     info->type = type;
     return true;
+}
+
+const struct x86_model_info * x86_get_model(void)
+{
+    return &model_info;
 }
 
 void x86_feature_debug(void)
@@ -123,10 +166,26 @@ void x86_feature_debug(void)
         { X86_FEATURE_TSC_DEADLINE, "tsc_deadline" },
     };
 
-    printf("Features:");
+    const char *vendor_string;
+    switch (x86_vendor) {
+        default:
+        case X86_VENDOR_UNKNOWN: vendor_string = "unknown"; break;
+        case X86_VENDOR_INTEL: vendor_string = "Intel"; break;
+        case X86_VENDOR_AMD: vendor_string = "AMD"; break;
+    }
+    printf("Vendor: %s\n", vendor_string);
+
+    printf("Features: ");
+    uint col = 0;
     for (uint i = 0; i < countof(features); ++i) {
         if (x86_feature_test(features[i].bit))
-            printf(" %s", features[i].name);
+            col += printf("%s ", features[i].name);
+        if (col >= 80) {
+            printf("\n");
+            col = 0;
+        }
     }
-    printf("\n");
+    if (col > 0)
+        printf("\n");
+
 }

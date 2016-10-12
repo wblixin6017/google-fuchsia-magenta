@@ -8,6 +8,7 @@
 #include <debug.h>
 #include <bits.h>
 #include <err.h>
+#include <inttypes.h>
 #include <arch/arm.h>
 #include <kernel/thread.h>
 #include <platform.h>
@@ -93,27 +94,27 @@ static void dump_iframe(struct arm_iframe *frame)
 
 static void exception_die(struct arm_fault_frame *frame, const char *msg)
 {
-    dprintf(CRITICAL, msg);
+    dprintf(CRITICAL, "%s", msg);
     dump_fault_frame(frame);
 
     platform_halt(HALT_ACTION_HALT, HALT_REASON_SW_PANIC);
-    for (;;);
 }
 
 static void exception_die_iframe(struct arm_iframe *frame, const char *msg)
 {
-    dprintf(CRITICAL, msg);
+    dprintf(CRITICAL, "%s", msg);
     dump_iframe(frame);
 
     platform_halt(HALT_ACTION_HALT, HALT_REASON_SW_PANIC);
-    for (;;);
 }
 
+void arm_syscall_handler(struct arm_fault_frame *frame);
 __WEAK void arm_syscall_handler(struct arm_fault_frame *frame)
 {
     exception_die(frame, "unhandled syscall, halting\n");
 }
 
+void arm_undefined_handler(struct arm_iframe *frame);
 void arm_undefined_handler(struct arm_iframe *frame)
 {
     /* look at the undefined instruction, figure out if it's something we can handle */
@@ -159,7 +160,7 @@ void arm_undefined_handler(struct arm_iframe *frame)
         // let magenta get a shot at it
         struct arch_exception_context context = { .iframe = true, .frame = frame };
         arch_enable_ints();
-        status_t erc = magenta_exception_handler(EXC_UNDEFINED_INSTRUCTION, &context, frame->pc);
+        status_t erc = magenta_exception_handler(MX_EXCP_UNDEFINED_INSTRUCTION, &context, frame->pc);
         arch_disable_ints();
         if (erc == NO_ERROR)
             return;
@@ -211,9 +212,10 @@ static status_t arm_shared_page_fault_handler(struct arm_fault_frame *frame, uin
             break;
     }
 
-    return ERR_FAULT;
+    return ERR_INTERNAL;
 }
 
+void arm_data_abort_handler(struct arm_fault_frame *frame);
 void arm_data_abort_handler(struct arm_fault_frame *frame)
 {
     uint32_t fsr = arm_read_dfsr();
@@ -245,7 +247,7 @@ void arm_data_abort_handler(struct arm_fault_frame *frame)
         // let magenta get a shot at it
         struct arch_exception_context context = { .iframe = false, .frame = frame };
         arch_enable_ints();
-        status_t erc = magenta_exception_handler(EXC_FATAL_PAGE_FAULT, &context, frame->pc);
+        status_t erc = magenta_exception_handler(MX_EXCP_FATAL_PAGE_FAULT, &context, frame->pc);
         arch_disable_ints();
         if (erc == NO_ERROR)
             return;
@@ -272,7 +274,7 @@ void arm_data_abort_handler(struct arm_fault_frame *frame)
             break;
         case 0b01001:
         case 0b01011: // domain fault
-            dprintf(CRITICAL, "domain fault, domain %lu\n", BITS_SHIFT(fsr, 7, 4));
+            dprintf(CRITICAL, "domain fault, domain %u\n", BITS_SHIFT(fsr, 7, 4));
             break;
         case 0b01101:
         case 0b01111: // permission fault
@@ -306,6 +308,7 @@ void arm_data_abort_handler(struct arm_fault_frame *frame)
     exception_die(frame, "halting\n");
 }
 
+void arm_prefetch_abort_handler(struct arm_fault_frame *frame);
 void arm_prefetch_abort_handler(struct arm_fault_frame *frame)
 {
     uint32_t fsr = arm_read_ifsr();
@@ -321,7 +324,7 @@ void arm_prefetch_abort_handler(struct arm_fault_frame *frame)
         // let magenta get a shot at it
         struct arch_exception_context context = { .iframe = false, .frame = frame };
         arch_enable_ints();
-        status_t erc = magenta_exception_handler(EXC_FATAL_PAGE_FAULT, &context, frame->pc);
+        status_t erc = magenta_exception_handler(MX_EXCP_FATAL_PAGE_FAULT, &context, frame->pc);
         arch_disable_ints();
         if (erc == NO_ERROR)
             return;
@@ -347,7 +350,7 @@ void arm_prefetch_abort_handler(struct arm_fault_frame *frame)
             break;
         case 0b01001:
         case 0b01011: // domain fault
-            dprintf(CRITICAL, "domain fault, domain %lu\n", BITS_SHIFT(fsr, 7, 4));
+            dprintf(CRITICAL, "domain fault, domain %u\n", BITS_SHIFT(fsr, 7, 4));
             break;
         case 0b01101:
         case 0b01111: // permission fault
@@ -382,7 +385,7 @@ void arm_prefetch_abort_handler(struct arm_fault_frame *frame)
 }
 
 #if WITH_LIB_MAGENTA
-void arch_dump_exception_context(arch_exception_context_t *context)
+void arch_dump_exception_context(const arch_exception_context_t *context)
 {
     // based on context, this could have been a iframe or a full fault frame
     uint32_t usp = 0;
@@ -400,9 +403,16 @@ void arch_dump_exception_context(arch_exception_context_t *context)
     if (is_user_address(usp)) {
         uint8_t buf[256];
         if (copy_from_user_unsafe(buf, (void *)usp, sizeof(buf)) == NO_ERROR) {
-            printf("bottom of user stack at 0x%lx:\n", (vaddr_t)usp);
+            printf("bottom of user stack at %#" PRIxPTR ":\n", (vaddr_t)usp);
             hexdump_ex(buf, sizeof(buf), usp);
         }
     }
+}
+
+void arch_fill_in_exception_context(const arch_exception_context_t *arch_context, mx_exception_report_t *report)
+{
+    report->context.arch_id = ARCH_ID_UNKNOWN;
+
+    // TODO: implement for arm32
 }
 #endif

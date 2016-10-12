@@ -8,9 +8,11 @@
 
 #include <arch/ops.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <lk/init.h>
 #include <platform.h>
 #include <dev/interrupt.h>
+#include <dev/timer/arm_generic.h>
 #include <platform/timer.h>
 #include <trace.h>
 
@@ -114,6 +116,7 @@ static int timer_irq;
 struct fp_32_64 cntpct_per_ms;
 struct fp_32_64 ms_per_cntpct;
 struct fp_32_64 us_per_cntpct;
+struct fp_32_64 ns_per_cntpct;
 
 static uint64_t lk_time_to_cntpct(lk_time_t lk_time)
 {
@@ -127,7 +130,7 @@ static lk_time_t cntpct_to_lk_time(uint64_t cntpct)
 
 static lk_bigtime_t cntpct_to_lk_bigtime(uint64_t cntpct)
 {
-    return u64_mul_u64_fp32_64(cntpct, us_per_cntpct);
+    return u64_mul_u64_fp32_64(cntpct, ns_per_cntpct);
 }
 
 static uint32_t read_cntfrq(void)
@@ -155,13 +158,14 @@ static void write_cntp_ctl(uint32_t cntp_ctl)
 
 static void write_cntp_cval(uint64_t cntp_cval)
 {
-    LTRACEF_LEVEL(3, "cntp_cval: 0x%016llx, %llu\n", cntp_cval, cntp_cval);
+    LTRACEF_LEVEL(3, "cntp_cval: 0x%016" PRIx64 ", %" PRIu64 "\n",
+                  cntp_cval, cntp_cval);
     WRITE_TIMER_REG64(TIMER_REG_CVAL, cntp_cval);
 }
 
 static void write_cntp_tval(int32_t cntp_tval)
 {
-    LTRACEF_LEVEL(3, "cntp_tval: 0x%08x, %d\n", cntp_tval, cntp_tval);
+    LTRACEF_LEVEL(3, "cntp_tval: %d\n", cntp_tval);
     WRITE_TIMER_REG32(TIMER_REG_TVAL, cntp_tval);
 }
 
@@ -170,7 +174,8 @@ static uint64_t read_cntpct(void)
     uint64_t cntpct;
 
     cntpct = READ_TIMER_REG64(TIMER_REG_CT);
-    LTRACEF_LEVEL(3, "cntpct: 0x%016llx, %llu\n", cntpct, cntpct);
+    LTRACEF_LEVEL(3, "cntpct: 0x%016" PRIx64 ", %" PRIu64 "\n",
+                  cntpct, cntpct);
     return cntpct;
 }
 
@@ -230,9 +235,10 @@ static void test_time_conversion_check_result(uint64_t a, uint64_t b, uint64_t l
     if (a != b) {
         uint64_t diff = is32 ? abs_int32(a - b) : abs_int64(a - b);
         if (diff <= limit)
-            LTRACEF("ROUNDED by %llu (up to %llu allowed)\n", diff, limit);
+            LTRACEF("ROUNDED by %" PRIu64 " (up to %" PRIu64 " allowed)\n"
+                    , diff, limit);
         else
-            TRACEF("FAIL, off by %llu\n", diff);
+            TRACEF("FAIL, off by %" PRIu64 "\n", diff);
     }
 }
 
@@ -242,7 +248,9 @@ static void test_lk_time_to_cntpct(uint32_t cntfrq, lk_time_t lk_time)
     uint64_t expected_cntpct = ((uint64_t)cntfrq * lk_time + 500) / 1000;
 
     test_time_conversion_check_result(cntpct, expected_cntpct, 1, false);
-    LTRACEF_LEVEL(2, "lk_time_to_cntpct(%u): got %llu, expect %llu\n", lk_time, cntpct, expected_cntpct);
+    LTRACEF_LEVEL(2, "lk_time_to_cntpct(%u): got %" PRIu64
+                  ", expect %" PRIu64 "\n",
+                  lk_time, cntpct, expected_cntpct);
 }
 
 static void test_cntpct_to_lk_time(uint32_t cntfrq, lk_time_t expected_lk_time, uint32_t wrap_count)
@@ -258,7 +266,8 @@ static void test_cntpct_to_lk_time(uint32_t cntfrq, lk_time_t expected_lk_time, 
     lk_time = cntpct_to_lk_time(cntpct);
 
     test_time_conversion_check_result(lk_time, expected_lk_time, (1000 + cntfrq - 1) / cntfrq, true);
-    LTRACEF_LEVEL(2, "cntpct_to_lk_time(%llu): got %u, expect %u\n", cntpct, lk_time, expected_lk_time);
+    LTRACEF_LEVEL(2, "cntpct_to_lk_time(%" PRIu64 "): got %u, expect %u\n",
+                  cntpct, lk_time, expected_lk_time);
 }
 
 static void test_cntpct_to_lk_bigtime(uint32_t cntfrq, uint64_t expected_s)
@@ -268,7 +277,9 @@ static void test_cntpct_to_lk_bigtime(uint32_t cntfrq, uint64_t expected_s)
     lk_bigtime_t lk_bigtime = cntpct_to_lk_bigtime(cntpct);
 
     test_time_conversion_check_result(lk_bigtime, expected_lk_bigtime, (1000 * 1000 + cntfrq - 1) / cntfrq, false);
-    LTRACEF_LEVEL(2, "cntpct_to_lk_bigtime(%llu): got %llu, expect %llu\n", cntpct, lk_bigtime, expected_lk_bigtime);
+    LTRACEF_LEVEL(2, "cntpct_to_lk_bigtime(%" PRIu64
+                  "): got %" PRIu64 ", expect %" PRIu64 "\n",
+                  cntpct, lk_bigtime, expected_lk_bigtime);
 }
 
 static void test_time_conversions(uint32_t cntfrq)
@@ -299,9 +310,11 @@ static void arm_generic_timer_init_conversion_factors(uint32_t cntfrq)
     fp_32_64_div_32_32(&cntpct_per_ms, cntfrq, 1000);
     fp_32_64_div_32_32(&ms_per_cntpct, 1000, cntfrq);
     fp_32_64_div_32_32(&us_per_cntpct, 1000 * 1000, cntfrq);
+    fp_32_64_div_32_32(&ns_per_cntpct, 1000 * 1000 * 1000, cntfrq);
     LTRACEF("cntpct_per_ms: %08x.%08x%08x\n", cntpct_per_ms.l0, cntpct_per_ms.l32, cntpct_per_ms.l64);
     LTRACEF("ms_per_cntpct: %08x.%08x%08x\n", ms_per_cntpct.l0, ms_per_cntpct.l32, ms_per_cntpct.l64);
     LTRACEF("us_per_cntpct: %08x.%08x%08x\n", us_per_cntpct.l0, us_per_cntpct.l32, us_per_cntpct.l64);
+    LTRACEF("ns_per_cntpct: %08x.%08x%08x\n", ns_per_cntpct.l0, ns_per_cntpct.l32, ns_per_cntpct.l64);
 }
 
 void arm_generic_timer_init(int irq, uint32_t freq_override)
@@ -331,7 +344,7 @@ void arm_generic_timer_init(int irq, uint32_t freq_override)
     arm_generic_timer_init_conversion_factors(cntfrq);
     test_time_conversions(cntfrq);
 
-    LTRACEF("register irq %d on cpu %d\n", irq, arch_curr_cpu_num());
+    LTRACEF("register irq %d on cpu %u\n", irq, arch_curr_cpu_num());
     register_int_handler(irq, &platform_tick, NULL);
     unmask_interrupt(irq);
 
@@ -340,7 +353,7 @@ void arm_generic_timer_init(int irq, uint32_t freq_override)
 
 static void arm_generic_timer_init_secondary_cpu(uint level)
 {
-    LTRACEF("register irq %d on cpu %d\n", timer_irq, arch_curr_cpu_num());
+    LTRACEF("register irq %d on cpu %u\n", timer_irq, arch_curr_cpu_num());
     register_int_handler(timer_irq, &platform_tick, NULL);
     unmask_interrupt(timer_irq);
 }

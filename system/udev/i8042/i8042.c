@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/binding.h>
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <ddk/common/hid.h>
@@ -493,7 +494,7 @@ static int i8042_irq_thread(void* arg) {
         return 0;
 
     for (;;) {
-        status = mx_interrupt_wait(device->irq);
+        status = mx_handle_wait_one(device->irq, MX_SIGNAL_SIGNALED, MX_TIME_INFINITE, NULL);
         if (status == NO_ERROR) {
             // ack IRQ so we don't lose any IRQs that arrive while processing
             // (as this is an edge-triggered IRQ)
@@ -602,6 +603,10 @@ static void i8042_identify(int (*cmd)(uint8_t* param, int command)) {
 
 static mx_status_t i8042_get_descriptor(mx_hid_device_t* dev, uint8_t desc_type,
         void** data, size_t* len) {
+    if (desc_type != HID_DESC_TYPE_REPORT) {
+        return ERR_NOT_FOUND;
+    }
+
     i8042_device_t* device = get_i8042_device(dev);
     const uint8_t* buf = NULL;
     size_t buflen = 0;
@@ -659,7 +664,7 @@ static hid_bus_ops_t hid_bus_ops = {
 
 static mx_status_t i8042_dev_init(i8042_device_t* dev) {
     hid_init_device(&dev->hiddev, &hid_bus_ops, dev->type, true, dev->type);
-    mx_status_t status = hid_add_device(&_driver_i8042, &dev->hiddev, NULL);
+    mx_status_t status = hid_add_device(&_driver_i8042, &dev->hiddev, driver_get_misc_device());
     if (status != NO_ERROR) {
         hid_release_device(&dev->hiddev);
         return status;
@@ -757,9 +762,11 @@ static mx_status_t i8042_init(mx_driver_t* driver) {
     return rc;
 }
 
-mx_driver_t _driver_i8042 BUILTIN_DRIVER = {
-    .name = "i8042",
+mx_driver_t _driver_i8042 = {
     .ops = {
         .init = i8042_init,
     },
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_i8042, "i8042", "magenta", "0.1", 0)
+MAGENTA_DRIVER_END(_driver_i8042)

@@ -9,16 +9,17 @@ MODULE := $(LOCAL_DIR)
 MODULE_TYPE := userlib
 
 MODULE_SRCS += \
-    $(LOCAL_DIR)/common/filter.c \
     $(LOCAL_DIR)/common/hid.c \
     $(LOCAL_DIR)/common/hid-fifo.c \
+    $(LOCAL_DIR)/common/mxdm.c \
     $(LOCAL_DIR)/common/usb.c \
     $(LOCAL_DIR)/completion.c \
     $(LOCAL_DIR)/protocol/input.c \
     $(LOCAL_DIR)/io-alloc.c \
     $(LOCAL_DIR)/iotxn.c \
 
-MODULE_STATIC_LIBS := ulib/hexdump
+MODULE_STATIC_LIBS := \
+    ulib/hexdump
 
 MODULE_EXPORT := ddk
 

@@ -5,7 +5,7 @@
 #pragma once
 
 #include <ddk/device.h>
-#include <ddk/protocol/usb-device.h>
+#include <ddk/protocol/usb.h>
 #include <magenta/compiler.h>
 #include <magenta/hw/usb.h>
 
@@ -27,12 +27,19 @@ mx_status_t usb_get_status(mx_device_t* device, uint8_t request_type, uint16_t i
 
 mx_status_t usb_set_configuration(mx_device_t* device, int config);
 
+mx_status_t usb_set_interface(mx_device_t* device, int interface_number, int alt_setting);
+
 mx_status_t usb_set_feature(mx_device_t* device, uint8_t request_type, int feature, int index);
 
 mx_status_t usb_clear_feature(mx_device_t* device, uint8_t request_type, int feature, int index);
 
 // helper function for allocating iotxns for USB transfers
 iotxn_t* usb_alloc_iotxn(uint8_t ep_address, size_t data_size, size_t extra_size);
+
+// sets the frame number in a USB iotxn for scheduling an isochronous transfer
+inline void usb_iotxn_set_frame(iotxn_t* txn, uint64_t frame) {
+    ((usb_protocol_data_t *)iotxn_pdata(txn, usb_protocol_data_t))->frame = frame;
+}
 
 // Utilities for iterating through descriptors within a device's USB configuration descriptor
 typedef struct {

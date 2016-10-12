@@ -59,6 +59,9 @@ void apic_timer_stop(void);
 enum handler_return apic_error_interrupt_handler(void);
 enum handler_return apic_timer_interrupt_handler(void);
 
+// platform code needs to implement this
+enum handler_return platform_handle_apic_timer_tick(void);
+
 // Information about the system IO APICs
 struct io_apic_descriptor {
     uint8_t apic_id;
@@ -99,6 +102,10 @@ void apic_io_configure_irq(
         enum apic_interrupt_dst_mode dst_mode,
         uint8_t dst,
         uint8_t vector);
+status_t apic_io_fetch_irq_config(
+        uint32_t global_irq,
+        enum interrupt_trigger_mode* trig_mode,
+        enum interrupt_polarity* polarity);
 void apic_io_configure_irq_vector(
         uint32_t global_irq,
         uint8_t vector);

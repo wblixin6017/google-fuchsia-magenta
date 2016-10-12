@@ -7,6 +7,7 @@
 #include <asm.h>
 #include <arch/arm64/mmu.h>
 #include <arch/asm_macros.h>
+#include <arch/defines.h>
 #include <kernel/vm.h>
 
 /*
@@ -38,14 +39,23 @@ attr                    .req x27
 FUNCTION(_start)
 .globl arm_reset
 arm_reset:
+    adrp    tmp, boot_args
+    add     tmp, tmp, #:lo12:boot_args
+    stp     x2, x3, [tmp]
+    stp     x0, x1, [tmp, #16]
+
+
     bl      arm64_elX_to_el1
+    bl      arch_invalidate_cache_all
 
 #if WITH_KERNEL_VM
     /* enable caches so atomics and spinlocks work */
     mrs     tmp, sctlr_el1
     orr     tmp, tmp, #(1<<12) /* Enable icache */
     orr     tmp, tmp, #(1<<2)  /* Enable dcache/ucache */
-    bic     tmp, tmp, #(1<<3)  /* Disable Stack Alignment Check */ /* TODO: don't use unaligned stacks */
+    orr     tmp, tmp, #(1<<3)  /* Enable Stack Alignment Check EL1 */
+    orr     tmp, tmp, #(1<<4)  /* Enable Stack Alignment Check EL0 */
+    bic     tmp, tmp, #(1<<1)  /* Disable Alignment Checking for EL1 EL0 */
     msr     sctlr_el1, tmp
 
     /* set up the mmu according to mmu_initial_mappings */
@@ -359,6 +369,11 @@ arm_reset:
     cbnz    tmp2, .L__bss_loop
 .L__bss_loop_done:
 
+    adrp    tmp, boot_args
+    add     tmp, tmp, #:lo12:boot_args
+    ldp     x2, x3, [tmp]
+    ldp     x0, x1, [tmp, #16]
+
     bl  lk_main
     b   .
 
@@ -388,9 +403,11 @@ arm_reset:
 #endif
 
 .ltorg
-
-#if WITH_SMP
 .data
+DATA(boot_args)
+    .align  6
+    .skip   32
+#if WITH_SMP
 DATA(page_tables_not_ready)
     .long       1
 #endif
@@ -399,6 +416,7 @@ DATA(page_tables_not_ready)
     .align 4
 DATA(__stack)
     .skip ARCH_DEFAULT_STACK_SIZE * SMP_MAX_CPUS
+    .align 16
 DATA(__stack_end)
 
 #if WITH_KERNEL_VM

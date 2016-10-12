@@ -193,7 +193,7 @@ public:
     bool InContainer() const { return sll_node_state_.InContainer(); }
 
 private:
-    friend class DefaultSinglyLinkedListTraits<T>;
+    friend struct DefaultSinglyLinkedListTraits<T>;
     SinglyLinkedListNodeState<T> sll_node_state_;
 };
 
@@ -202,8 +202,8 @@ class SinglyLinkedList {
 private:
     // Private fwd decls of the iterator implementation.
     template <typename IterTraits> class iterator_impl;
-    class iterator_traits;
-    class const_iterator_traits;
+    struct iterator_traits;
+    struct const_iterator_traits;
 
 public:
     // Aliases used to reduce verbosity and expose types/traits to tests
@@ -473,7 +473,10 @@ private:
             return ret;
         }
 
-        typename PtrTraits::PtrType CopyPointer() { return PtrTraits::Copy(node_); }
+        typename PtrTraits::PtrType CopyPointer() {
+            return IsValid() ? PtrTraits::Copy(node_) : nullptr;
+        }
+
         typename IterTraits::RefType operator*() const {
             DEBUG_ASSERT(IsValid());
             return *node_;

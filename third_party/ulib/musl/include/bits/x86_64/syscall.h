@@ -1,5 +1,4 @@
 #define SYS_close 3
-#define SYS_fstat 5
 #define SYS_rt_sigaction 13
 #define SYS_rt_sigprocmask 14
 #define SYS_ioctl 16
@@ -13,7 +12,6 @@
 #define SYS_shmctl 31
 #define SYS_getitimer 36
 #define SYS_setitimer 38
-#define SYS_clone 56
 #define SYS_execve 59
 #define SYS_wait4 61
 #define SYS_kill 62
@@ -86,7 +84,6 @@
 #define SYS_mkdirat 258
 #define SYS_mknodat 259
 #define SYS_fchownat 260
-#define SYS_newfstatat 262
 #define SYS_renameat 264
 #define SYS_linkat 265
 #define SYS_symlinkat 266

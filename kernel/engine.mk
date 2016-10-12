@@ -21,9 +21,11 @@ BUILDDIR_SUFFIX ?=
 DEBUG ?= 2
 ENABLE_BUILD_LISTFILES ?= false
 ENABLE_BUILD_SYSROOT ?= false
-CLANG ?= 0
+USE_CLANG ?= false
 USE_GOLD ?= true
 LKNAME ?= magenta
+CLANG_TARGET_FUCHSIA ?= false
+USE_LINKER_GC ?= true
 
 # special rule for handling make spotless
 ifeq ($(MAKECMDGOALS),spotless)
@@ -75,16 +77,23 @@ USER_CONFIG_HEADER := $(BUILDDIR)/config-user.h
 
 GLOBAL_INCLUDES := system/public system/private
 GLOBAL_OPTFLAGS ?= $(ARCH_OPTFLAGS)
-GLOBAL_COMPILEFLAGS := -g -finline -include $(GLOBAL_CONFIG_HEADER)
-GLOBAL_COMPILEFLAGS += -Wall -Wextra -Wno-multichar -Werror -Wno-unused-parameter -Wno-unused-function -Wno-unused-label -Werror=return-type -Wno-nonnull-compare
-ifeq ($(CLANG),1)
+GLOBAL_DEBUGFLAGS ?= -g
+GLOBAL_COMPILEFLAGS := $(GLOBAL_DEBUGFLAGS) -finline -include $(GLOBAL_CONFIG_HEADER)
+GLOBAL_COMPILEFLAGS += -Wall -Wextra -Wno-multichar -Werror -Wno-unused-parameter -Wno-unused-function -Wno-unused-label -Werror=return-type
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 GLOBAL_COMPILEFLAGS += -Wno-error
+else
+GLOBAL_COMPILEFLAGS += -Wno-nonnull-compare
 endif
-GLOBAL_CFLAGS := --std=c11 -Werror-implicit-function-declaration -Wstrict-prototypes -Wwrite-strings
-# Note: Both -fno-exceptions and -fno-asynchronous-unwind-tables is needed
+# Note: Both -fno-exceptions and -fno-asynchronous-unwind-tables is needed on x86
 # in order to stop gcc from emitting .eh_frame (which is part of the loaded
-# image by default).
-GLOBAL_CPPFLAGS := --std=c++11 -fno-exceptions -fno-asynchronous-unwind-tables -fno-rtti -fno-threadsafe-statics -Wconversion
+# image by default). Things are different on arm{32,64}:
+# - -fasynchronous-unwind-tables is off by default
+# - -fno-exceptions is sufficient to disable .eh_frame
+# We add -fno-a*-u*-t* to GLOBAL_COMPILEFLAGS as we need it for C too.
+GLOBAL_COMPILEFLAGS += -fno-asynchronous-unwind-tables
+GLOBAL_CFLAGS := --std=c11 -Werror-implicit-function-declaration -Wstrict-prototypes -Wwrite-strings
+GLOBAL_CPPFLAGS := --std=c++14 -fno-exceptions -fno-rtti -fno-threadsafe-statics -Wconversion
 #GLOBAL_CPPFLAGS += -Weffc++
 GLOBAL_ASMFLAGS := -DASSEMBLY
 GLOBAL_LDFLAGS := -nostdlib $(addprefix -L,$(LKINC))
@@ -93,13 +102,16 @@ GLOBAL_MODULE_LDFLAGS :=
 # Kernel compile flags
 KERNEL_INCLUDES := $(BUILDDIR) $(addsuffix /include,$(LKINC))
 KERNEL_COMPILEFLAGS := -fno-pic -ffreestanding -include $(KERNEL_CONFIG_HEADER)
-KERNEL_CFLAGS :=
+KERNEL_COMPILEFLAGS += -Wnull-dereference -Wformat=2 -Wformat-signedness
+KERNEL_CFLAGS := -Wmissing-prototypes
 KERNEL_CPPFLAGS :=
 KERNEL_ASMFLAGS :=
 
 # User space compile flags
-USER_COMPILEFLAGS := -fno-omit-frame-pointer -include $(USER_CONFIG_HEADER) -fPIC -D_ALL_SOURCE=1
+USER_COMPILEFLAGS := -include $(USER_CONFIG_HEADER) -fPIC -D_ALL_SOURCE=1
 USER_COMPILEFLAGS += -DDEPRECATE_COMPAT_SYSCALLS=1
+#TODO: remove once userspace backtracing is smarter
+USER_COMPILEFLAGS += -fno-omit-frame-pointer
 USER_CFLAGS :=
 USER_CPPFLAGS :=
 USER_ASMFLAGS :=
@@ -197,6 +209,9 @@ EXTRA_BUILDDEPS :=
 # any rules you put here will be depended on in clean builds
 EXTRA_CLEANDEPS :=
 
+# build ids
+EXTRA_IDFILES :=
+
 # any objects you put here get linked with the final image
 EXTRA_OBJS :=
 
@@ -220,6 +235,7 @@ USER_FS := $(BUILDDIR)/user.fs
 # manifest of files to include in the user bootfs
 USER_MANIFEST := $(BUILDDIR)/bootfs.manifest
 USER_MANIFEST_LINES :=
+USER_MANIFEST_DEBUG_INPUTS :=
 
 # construct a slightly prettier version of LKINC with . removed and trailing / added
 # used in module.mk
@@ -261,6 +277,19 @@ include make/recurse.mk
 # host tools
 include system/tools/build.mk
 
+ifneq ($(EXTRA_IDFILES),)
+$(BUILDDIR)/ids.txt: $(EXTRA_IDFILES)
+	@echo generating $@
+	@rm -f $@.tmp
+	@for f in $(EXTRA_IDFILES); do \
+	echo `cat $$f` `echo $$f | sed 's/\.id$$//g'` >> $@.tmp; \
+	done; \
+	mv $@.tmp $@
+
+EXTRA_BUILDDEPS += $(BUILDDIR)/ids.txt
+GENERATED += $(BUILDDIR)/ids.txt
+endif
+
 ifeq ($(call TOBOOL,$(ENABLE_BUILD_SYSROOT)),true)
 # identify global headers to copy to the sysroot
 GLOBAL_HEADERS := $(shell find system/public -name \*\.h -or -name \*\.inc)
@@ -283,18 +312,18 @@ SYSROOT_DEPS += $(SYSROOT_CRT1) $(SYSROOT_SCRT1)
 GENERATED += $(SYSROOT_CRT1) $(SYSROOT_SCRT1)
 
 # generate empty compatibility libs
-$(BUILDDIR)/sysroot/lib/libm.a::
+$(BUILDDIR)/sysroot/lib/libm.so: third_party/ulib/musl/lib.ld
 	@$(MKDIR)
-	$(NOECHO)echo '!<arch>' > $@
-$(BUILDDIR)/sysroot/lib/libdl.a::
+	$(NOECHO)cp $< $@
+$(BUILDDIR)/sysroot/lib/libdl.so: third_party/ulib/musl/lib.ld
 	@$(MKDIR)
-	$(NOECHO)echo '!<arch>' > $@
-$(BUILDDIR)/sysroot/lib/libpthread.a::
+	$(NOECHO)cp $< $@
+$(BUILDDIR)/sysroot/lib/libpthread.so: third_party/ulib/musl/lib.ld
 	@$(MKDIR)
-	$(NOECHO)echo '!<arch>' > $@
+	$(NOECHO)cp $< $@
 
-SYSROOT_DEPS += $(BUILDDIR)/sysroot/lib/libm.a $(BUILDDIR)/sysroot/lib/libdl.a $(BUILDDIR)/sysroot/lib/libpthread.a
-GENERATED += $(BUILDDIR)/sysroot/lib/libm.a $(BUILDDIR)/sysroot/lib/libdl.a $(BUILDDIR)/sysroot/lib/libpthread.a
+SYSROOT_DEPS += $(BUILDDIR)/sysroot/lib/libm.so $(BUILDDIR)/sysroot/lib/libdl.so $(BUILDDIR)/sysroot/lib/libpthread.so
+GENERATED += $(BUILDDIR)/sysroot/lib/libm.so $(BUILDDIR)/sysroot/lib/libdl.so $(BUILDDIR)/sysroot/lib/libpthread.so
 endif
 
 # any extra top level build dependencies that someone declared
@@ -302,10 +331,6 @@ all:: $(EXTRA_BUILDDEPS) $(SYSROOT_DEPS)
 
 # make the build depend on all of the user apps
 all:: $(foreach app,$(ALLUSER_APPS),$(app) $(app).strip)
-
-ifeq ($(call TOBOOL,$(ENABLE_BUILD_LISTFILES)),true)
-all:: $(foreach app,$(ALLUSER_APPS),$(app).lst $(app).dump)
-endif
 
 # add some automatic configuration defines
 KERNEL_DEFINES += \
@@ -336,7 +361,7 @@ KERNEL_INCLUDES := $(addprefix -I,$(KERNEL_INCLUDES))
 
 # default to no ccache
 CCACHE ?=
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 CC := $(CCACHE) $(TOOLCHAIN_PREFIX)clang
 AR := $(TOOLCHAIN_PREFIX)llvm-ar
 else
@@ -351,6 +376,7 @@ USER_LD := $(LD)
 endif
 OBJDUMP := $(TOOLCHAIN_PREFIX)objdump
 OBJCOPY := $(TOOLCHAIN_PREFIX)objcopy
+READELF := $(TOOLCHAIN_PREFIX)readelf
 CPPFILT := $(TOOLCHAIN_PREFIX)c++filt
 SIZE := $(TOOLCHAIN_PREFIX)size
 NM := $(TOOLCHAIN_PREFIX)nm

@@ -17,8 +17,10 @@
 
 #include <magenta/dispatcher.h>
 #include <magenta/excp_port.h>
+#include <magenta/job_dispatcher.h>
 #include <magenta/handle.h>
 #include <magenta/process_dispatcher.h>
+#include <magenta/resource_dispatcher.h>
 #include <magenta/state_tracker.h>
 
 // The next two includes should be removed. See DeleteHandle().
@@ -44,8 +46,12 @@ mxtl::TypedArena<Handle> handle_arena;
 static mxtl::RefPtr<ExceptionPort> system_exception_port;
 static mutex_t system_exception_mutex = MUTEX_INITIAL_VALUE(system_exception_mutex);
 
+// All jobs and processes are rooted at the |root_job|.
+static mxtl::RefPtr<JobDispatcher> root_job;
+
 void magenta_init(uint level) {
     handle_arena.Init("handles", kMaxHandleCount);
+    root_job = JobDispatcher::CreateRootJob();
 }
 
 Handle* MakeHandle(mxtl::RefPtr<Dispatcher> dispatcher, mx_rights_t rights) {
@@ -67,11 +73,13 @@ void DeleteHandle(Handle* handle) {
         // This code is sad but necessary because certain dispatchers
         // have complicated Close() logic which cannot be untangled at
         // this time.
-        switch (disp->GetType()) {
-            case MX_OBJ_TYPE_PCI_INT: disp->get_pci_interrupt_dispatcher()->Close();
+        switch (disp->get_type()) {
+            case MX_OBJ_TYPE_IOMAP: {
+                auto iodisp = disp->get_specific<IoMappingDispatcher>();
+                if (iodisp)
+                    iodisp->Close();
                 break;
-            case MX_OBJ_TYPE_IOMAP: disp->get_io_mapping_dispatcher()->Close();
-                break;
+            }
             default:  break;
                 // This is fine. See for example the LogDispatcher.
         };
@@ -122,6 +130,10 @@ mxtl::RefPtr<ExceptionPort> GetSystemExceptionPort() {
     return system_exception_port;
 }
 
+mxtl::RefPtr<JobDispatcher> GetRootJobDispatcher() {
+    return root_job;
+}
+
 bool magenta_rights_check(mx_rights_t actual, mx_rights_t desired) {
     if ((actual & desired) == desired)
         return true;
@@ -138,5 +150,17 @@ mx_status_t magenta_sleep(mx_time_t nanoseconds) {
     return thread_sleep_etc(t, true);
 }
 
-LK_INIT_HOOK(magenta, magenta_init, LK_INIT_LEVEL_THREADING);
+mx_status_t validate_resource_handle(mx_handle_t handle) {
+    auto up = ProcessDispatcher::GetCurrent();
+    mxtl::RefPtr<ResourceDispatcher> resource;
+    return up->GetDispatcher(handle, &resource);
+}
 
+mx_status_t get_process(ProcessDispatcher* up,
+                        mx_handle_t proc_handle,
+                        mxtl::RefPtr<ProcessDispatcher>* proc) {
+    return up->GetDispatcher(proc_handle, proc, MX_RIGHT_WRITE);
+}
+
+
+LK_INIT_HOOK(magenta, magenta_init, LK_INIT_LEVEL_THREADING);

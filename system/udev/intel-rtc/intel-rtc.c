@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/binding.h>
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <hw/inout.h>
@@ -65,7 +66,7 @@ static ssize_t intel_rtc_read(mx_device_t* dev, void* buf, size_t count, mx_off_
         return ERR_INTERNAL;
     }
     if ((unsigned int)n > count) {
-        return ERR_NOT_ENOUGH_BUFFER;
+        return ERR_BUFFER_TOO_SMALL;
     }
     return n;
 }
@@ -92,7 +93,7 @@ static mx_status_t intel_rtc_init(mx_driver_t* drv) {
         return status;
     }
 
-    status = device_add(dev, NULL);
+    status = device_add(dev, driver_get_misc_device());
     if (status != NO_ERROR) {
         free(dev);
         return status;
@@ -104,9 +105,11 @@ static mx_status_t intel_rtc_init(mx_driver_t* drv) {
 #endif
 }
 
-mx_driver_t _driver_intel_rtc BUILTIN_DRIVER = {
-    .name = "intel_rtc",
+mx_driver_t _driver_intel_rtc = {
     .ops = {
         .init = intel_rtc_init,
     },
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_intel_rtc, "intel-rtc", "magenta", "0.1", 0)
+MAGENTA_DRIVER_END(_driver_intel_rtc)

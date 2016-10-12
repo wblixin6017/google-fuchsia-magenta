@@ -12,10 +12,13 @@
 #include <assert.h>
 #include <new.h>
 #include <err.h>
+#include <inttypes.h>
 #include <trace.h>
 
+#define LOCAL_TRACE 0
+
 constexpr mx_rights_t kDefaultVmoRights =
-    MX_RIGHT_DUPLICATE | MX_RIGHT_TRANSFER | MX_RIGHT_READ | MX_RIGHT_WRITE | MX_RIGHT_EXECUTE;
+    MX_RIGHT_DUPLICATE | MX_RIGHT_TRANSFER | MX_RIGHT_READ | MX_RIGHT_WRITE | MX_RIGHT_EXECUTE | MX_RIGHT_MAP;
 
 status_t VmObjectDispatcher::Create(mxtl::RefPtr<VmObject> vmo,
                                     mxtl::RefPtr<Dispatcher>* dispatcher,
@@ -35,7 +38,7 @@ VmObjectDispatcher::VmObjectDispatcher(mxtl::RefPtr<VmObject> vmo)
 
 VmObjectDispatcher::~VmObjectDispatcher() {}
 
-mx_ssize_t VmObjectDispatcher::Read(void* user_data, mx_size_t length, uint64_t offset) {
+mx_ssize_t VmObjectDispatcher::Read(user_ptr<void> user_data, mx_size_t length, uint64_t offset) {
 
     size_t bytes_read;
     status_t err = vmo_->ReadUser(user_data, offset, length, &bytes_read);
@@ -45,7 +48,7 @@ mx_ssize_t VmObjectDispatcher::Read(void* user_data, mx_size_t length, uint64_t 
     return bytes_read;
 }
 
-mx_ssize_t VmObjectDispatcher::Write(const void* user_data, mx_size_t length, uint64_t offset) {
+mx_ssize_t VmObjectDispatcher::Write(user_ptr<const void> user_data, mx_size_t length, uint64_t offset) {
 
     size_t bytes_written;
     status_t err = vmo_->WriteUser(user_data, offset, length, &bytes_written);
@@ -65,9 +68,55 @@ mx_status_t VmObjectDispatcher::GetSize(uint64_t* size) {
     return NO_ERROR;
 }
 
+mx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t size,
+                                        user_ptr<void> buffer, size_t buffer_size, mx_rights_t rights) {
+    LTRACEF("op %u offset %#" PRIx64 " size %#" PRIx64
+            " buffer %p buffer_size %zu rights %#x\n",
+            op, offset, size, buffer.get(), buffer_size, rights);
+
+    // TODO: test rights
+
+    switch (op) {
+        case MX_VMO_OP_COMMIT: {
+            auto committed = vmo_->CommitRange(offset, size);
+            if (committed < 0)
+                return static_cast<mx_status_t>(committed);
+
+            // TODO: handle partial commits
+            return NO_ERROR;
+        }
+        case MX_VMO_OP_DECOMMIT:
+            // TODO: handle
+            return ERR_NOT_SUPPORTED;
+        case MX_VMO_OP_LOCK:
+        case MX_VMO_OP_UNLOCK:
+            // TODO: handle
+            return ERR_NOT_SUPPORTED;
+        case MX_VMO_OP_LOOKUP:
+            // we will be using the user pointer
+            if (!buffer)
+                return ERR_INVALID_ARGS;
+
+            // make sure that mx_paddr_t doesn't drift from paddr_t, which the VM uses internally
+            static_assert(sizeof(mx_paddr_t) == sizeof(paddr_t));
+
+            return vmo_->Lookup(offset, size, buffer.reinterpret<paddr_t>(), buffer_size);
+        case MX_VMO_OP_CACHE_SYNC:
+            // TODO: handle
+            return ERR_NOT_SUPPORTED;
+        default:
+            return ERR_INVALID_ARGS;
+    }
+}
+
 mx_status_t VmObjectDispatcher::Map(mxtl::RefPtr<VmAspace> aspace, uint32_t vmo_rights, uint64_t offset, mx_size_t len,
                                     uintptr_t* _ptr, uint32_t flags) {
-    DEBUG_ASSERT(aspace);
+    LTRACEF("vmo_rights 0x%x flags 0x%x\n", vmo_rights, flags);
+
+    // test to see if we should even be able to map this
+    if (!(vmo_rights & MX_RIGHT_MAP)) {
+        return ERR_ACCESS_DENIED;
+    }
 
     // add magenta vm flags, test against rights, and convert to vmm flags
     uint vmm_flags = 0;
@@ -76,7 +125,7 @@ mx_status_t VmObjectDispatcher::Map(mxtl::RefPtr<VmAspace> aspace, uint32_t vmo_
         vmm_flags |= VMM_FLAG_VALLOC_SPECIFIC;
     }
 
-    // TODO: test the following against rights on the process and vmo handle
+    // convert MX level mapping flags to internal VM flags
     uint arch_mmu_flags = ARCH_MMU_FLAG_PERM_USER;
     switch (flags & (MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE)) {
     case MX_VM_FLAG_PERM_READ:
@@ -91,15 +140,23 @@ mx_status_t VmObjectDispatcher::Map(mxtl::RefPtr<VmAspace> aspace, uint32_t vmo_
         return ERR_INVALID_ARGS;
     }
 
+    // add the execute bit
     if (flags & MX_VM_FLAG_PERM_EXECUTE) {
         arch_mmu_flags |= ARCH_MMU_FLAG_PERM_EXECUTE;
     }
 
-    // TODO(teisenbe): Remove this when we have more symbolic debugging working.
-    // This is a hack to make it easier to decode crash addresses
-    const uint min_align_log2 = 20;
+    // test against READ/WRITE/EXECUTE rights
+    if ((flags & MX_VM_FLAG_PERM_READ) && !(vmo_rights & MX_RIGHT_READ)) {
+        return ERR_ACCESS_DENIED;
+    }
+    if ((flags & MX_VM_FLAG_PERM_WRITE) && !(vmo_rights & MX_RIGHT_WRITE)) {
+        return ERR_ACCESS_DENIED;
+    }
+    if ((flags & MX_VM_FLAG_PERM_EXECUTE) && !(vmo_rights & MX_RIGHT_EXECUTE)) {
+        return ERR_ACCESS_DENIED;
+    }
 
-    auto status = aspace->MapObject(vmo_, "unnamed", offset, len, reinterpret_cast<void**>(_ptr), min_align_log2,
+    auto status = aspace->MapObject(vmo_, "unnamed", offset, len, reinterpret_cast<void**>(_ptr), 0, 0,
                                     vmm_flags, arch_mmu_flags);
     if (status < 0)
         return status;

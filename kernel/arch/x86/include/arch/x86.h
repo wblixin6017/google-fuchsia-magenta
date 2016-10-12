@@ -44,6 +44,15 @@ typedef struct x86_32_iframe x86_iframe_t;
 typedef struct x86_64_iframe x86_iframe_t;
 #endif
 
+void x86_exception_handler(x86_iframe_t *frame);
+enum handler_return platform_irq(x86_iframe_t *frame);
+
+struct arch_exception_context {
+    bool is_page_fault;
+    x86_iframe_t *frame;
+    uint32_t cr2;
+};
+
 struct x86_32_context_switch_frame {
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
     uint32_t eflags;
@@ -58,15 +67,13 @@ struct x86_64_context_switch_frame {
     uint64_t rip;
 };
 
-struct arch_exception_context {
-    bool is_page_fault;
-    x86_iframe_t *frame;
-    uint32_t cr2;
-};
-
 void x86_64_context_switch(vaddr_t *oldsp, vaddr_t newsp);
 void x86_uspace_entry(uintptr_t arg1, uintptr_t arg2, uintptr_t sp,
                       uintptr_t pc, uint64_t rflags) __NO_RETURN;
+
+uint64_t x86_64_syscall(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4,
+                        uint64_t arg5, uint64_t arg6, uint64_t arg7, uint64_t arg8,
+                        uint64_t syscall_num, uint64_t ip);
 
 /* @brief Register all of the CPUs in the system
  *
@@ -90,7 +97,7 @@ void x86_init_smp(uint32_t *apic_ids, uint32_t num_cpus);
  * @param count The number of entries in the apic_ids list.
  *
  * @return ERR_INVALID_ARGS if an unknown APIC ID was provided.
- * @return ERR_ALREADY_STARTED if one of the targets is currently online
+ * @return ERR_BAD_STATE if one of the targets is currently online
  * @return ERR_TIMED_OUT if one of the targets failed to launch
  */
 status_t x86_bringup_aps(uint32_t *apic_ids, uint32_t count);
@@ -434,28 +441,30 @@ static inline bool x86_is_PAE_enabled(void)
     return true;
 }
 
-static inline uintptr_t x86_read_gs_offset(uintptr_t offset)
+#if ARCH_X86_64
+static inline uint64_t x86_read_gs_offset64(uintptr_t offset)
 {
-    ulong ret;
-
-    __asm__(
-        "mov   %%gs:%1, %0"
-        : "=r" (ret)
-        : "m" (*(uintptr_t *)(offset))
-        :
-    );
-
+    uint64_t ret;
+    __asm__( "movq  %%gs:%1, %0" : "=r" (ret) : "m" (*(uint64_t *)(offset)));
     return ret;
 }
 
-static inline void x86_write_gs_offset(uintptr_t offset, uintptr_t val)
+static inline void x86_write_gs_offset64(uintptr_t offset, uint64_t val)
 {
-    __asm__(
-        "mov   %0, %%gs:%1"
-        :
-        : "r" (val), "m" (*(uintptr_t *)(offset))
-        : "memory"
-    );
+    __asm__( "movq  %0, %%gs:%1" : : "ir" (val), "m" (*(uint64_t *)(offset)) : "memory");
+}
+#endif
+
+static inline uint32_t x86_read_gs_offset32(uintptr_t offset)
+{
+    uint32_t ret;
+    __asm__( "movl  %%gs:%1, %0" : "=r" (ret) : "m" (*(uint32_t *)(offset)));
+    return ret;
+}
+
+static inline void x86_write_gs_offset32(uintptr_t offset, uint32_t val)
+{
+    __asm__( "movl   %0, %%gs:%1" : : "ir" (val), "m" (*(uint32_t *)(offset)) : "memory");
 }
 
 

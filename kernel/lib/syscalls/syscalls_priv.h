@@ -8,16 +8,11 @@
 
 #include <magenta/types.h>
 #include <magenta/syscalls-types.h>
-#include <mxtl/user_ptr.h>
+#include <lib/user_copy/user_ptr.h>
 
 // Please don't put CDECLS here. We want the stricter declaration matching
 // rules of C++.
 #define MAGENTA_SYSCALL_DEF(nargs64, nargs32, n, ret, name, args...) ret sys_##name(args);
 // On the kernel side, we define the type-safe user_ptr<> for syscall user pointer params.
-#define USER_PTR(type) mxtl::user_ptr<type>
+#define USER_PTR(type) user_ptr<type>
 #include <magenta/syscalls.inc>
-
-// Determines if this handle is to a Resource object.
-// Used to provide access to privileged syscalls.
-// Later, Resource objects will be finer-grained.
-mx_status_t validate_resource_handle(mx_handle_t handle);

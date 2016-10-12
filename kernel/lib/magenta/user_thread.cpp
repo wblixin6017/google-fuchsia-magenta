@@ -16,26 +16,39 @@
 
 #include <lib/dpc.h>
 
+#include <arch/debugger.h>
+
 #include <kernel/auto_lock.h>
 #include <kernel/thread.h>
 #include <kernel/vm.h>
 #include <kernel/vm/vm_aspace.h>
 
+#include <magenta/exception.h>
 #include <magenta/excp_port.h>
 #include <magenta/io_port_dispatcher.h>
 #include <magenta/magenta.h>
 #include <magenta/process_dispatcher.h>
+#include <magenta/thread_dispatcher.h>
 
 #define LOCAL_TRACE 0
 
-UserThread::UserThread(mx_koid_t koid,
-                       mxtl::RefPtr<ProcessDispatcher> process,
+UserThread::UserThread(mxtl::RefPtr<ProcessDispatcher> process,
                        uint32_t flags)
-    : koid_(koid),
+    : koid_(MX_KOID_INVALID),
       process_(mxtl::move(process)),
       state_tracker_(true, mx_signals_state_t{0u, MX_SIGNAL_SIGNALED}) {
     LTRACE_ENTRY_OBJ;
 }
+
+// This is called during initialization after both us and our dispatcher
+// have been created.
+// N.B. Use of dispatcher_ is potentially racy.
+// See UserThread::DispatcherClosed.
+
+void UserThread::set_dispatcher(ThreadDispatcher* dispatcher) {
+    dispatcher_ = dispatcher;
+    koid_ = dispatcher->get_koid();
+ }
 
 UserThread::~UserThread() {
     LTRACE_ENTRY_OBJ;
@@ -89,7 +102,7 @@ status_t UserThread::Initialize(mxtl::StringPiece name) {
     thread_set_exit_callback(&thread_, &ThreadExitCallback, reinterpret_cast<void*>(this));
 
     // set the per-thread pointer
-    thread_.tls[TLS_ENTRY_LKUSER] = reinterpret_cast<uintptr_t>(this);
+    lkthread->user_thread = reinterpret_cast<void*>(this);
 
     // associate the proc's address space with this thread
     process_->aspace()->AttachToThread(lkthread);
@@ -124,6 +137,10 @@ status_t UserThread::Start(uintptr_t entry, uintptr_t sp,
     // mark ourselves as running and resume the kernel thread
     SetState(State::RUNNING);
 
+#if WITH_LIB_KTRACE
+    thread_.user_tid = dispatcher_->get_koid();
+    thread_.user_pid = process_->get_koid();
+#endif
     thread_resume(&thread_);
 
     return NO_ERROR;
@@ -292,22 +309,43 @@ mxtl::RefPtr<ExceptionPort> UserThread::exception_port() {
     return exception_port_;
 }
 
-status_t UserThread::ExceptionHandlerExchange(mxtl::RefPtr<ExceptionPort> eport, const mx_exception_report_t* report) {
+status_t UserThread::ExceptionHandlerExchange(mxtl::RefPtr<ExceptionPort> eport,
+                                              const mx_exception_report_t* report,
+                                              const arch_exception_context_t* arch_context) {
     LTRACE_ENTRY_OBJ;
     AutoLock lock(exception_wait_lock_);
+
+    // So the handler can read/write our general registers.
+    thread_.exception_context = arch_context;
+
+    // So various bits know we're stopped in an exception.
+    thread_.flags |= THREAD_FLAG_STOPPED_FOR_EXCEPTION;
+
     exception_status_ = MX_EXCEPTION_STATUS_WAITING;
+
     // Send message, wait for reply.
+    // Note that there is a "race" that we need handle: We need to send the
+    // exception report before going to sleep, but what if the receiver of the
+    // report gets it and processes it before we are asleep? This is handled by
+    // locking exception_wait_lock_ in places where the handler can see/modify
+    // thread state.
+
     status_t status = eport->SendReport(report);
     if (status != NO_ERROR) {
         LTRACEF("SendReport returned %d\n", status);
         exception_status_ = MX_EXCEPTION_STATUS_NOT_HANDLED;
+        thread_.exception_context = NULL;
+        thread_.flags &= ~THREAD_FLAG_STOPPED_FOR_EXCEPTION;
         return status;
     }
     status = cond_wait_timeout(&exception_wait_cond_, exception_wait_lock_.GetInternal(), INFINITE_TIME);
     DEBUG_ASSERT(status == NO_ERROR);
     DEBUG_ASSERT(exception_status_ != MX_EXCEPTION_STATUS_WAITING);
+
+    thread_.exception_context = NULL;
+    thread_.flags &= ~THREAD_FLAG_STOPPED_FOR_EXCEPTION;
     if (exception_status_ != MX_EXCEPTION_STATUS_RESUME)
-        return ERR_BUSY; // TODO(dje): what to use here???
+        return ERR_BAD_STATE;
     return NO_ERROR;
 }
 
@@ -315,10 +353,54 @@ status_t UserThread::MarkExceptionHandled(mx_exception_status_t status) {
     LTRACE_ENTRY_OBJ;
     AutoLock lock(exception_wait_lock_);
     if (exception_status_ != MX_EXCEPTION_STATUS_WAITING)
-        return ERR_NOT_BLOCKED;
+        return ERR_BAD_STATE;
     exception_status_ = status;
     cond_signal(&exception_wait_cond_);
     return NO_ERROR;
+}
+
+uint32_t UserThread::get_num_state_kinds() const {
+    return arch_num_regsets();
+}
+
+// Note: buffer must be sufficiently aligned
+
+status_t UserThread::ReadState(uint32_t state_kind, void* buffer, uint32_t* buffer_len) {
+    LTRACE_ENTRY_OBJ;
+
+    AutoLock lock(exception_wait_lock_);
+
+    if (thread_.state != THREAD_BLOCKED ||
+        (thread_.flags & THREAD_FLAG_STOPPED_FOR_EXCEPTION) == 0)
+        return ERR_BAD_STATE;
+
+    switch (state_kind)
+    {
+    case MX_THREAD_STATE_REGSET0 ... MX_THREAD_STATE_REGSET9:
+        return arch_get_regset(&thread_, state_kind - MX_THREAD_STATE_REGSET0, buffer, buffer_len);
+    default:
+        return ERR_INVALID_ARGS;
+    }
+}
+
+// Note: buffer must be sufficiently aligned
+
+status_t UserThread::WriteState(uint32_t state_kind, const void* buffer, uint32_t buffer_len, bool priv) {
+    LTRACE_ENTRY_OBJ;
+
+    AutoLock lock(exception_wait_lock_);
+
+    if (thread_.state != THREAD_BLOCKED ||
+        (thread_.flags & THREAD_FLAG_STOPPED_FOR_EXCEPTION) == 0)
+        return ERR_BAD_STATE;
+
+    switch (state_kind)
+    {
+    case MX_THREAD_STATE_REGSET0 ... MX_THREAD_STATE_REGSET9:
+        return arch_set_regset(&thread_, state_kind - MX_THREAD_STATE_REGSET0, buffer, buffer_len, priv);
+    default:
+        return ERR_INVALID_ARGS;
+    }
 }
 
 const char* StateToString(UserThread::State state) {

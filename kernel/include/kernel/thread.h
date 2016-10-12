@@ -63,6 +63,7 @@ enum thread_tls_list {
 #define THREAD_FLAG_REAL_TIME                 (1<<3)
 #define THREAD_FLAG_IDLE                      (1<<4)
 #define THREAD_FLAG_DEBUG_STACK_BOUNDS_CHECK  (1<<5)
+#define THREAD_FLAG_STOPPED_FOR_EXCEPTION     (1<<6)
 
 #define THREAD_SIGNAL_KILL                    (1<<0)
 
@@ -93,12 +94,19 @@ typedef struct thread {
     vmm_aspace_t *aspace;
 #endif
 
+    /* pointer to user thread if one exists for this thread */
+    void* user_thread;
+#if WITH_LIB_KTRACE
+    uint64_t user_tid;
+    uint64_t user_pid;
+#endif
+
     /* accounting information */
-    lk_bigtime_t last_started_running_us;
+    lk_bigtime_t last_started_running_ns;
     /* Total time in THREAD_RUNNING state.  If the thread is currently in
      * THREAD_RUNNING state, this excludes the time it has accrued since it
      * left the scheduler. */
-    lk_bigtime_t runtime_us;
+    lk_bigtime_t runtime_ns;
 
     /* if blocked, a pointer to the wait queue */
     struct wait_queue *blocking_wait_queue;
@@ -109,27 +117,24 @@ typedef struct thread {
     /* are we allowed to be interrupted on the current thing we're blocked/sleeping on */
     bool interruptable;
 
+    /* non-NULL if stopped in an exception */
+    const struct arch_exception_context *exception_context;
+
     /* architecture stuff */
     struct arch_thread arch;
 
     /* stack stuff */
     void *stack;
     size_t stack_size;
+    vaddr_t stack_top;
 
     /* entry point */
     thread_start_routine entry;
     void *arg;
 
-#if WITH_DEBUG_LINEBUFFER
-    int linebuffer_pos;
-#endif
-
     /* return code */
     int retcode;
     struct wait_queue retcode_wait_queue;
-
-    /* thread local storage */
-    uintptr_t tls[MAX_TLS_ENTRY];
 
     /* callbacks particular events */
     thread_exit_callback_t exit_callback;
@@ -138,6 +143,7 @@ typedef struct thread {
     char name[THREAD_NAME_LENGTH];
 #if WITH_DEBUG_LINEBUFFER
     /* buffering for debug/klog output */
+    int linebuffer_pos;
     char linebuffer[THREAD_LINEBUFFER_LENGTH];
 #endif
 } thread_t;
@@ -194,7 +200,7 @@ status_t thread_detach_and_resume(thread_t *t);
 status_t thread_set_real_time(thread_t *t);
 
 /* wait for at least delay amount of time. interruptable may return early with ERR_INTERRUPTED
- * if thread is signalled for kill.
+ * if thread is signaled for kill.
  */
 status_t thread_sleep_etc(lk_time_t delay, bool interruptable);
 
@@ -212,10 +218,8 @@ void arch_dump_thread(thread_t *t);
 void dump_all_threads(void);
 
 /* scheduler routines */
-void thread_yield(void); /* give up the cpu voluntarily */
-void thread_preempt(void); /* get preempted (inserted into head of run queue) */
-void thread_block(void); /* block on something and reschedule */
-void thread_unblock(thread_t *t, bool resched); /* go back in the run queue */
+void thread_yield(void);             /* give up the cpu and time slice voluntarily */
+void thread_preempt(bool interrupt); /* get preempted (return to head of queue and reschedule) */
 
 #ifdef WITH_LIB_UTHREAD
 void uthread_context_switch(thread_t *oldthread, thread_t *newthread);
@@ -239,25 +243,6 @@ static inline bool thread_lock_held(void)
     return spin_lock_held(&thread_lock);
 }
 
-/* thread local storage */
-static inline __ALWAYS_INLINE uintptr_t tls_get(uint entry)
-{
-    return get_current_thread()->tls[entry];
-}
-
-static inline __ALWAYS_INLINE uintptr_t __tls_set(uint entry, uintptr_t val)
-{
-    uintptr_t oldval = get_current_thread()->tls[entry];
-    get_current_thread()->tls[entry] = val;
-    return oldval;
-}
-
-#define tls_set(e,v) \
-    ({ \
-        static_assert((e) < MAX_TLS_ENTRY, ""); \
-        __tls_set(e, v); \
-    })
-
 /* thread level statistics */
 #if THREAD_STATS
 struct thread_stats {
@@ -265,6 +250,7 @@ struct thread_stats {
     lk_bigtime_t last_idle_timestamp;
     ulong reschedules;
     ulong context_switches;
+    ulong irq_preempts;
     ulong preempts;
     ulong yields;
     ulong interrupts; /* platform code increment this */

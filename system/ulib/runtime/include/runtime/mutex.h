@@ -4,21 +4,23 @@
 
 #pragma once
 
-#include <magenta/types.h>
 #include <magenta/compiler.h>
+#include <magenta/types.h>
+
+#include <stdatomic.h>
 
 __BEGIN_CDECLS
 
 typedef struct {
-    int futex;
+    atomic_int futex;
 } mxr_mutex_t;
 
-#define MXR_MUTEX_INIT ((mxr_mutex_t){0})
+#define MXR_MUTEX_INIT ((mxr_mutex_t){})
 
 #pragma GCC visibility push(hidden)
 
 // Attempts to take the lock without blocking. Returns NO_ERROR if the
-// lock is obtained, and ERR_BUSY if not.
+// lock is obtained, and ERR_BAD_STATE if not.
 mx_status_t mxr_mutex_trylock(mxr_mutex_t* mutex);
 
 // Attempts to take the lock before the timeout expires. Returns

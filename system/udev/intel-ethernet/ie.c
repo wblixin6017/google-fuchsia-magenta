@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <inttypes.h>
 #include <stdint.h>
 #include <magenta/listnode.h>
 
@@ -70,7 +71,7 @@ status_t eth_rx(ethdev_t* eth, void* data) {
 }
 
 status_t eth_tx(ethdev_t* eth, const void* data, size_t len) {
-    if ((len < 64) || (len > ETH_TXBUF_DSIZE)) {
+    if ((len < 60) || (len > ETH_TXBUF_DSIZE)) {
         return ERR_INVALID_ARGS;
     }
 
@@ -167,7 +168,7 @@ void eth_init_hw(ethdev_t* eth) {
 }
 
 void eth_setup_buffers(ethdev_t* eth, void* iomem, mx_paddr_t iophys) {
-    printf("eth: iomem @%p (phys %lx)\n", iomem, iophys);
+    printf("eth: iomem @%p (phys %" PRIxPTR ")\n", iomem, iophys);
 
     list_initialize(&eth->free_frames);
     list_initialize(&eth->busy_frames);

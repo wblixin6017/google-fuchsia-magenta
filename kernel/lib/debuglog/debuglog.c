@@ -7,8 +7,10 @@
 #include <lib/debuglog.h>
 
 #include <err.h>
+#include <dev/udisplay.h>
 #include <kernel/thread.h>
 #include <lib/user_copy.h>
+#include <lib/io.h>
 #include <lk/init.h>
 #include <platform.h>
 #include <string.h>
@@ -38,12 +40,12 @@ static dlog_t DLOG = {
 status_t dlog_write(uint32_t flags, const void* ptr, size_t len) {
     dlog_t* log = &DLOG;
 
-    if (arch_ints_disabled()) {
+    if (arch_ints_disabled() || log->paused) {
         return ERR_BAD_STATE;
     }
 
     if (len > MAX_DATA_SIZE) {
-        return ERR_TOO_BIG;
+        return ERR_OUT_OF_RANGE;
     }
 
     // Keep record headers uint64 aligned
@@ -89,7 +91,7 @@ status_t dlog_write(uint32_t flags, const void* ptr, size_t len) {
     rec->next = nxt;
     rec->datalen = len;
     rec->flags = flags;
-    rec->timestamp = current_time_hires() * 1000ULL;
+    rec->timestamp = current_time_hires();
     memcpy(rec->data, ptr, len);
 
     // Advance the head pointer
@@ -110,7 +112,7 @@ status_t dlog_read_etc(dlog_reader_t* rdr, uint32_t flags, void* ptr, size_t len
         dlog_record_t* rec = REC(log->data, rdr->tail);
         size_t copylen = rec->datalen + sizeof(dlog_record_t);
         if (copylen > len) {
-            r = ERR_NOT_ENOUGH_BUFFER;
+            r = ERR_BUFFER_TOO_SMALL;
         } else {
             if (user) {
                 r = copy_to_user_unsafe(ptr, rec, copylen);
@@ -169,9 +171,6 @@ static void cputs(const char* data, size_t len) {
     }
 }
 
-void __kernel_serial_write(const char *str, size_t len);
-void __kernel_console_write(const char *str, size_t len);
-
 static int debuglog_reader(void* arg) {
     uint8_t buffer[DLOG_MAX_ENTRY + 1];
     char tmp[DLOG_MAX_ENTRY + 64];
@@ -201,6 +200,29 @@ static int debuglog_reader(void* arg) {
         }
     }
     return NO_ERROR;
+}
+
+void dlog_bluescreen(void) {
+    udisplay_bind_gfxconsole();
+
+    DLOG.paused = true;
+
+    uint8_t buffer[DLOG_MAX_ENTRY + 1];
+    dlog_record_t* rec = (dlog_record_t*)buffer;
+    dlog_reader_t reader;
+
+    dlog_reader_init(&reader);
+    while (dlog_read(&reader, 0, rec, DLOG_MAX_ENTRY) > 0) {
+        rec->data[rec->datalen] = 0;
+        if (rec->datalen && (rec->data[rec->datalen - 1] == '\n')) {
+            rec->data[rec->datalen - 1] = 0;
+        }
+        dprintf(INFO, "[%05d.%03d] %c %s\n",
+                (int) (rec->timestamp / 1000000000ULL),
+                (int) ((rec->timestamp / 1000000ULL) % 1000ULL),
+                (rec->flags & DLOG_FLAG_KERNEL) ? 'K' : 'U',
+                rec->data);
+    }
 }
 
 static void dlog_init_hook(uint level) {

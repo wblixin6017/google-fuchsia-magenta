@@ -13,16 +13,16 @@ MODULE_SRCS += \
 
 MODULE_SO_NAME := test-utils
 
-# launchpad, elfload, mxio are static so that every unittest doesn't have to
-# mention them as a dependency as well.
-# N.B. The order is important. Think ordering of args to the linker.
+# elfload, runtime are static as they currently aren't built as sos.
 MODULE_STATIC_LIBS := \
-    ulib/unittest \
-    ulib/hexdump \
-    ulib/launchpad \
     ulib/elfload \
-    ulib/mxio \
     ulib/runtime
-MODULE_LIBS := ulib/magenta ulib/musl
+
+MODULE_LIBS := \
+    ulib/unittest \
+    ulib/launchpad \
+    ulib/mxio \
+    ulib/musl \
+    ulib/magenta
 
 include make/module.mk

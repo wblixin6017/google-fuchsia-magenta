@@ -12,6 +12,7 @@
 #include <magenta/types.h>
 #include <sys/param.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -78,6 +79,7 @@ static mx_status_t sata_device_identify(sata_device_t* dev, mx_device_t* control
 
     if (txn->status != NO_ERROR) {
         xprintf("%s: error %d in device identify\n", dev->device.name, txn->status);
+        return txn->status;
     }
     assert(txn->actual == 512);
 
@@ -140,7 +142,7 @@ static mx_status_t sata_device_identify(sata_device_t* dev, mx_device_t* control
             dev->capacity = sata_devinfo_u32(devinfo, SATA_DEVINFO_LBA_CAPACITY) * dev->sector_sz;
             xprintf("  LBA");
         }
-        xprintf(" %llu sectors, size=%lu\n", dev->capacity, dev->sector_sz);
+        xprintf(" %" PRIu64 " sectors, size=%" PRIuPTR "\n", dev->capacity, dev->sector_sz);
     } else {
         xprintf("  CHS unsupported!\n");
     }
@@ -159,13 +161,13 @@ static ssize_t sata_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t
     switch (op) {
     case IOCTL_BLOCK_GET_SIZE: {
         uint64_t* size = reply;
-        if (max < sizeof(*size)) return ERR_NOT_ENOUGH_BUFFER;
+        if (max < sizeof(*size)) return ERR_BUFFER_TOO_SMALL;
         *size = device->capacity;
         return sizeof(*size);
     }
     case IOCTL_BLOCK_GET_BLOCKSIZE: {
         uint64_t* blksize = reply;
-        if (max < sizeof(*blksize)) return ERR_NOT_ENOUGH_BUFFER;
+        if (max < sizeof(*blksize)) return ERR_BUFFER_TOO_SMALL;
         *blksize = device->sector_sz;
         return sizeof(*blksize);
     }
@@ -183,7 +185,7 @@ static void sata_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 
     // offset must be aligned to block size
     if (txn->offset % device->sector_sz) {
-        xprintf("%s: offset 0x%llx is not aligned to sector size %lu!\n", dev->name, txn->offset, device->sector_sz);
+        xprintf("%s: offset 0x%" PRIx64 " is not aligned to sector size %" PRIuPTR "!\n", dev->name, txn->offset, device->sector_sz);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
@@ -235,7 +237,11 @@ mx_status_t sata_bind(mx_device_t* dev, int port) {
     device->port = port;
 
     // send device identify
-    sata_device_identify(device, dev);
+    mx_status_t status = sata_device_identify(device, dev);
+    if (status < 0) {
+        free(device);
+        return status;
+    }
 
     // add the device
     device->device.protocol_id = MX_PROTOCOL_BLOCK;

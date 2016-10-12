@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ off_t mxio_default_seek(mxio_t* io, off_t offset, int whence) {
     return ERR_NOT_SUPPORTED;
 }
 
-mx_status_t mxio_default_misc(mxio_t* io, uint32_t op, uint32_t arg, void* data, size_t len) {
+mx_status_t mxio_default_misc(mxio_t* io, uint32_t op, int64_t off, uint32_t arg, void* data, size_t len) {
     return ERR_NOT_SUPPORTED;
 }
 
@@ -73,6 +74,6 @@ mxio_t* mxio_null_create(void) {
     }
     io->ops = &mx_null_ops;
     io->magic = MXIO_MAGIC;
-    io->refcount = 1;
+    atomic_init(&io->refcount, 1);
     return io;
 }

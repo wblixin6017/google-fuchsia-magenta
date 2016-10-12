@@ -14,6 +14,7 @@
 
 #include <assert.h>
 #include <endian.h>
+#include <ddk/binding.h>
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <ddk/protocol/tpm.h>
@@ -153,7 +154,7 @@ mx_status_t tpm_init(mx_driver_t* driver) {
     dev->protocol_id = MX_PROTOCOL_TPM;
     dev->protocol_ops = &tpm_proto;
 
-    status = device_add(dev, NULL);
+    status = device_add(dev, driver_get_misc_device());
     if (status != NO_ERROR) {
         free(dev);
         return status;
@@ -219,9 +220,11 @@ cleanup_device:
 #endif
 }
 
-mx_driver_t _driver_tpm BUILTIN_DRIVER = {
-    .name = "tpm",
+mx_driver_t _driver_tpm = {
     .ops = {
         .init = tpm_init,
     },
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_tpm, "tpm", "magenta", "0.1", 0)
+MAGENTA_DRIVER_END(_driver_tpm)

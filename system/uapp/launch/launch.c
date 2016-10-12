@@ -262,16 +262,16 @@ int main(int argc, char** argv) {
                                 MX_TIME_INFINITE, &state);
     check("mx_handle_wait_one", status);
 
-    mx_process_info_t info;
-    mx_ssize_t n = mx_handle_get_info(proc, MX_INFO_PROCESS,
+    mx_info_process_t info;
+    mx_ssize_t n = mx_object_get_info(proc, MX_INFO_PROCESS, sizeof(info.rec),
                                       &info, sizeof(info));
-    check("mx_handle_get_info", n);
+    check("mx_object_get_info", n);
     if (n != (mx_ssize_t)sizeof(info)) {
-        fprintf(stderr, "mx_handle_get_info short read: %zu != %zu\n",
+        fprintf(stderr, "mx_object_get_info short read: %zu != %zu\n",
                 (size_t)n, sizeof(info));
         exit(2);
     }
 
-    printf("Process finished with return code %d\n", info.return_code);
-    return info.return_code;
+    printf("Process finished with return code %d\n", info.rec.return_code);
+    return info.rec.return_code;
 }

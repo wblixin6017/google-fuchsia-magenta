@@ -8,18 +8,16 @@
 
 #include <stdint.h>
 
-#include <kernel/mutex.h>
-
 #include <magenta/dispatcher.h>
 #include <magenta/message_pipe.h>
 #include <magenta/state_tracker.h>
 #include <magenta/types.h>
 
+#include <mxtl/array.h>
 #include <mxtl/ref_counted.h>
 #include <mxtl/unique_ptr.h>
 
 class IOPortClient;
-class IOPortDispatcher;
 
 class MessagePipeDispatcher final : public Dispatcher {
 public:
@@ -27,24 +25,26 @@ public:
                            mxtl::RefPtr<Dispatcher>* dispatcher1, mx_rights_t* rights);
 
     ~MessagePipeDispatcher() final;
-    mx_obj_type_t GetType() const final { return MX_OBJ_TYPE_MESSAGE_PIPE; }
-    MessagePipeDispatcher* get_message_pipe_dispatcher() final { return this; }
+    mx_obj_type_t get_type() const final { return MX_OBJ_TYPE_MESSAGE_PIPE; }
     StateTracker* get_state_tracker() final;
-    mx_koid_t get_inner_koid() const final { return pipe_->get_koid(); }
+    mx_koid_t get_inner_koid() const final { return inner_koid_; }
+    status_t set_port_client(mxtl::unique_ptr<IOPortClient> client) final;
 
     bool is_reply_pipe() const { return (flags_ & MX_FLAG_REPLY_PIPE) ? true : false; }
 
-    status_t BeginRead(uint32_t* message_size, uint32_t* handle_count);
-    status_t AcceptRead(mxtl::Array<uint8_t>* data, mxtl::Array<Handle*>* handles);
+    void set_inner_koid(mx_koid_t koid) { inner_koid_ = koid; }
+    // See MessagePipe::Read() for details.
+    status_t Read(uint32_t* msg_size,
+                  uint32_t* msg_handle_count,
+                  mxtl::unique_ptr<MessagePacket>* msg);
     status_t Write(mxtl::Array<uint8_t> data, mxtl::Array<Handle*> handles);
-    status_t SetIOPort(mxtl::RefPtr<IOPortDispatcher> io_port, uint64_t key, mx_signals_t signals);
 
 private:
     MessagePipeDispatcher(uint32_t flags, size_t side, mxtl::RefPtr<MessagePipe> pipe);
 
     const size_t side_;
     const uint32_t flags_;
-    Mutex lock_;
+    mx_koid_t inner_koid_;
+
     mxtl::RefPtr<MessagePipe> pipe_;
-    mxtl::unique_ptr<MessagePacket> pending_;
 };

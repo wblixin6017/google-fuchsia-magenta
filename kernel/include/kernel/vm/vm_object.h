@@ -14,6 +14,7 @@
 #include <mxtl/array.h>
 #include <mxtl/ref_counted.h>
 #include <mxtl/ref_ptr.h>
+#include <lib/user_copy/user_ptr.h>
 
 // The base vm object that holds a range of bytes of data
 //
@@ -23,6 +24,9 @@
 class VmObject : public mxtl::RefCounted<VmObject> {
 public:
     static mxtl::RefPtr<VmObject> Create(uint32_t pmm_alloc_flags, uint64_t size);
+
+    static mxtl::RefPtr<VmObject> CreateFromROData(const void* data,
+                                                   size_t size);
 
     status_t Resize(uint64_t size);
 
@@ -48,8 +52,11 @@ public:
     status_t Write(const void* ptr, uint64_t offset, size_t len, size_t* bytes_written);
 
     // read/write operators against user space pointers only
-    status_t ReadUser(void* ptr, uint64_t offset, size_t len, size_t* bytes_read);
-    status_t WriteUser(const void* ptr, uint64_t offset, size_t len, size_t* bytes_written);
+    status_t ReadUser(user_ptr<void> ptr, uint64_t offset, size_t len, size_t* bytes_read);
+    status_t WriteUser(user_ptr<const void> ptr, uint64_t offset, size_t len, size_t* bytes_written);
+
+    // translate a range of the vmo to physical addresses and store in the buffer
+    status_t Lookup(uint64_t offset, uint64_t len, user_ptr<paddr_t>, size_t);
 
     void Dump();
 
@@ -65,8 +72,9 @@ private:
     ~VmObject();
     friend mxtl::RefPtr<VmObject>;
 
-    // fault in a page at a given offset with PF_FLAGS
+    // unlocked versions of the above routines
     vm_page_t* FaultPageLocked(uint64_t offset, uint pf_flags);
+    vm_page_t* GetPageLocked(uint64_t offset);
 
     // internal page list routine
     void AddPageToArray(size_t index, vm_page_t* p);

@@ -4,10 +4,20 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
+# check for disallowed options
+ifneq ($(MODULE_DEPS),)
+$(error $(MODULE) $(MODULE_TYPE) modules must use MODULE_{LIBS,STATIC_LIBS}, not MODULE_DEPS)
+endif
+
 # ensure that library deps are short-name style
 $(foreach d,$(MODULE_LIBS),$(call modname-require-short,$(d)))
 $(foreach d,$(MODULE_STATIC_LIBS),$(call modname-require-short,$(d)))
 
+# Things that are library-like but not "userlib" do not
+# generate static libraries, nor do they cause shared
+# libraries to be exported to the sysroot
+
+ifeq ($(MODULE_TYPE),userlib)
 # build static library
 $(MODULE_LIBNAME).a: $(MODULE_OBJS) $(MODULE_EXTRA_OBJS)
 	@$(MKDIR)
@@ -18,6 +28,7 @@ $(MODULE_LIBNAME).a: $(MODULE_OBJS) $(MODULE_EXTRA_OBJS)
 # always build all libraries
 EXTRA_BUILDDEPS += $(MODULE_LIBNAME).a
 GENERATED += $(MODULE_LIBNAME).a
+endif
 
 # modules that declare a soname desire to be shared libs as well
 ifneq ($(MODULE_SO_NAME),)
@@ -34,6 +45,15 @@ $(MODULE_LIBNAME).so: $(MODULE_OBJS) $(MODULE_EXTRA_OBJS) $(MODULE_ALIBS) $(MODU
 	$(NOECHO)$(USER_LD) $(GLOBAL_LDFLAGS) $(USERLIB_SO_LDFLAGS) $(_LDFLAGS)\
 		-shared -soname $(_SONAME) $(_OBJS) $(_LIBS) $(LIBGCC) -o $@
 
+EXTRA_IDFILES += $(MODULE_LIBNAME).so.id
+
+# build list and debugging files if asked to
+ifeq ($(call TOBOOL,$(ENABLE_BUILD_LISTFILES)),true)
+EXTRA_BUILDDEPS += $(MODULE_LIBNAME).so.lst
+EXTRA_BUILDDEPS += $(MODULE_LIBNAME).so.sym
+endif
+
+ifeq ($(MODULE_TYPE),userlib)
 # Only update the .so.abi file if it's changed, so things don't need
 # to be relinked if the ABI didn't change.
 $(MODULE_LIBNAME).so.abi: $(MODULE_LIBNAME).abi.stamp ;
@@ -85,12 +105,16 @@ EXTRA_BUILDDEPS += $(MODULE_LIBNAME).so.abi
 GENERATED += \
     $(MODULE_LIBNAME).so $(MODULE_LIBNAME).so.abi $(MODULE_LIBNAME).abi.stamp \
     $(MODULE_LIBNAME).abi.h $(MODULE_LIBNAME).abi.o
+endif
 
 ifeq ($(MODULE_SO_INSTALL_NAME),)
 MODULE_SO_INSTALL_NAME := lib/lib$(MODULE_SO_NAME).so
 endif
 ifneq ($(MODULE_SO_INSTALL_NAME),-)
 USER_MANIFEST_LINES += $(MODULE_SO_INSTALL_NAME)=$(MODULE_LIBNAME).so.strip
+ifeq ($(and $(filter $(subst $(COMMA),$(SPACE),$(USER_DEBUG_MODULES)),$(MODULE_SHORTNAME)),yes),yes)
+USER_MANIFEST_DEBUG_INPUTS += $(MODULE_LIBNAME).so.debug
+endif
 endif
 endif
 
@@ -98,6 +122,7 @@ endif
 # if the SYSROOT build feature is enabled, we will package
 # up exported libraries, their headers, etc
 ifeq ($(ENABLE_BUILD_SYSROOT),true)
+ifeq ($(MODULE_TYPE),userlib)
 
 ifneq ($(MODULE_SO_NAME),)
 TMP := $(BUILDDIR)/sysroot/lib/lib$(MODULE_SO_NAME).so
@@ -136,4 +161,5 @@ SYSROOT_DEPS += $(MODULE_PUBLIC_HEADERS)
 GENERATED += $(MODULE_PUBLIC_HEADERS)
 endif
 
+endif # if MODULE_TYPE == userlib
 endif # if ENABLE_BUILD_SYSROOT true

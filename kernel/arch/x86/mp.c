@@ -17,6 +17,7 @@
 #include <arch/ops.h>
 #include <arch/x86.h>
 #include <arch/x86/apic.h>
+#include <arch/x86/cpu_topology.h>
 #include <arch/x86/descriptor.h>
 #include <arch/x86/feature.h>
 #include <arch/x86/interrupts.h>
@@ -26,6 +27,9 @@
 #include <dev/interrupt.h>
 #include <kernel/event.h>
 #include <kernel/timer.h>
+#include <platform.h>
+
+#define LOCAL_TRACE 0
 
 struct x86_percpu bp_percpu = {
     .cpu_num = 0,
@@ -95,9 +99,11 @@ void x86_init_percpu(uint8_t cpu_num)
 #endif
 
     x86_feature_init();
+    x86_cpu_topology_init();
     x86_extended_register_init();
     x86_extended_register_enable_feature(X86_EXTENDED_REGISTER_SSE);
     x86_extended_register_enable_feature(X86_EXTENDED_REGISTER_AVX);
+    x86_extended_register_enable_feature(X86_EXTENDED_REGISTER_PT);
 
     idt_setup(&percpu->idt);
     idt_load(&percpu->idt);
@@ -178,8 +184,11 @@ status_t arch_mp_send_ipi(mp_cpu_mask_t target, mp_ipi_t ipi)
         case MP_IPI_RESCHEDULE:
             vector = X86_INT_IPI_RESCHEDULE;
             break;
+        case MP_IPI_HALT:
+            vector = X86_INT_IPI_HALT;
+            break;
         default:
-            panic("Unexpected MP IPI value: %d", ipi);
+            panic("Unexpected MP IPI value: %u", ipi);
     }
 
     if (target == MP_CPU_ALL_BUT_LOCAL) {
@@ -221,14 +230,26 @@ status_t arch_mp_send_ipi(mp_cpu_mask_t target, mp_ipi_t ipi)
 
 enum handler_return x86_ipi_generic_handler(void)
 {
-    //LTRACEF("cpu %u, arg %p\n", arch_curr_cpu_num(), arg);
+    LTRACEF("cpu %u\n", arch_curr_cpu_num());
     return mp_mbx_generic_irq();
 }
 
 enum handler_return x86_ipi_reschedule_handler(void)
 {
-    //TRACEF("rescheduling on cpu %u, arg %p\n", arch_curr_cpu_num(), arg);
+    LTRACEF("cpu %u\n", arch_curr_cpu_num());
     return mp_mbx_reschedule_irq();
+}
+
+void x86_ipi_halt_handler(void)
+{
+    printf("halting cpu %u\n", arch_curr_cpu_num());
+
+    platform_halt_cpu();
+
+    for (;;) {
+        x86_cli();
+        x86_hlt();
+    }
 }
 
 status_t arch_mp_prep_cpu_unplug(uint cpu_id) {
@@ -248,7 +269,7 @@ status_t arch_mp_cpu_unplug(uint cpu_id)
     uint32_t dst_apic_id = ap_percpus[cpu_id - 1].apic_id;
     if (dst_apic_id == INVALID_APIC_ID) {
         /* This is a transient state that can occur during CPU onlining */
-        return ERR_BUSY;
+        return ERR_UNAVAILABLE;
     }
 
     apic_send_ipi(0, dst_apic_id, DELIVERY_MODE_INIT);
@@ -261,7 +282,7 @@ status_t arch_mp_cpu_hotplug(uint cpu_id)
         return ERR_INVALID_ARGS;
     }
     if (mp_is_cpu_online(cpu_id)) {
-        return ERR_ALREADY_STARTED;
+        return ERR_BAD_STATE;
     }
     DEBUG_ASSERT(cpu_id != 0);
     if (cpu_id == 0) {

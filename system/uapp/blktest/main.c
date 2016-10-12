@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,10 +23,11 @@ static int do_test(const char* dev, mx_off_t offset, mx_off_t count, uint8_t pat
         return fd;
     }
 
+    void* buf = NULL;
     // constrain to device size
-    int rc;
+    ssize_t rc;
     uint64_t size;
-    rc = mxio_ioctl(fd, IOCTL_BLOCK_GET_SIZE, NULL, 0, &size, sizeof(size));
+    rc = ioctl_block_get_size(fd, &size);
     if (rc != sizeof(size)) {
         printf("Error getting size for %s\n", dev);
         goto fail;
@@ -37,24 +39,24 @@ static int do_test(const char* dev, mx_off_t offset, mx_off_t count, uint8_t pat
 
     // write a multiple of block size
     uint64_t blksize;
-    mxio_ioctl(fd, IOCTL_BLOCK_GET_BLOCKSIZE, NULL, 0, &blksize, sizeof(blksize));
+    rc = ioctl_block_get_blocksize(fd, &blksize);
     if (rc < 0) {
         printf("Error getting block size for %s\n", dev);
         goto fail;
     }
     count -= count % blksize;
 
-    printf("Writing 0x%02x from offset %llu to %llu (%llu bytes)...", pattern, offset, offset + count, count);
+    printf("Writing 0x%02x from offset %" PRIu64 " to %" PRIu64 " (%" PRIu64 " bytes)...", pattern, offset, offset + count, count);
 
     if (offset) {
         rc = lseek(fd, offset, SEEK_SET);
         if (rc < 0) {
-            printf("Error %d seeking to offset %lld\n", rc, offset);
+            printf("Error %zd seeking to offset %" PRId64 "\n", rc, offset);
             goto fail;
         }
     }
 
-    void* buf = malloc(count * 2);
+    buf = malloc(count * 2);
     if (!buf) {
         printf("Out of memory!\n");
         goto fail;
@@ -78,7 +80,7 @@ static int do_test(const char* dev, mx_off_t offset, mx_off_t count, uint8_t pat
     // reset offset
     rc = lseek(fd, offset, SEEK_SET);
     if (rc < 0) {
-        printf("Error %d seeking to offset %lld\n", rc, offset);
+        printf("Error %zd seeking to offset %" PRId64 "\n", rc, offset);
         goto fail;
     }
 
@@ -97,6 +99,9 @@ static int do_test(const char* dev, mx_off_t offset, mx_off_t count, uint8_t pat
         printf("OK\n");
     }
 fail:
+    if (buf) {
+        free(buf);
+    }
     close(fd);
     return rc;
 }

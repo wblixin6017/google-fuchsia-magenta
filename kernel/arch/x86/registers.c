@@ -132,7 +132,6 @@ void x86_extended_register_init(void)
         DEBUG_ASSERT(arch_curr_cpu_num() == 0);
 
         read_xsave_state_info();
-        xsaves_supported = false;
         info_initialized = true;
 
         /* We currently assume that if xsave isn't support fxsave is */
@@ -271,8 +270,14 @@ bool x86_extended_register_enable_feature(
             break;
         }
         case X86_EXTENDED_REGISTER_PT: {
-            /* Currently unsupported */
-            return false;
+            if (!xsaves_supported ||
+                !(xss_component_bitmap & X86_XSAVE_STATE_PT)) {
+                return false;
+            }
+
+            uint64_t new_state = read_msr(IA32_XSS_MSR) | X86_XSAVE_STATE_PT;
+            write_msr(IA32_XSS_MSR, new_state);
+            break;
         }
         case X86_EXTENDED_REGISTER_PKRU: {
             /* Currently unsupported */
@@ -363,13 +368,14 @@ static void read_xsave_state_info(void)
     xsaveopt_supported = !!(leaf.a & (1<<0));
     xss_component_bitmap = ((uint64_t)leaf.d << 32) | leaf.c;
 
-    LTRACEF("xcr0 bitmap: %016llx\n", xcr0_component_bitmap);
-    LTRACEF("xss bitmap: %016llx\n", xss_component_bitmap);
+    LTRACEF("xcr0 bitmap: %016" PRIx64 "\n", xcr0_component_bitmap);
+    LTRACEF("xss bitmap: %016" PRIx64 "\n", xss_component_bitmap);
 
     /* Sanity check; all CPUs that support xsave support components 0 and 1 */
     DEBUG_ASSERT((xcr0_component_bitmap & 0x3) == 0x3);
     if ((xcr0_component_bitmap & 0x3) != 0x3) {
-        LTRACEF("unexpected xcr0 bitmap %016llx\n", xcr0_component_bitmap);
+        LTRACEF("unexpected xcr0 bitmap %016" PRIx64 "\n",
+                xcr0_component_bitmap);
         goto bailout;
     }
 
@@ -386,7 +392,7 @@ static void read_xsave_state_info(void)
 
         state_components[i].size = leaf.a;
         state_components[i].align64 = align64;
-        LTRACEF("component %d size: %d (xcr0 %d)\n",
+        LTRACEF("component %u size: %u (xcr0 %d)\n",
                 idx, state_components[i].size,
                 !!(xcr0_component_bitmap & (1ULL << idx)));
 
@@ -396,7 +402,7 @@ static void read_xsave_state_info(void)
         max_area += leaf.a;
     }
     xsave_max_area_size = max_area;
-    LTRACEF("total xsave size: %ld\n", max_area);
+    LTRACEF("total xsave size: %zu\n", max_area);
 
     return;
 bailout:

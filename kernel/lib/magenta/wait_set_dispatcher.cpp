@@ -88,7 +88,8 @@ mx_signals_state_t WaitSetDispatcher::Entry::GetSignalsState_NoLock() const {
 }
 
 WaitSetDispatcher::Entry::Entry(mx_signals_t watched_signals, uint64_t cookie)
-    : watched_signals_(watched_signals), cookie_(cookie) {}
+    : StateObserver(IrqDisposition::IRQ_UNSAFE),
+      watched_signals_(watched_signals), cookie_(cookie) {}
 
 bool WaitSetDispatcher::Entry::OnInitialize(mx_signals_state_t initial_state) {
     AutoLock lock(&wait_set_->mutex_);
@@ -325,7 +326,7 @@ status_t WaitSetDispatcher::Wait(mx_time_t timeout,
 
     // Always prefer to give results over timed out, but prefer "cancelled" over everything.
     if (cancelled_)
-        return ERR_CANCELLED;
+        return ERR_HANDLE_CLOSED;
     if (!num_triggered_entries_) {
         DEBUG_ASSERT(result == ERR_TIMED_OUT);
         return ERR_TIMED_OUT;
@@ -352,7 +353,7 @@ status_t WaitSetDispatcher::Wait(mx_time_t timeout,
             results[i].signals_state = st;
         } else {
             // Cancelled.
-            results[i].wait_result = ERR_CANCELLED;
+            results[i].wait_result = ERR_HANDLE_CLOSED;
             results[i].signals_state = mx_signals_state_t{0u, 0u};
         }
     }
@@ -362,7 +363,9 @@ status_t WaitSetDispatcher::Wait(mx_time_t timeout,
     return NO_ERROR;
 }
 
-WaitSetDispatcher::WaitSetDispatcher() : state_tracker_(false) {
+WaitSetDispatcher::WaitSetDispatcher()
+    : StateObserver(IrqDisposition::IRQ_UNSAFE),
+      state_tracker_(false) {
     cond_init(&cv_);
 
     // This is just so we can observe our own handle's cancellation.

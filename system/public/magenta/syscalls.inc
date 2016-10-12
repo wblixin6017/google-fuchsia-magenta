@@ -59,10 +59,16 @@ MAGENTA_SYSCALL_DEF(3, 3, 5, int, debug_send_command, mx_handle_t, const void* b
 MAGENTA_SYSCALL_DEF(0, 0, 6, unsigned int, num_cpus, void)
 
 // Temporary syscall to aid debuggers
-MAGENTA_SYSCALL_DEF(2, 3, 7, mx_handle_t, debug_get_process, mx_handle_t handle, uint64_t koid)
+MAGENTA_SYSCALL_DEF(2, 3, 7, mx_handle_t, debug_task_get_child, mx_handle_t handle, uint64_t koid)
 MAGENTA_SYSCALL_DEF(2, 2, 8, mx_handle_t, debug_transfer_handle, mx_handle_t proc, mx_handle_t handle)
 MAGENTA_SYSCALL_DEF(4, 4, 9, mx_ssize_t, debug_read_memory, mx_handle_t proc, uintptr_t vaddr,
-                    mx_size_t len, void* buffer)
+                    mx_size_t len, USER_PTR(void) buffer)
+MAGENTA_SYSCALL_DEF(4, 4, 10, mx_ssize_t, debug_write_memory, mx_handle_t proc, uintptr_t vaddr,
+                    mx_size_t len, USER_PTR(const void) buffer)
+
+MAGENTA_SYSCALL_DEF(4, 4, 11, mx_ssize_t, ktrace_read, mx_handle_t handle, void* ptr, uint32_t off, uint32_t len)
+MAGENTA_SYSCALL_DEF(4, 4, 12, mx_status_t, ktrace_control, mx_handle_t handle, uint32_t action, uint32_t options, USER_PTR(void))
+MAGENTA_SYSCALL_DEF(4, 4, 13, void, ktrace_write, mx_handle_t handle, uint32_t id, uint32_t arg0, uint32_t arg1)
 
 // Logging
 MAGENTA_SYSCALL_DEF(1, 1, 30, mx_handle_t, log_create, uint32_t flags)
@@ -76,16 +82,16 @@ MAGENTA_SYSCALL_DEF(1, 1, 40, mx_status_t, handle_close, mx_handle_t handle)
 MAGENTA_SYSCALL_DEF(2, 2, 41, mx_handle_t, handle_duplicate, mx_handle_t handle, mx_rights_t rights)
 MAGENTA_SYSCALL_DEF(4, 5, 42, mx_status_t, handle_wait_one, mx_handle_t handle, mx_signals_t signals,
                     mx_time_t timeout, USER_PTR(mx_signals_state_t) signals_state)
-MAGENTA_SYSCALL_DEF(6, 8, 43, mx_status_t, handle_wait_many, uint32_t count, const mx_handle_t* handles,
-                    const mx_signals_t* signals, mx_time_t timeout, USER_PTR(uint32_t) result_index,
+MAGENTA_SYSCALL_DEF(6, 8, 43, mx_status_t, handle_wait_many, uint32_t count, USER_PTR(const mx_handle_t) handles,
+                    USER_PTR(const mx_signals_t) signals, mx_time_t timeout, USER_PTR(uint32_t) result_index,
                     USER_PTR(mx_signals_state_t) signals_states)
-MAGENTA_SYSCALL_DEF(4, 4, 44, mx_ssize_t, handle_get_info, mx_handle_t handle, uint32_t topic, USER_PTR(void) info,
-                    mx_size_t info_size)
-MAGENTA_SYSCALL_DEF(2, 2, 45, mx_handle_t, handle_replace, mx_handle_t handle, mx_rights_t rights)
+MAGENTA_SYSCALL_DEF(2, 2, 44, mx_handle_t, handle_replace, mx_handle_t handle, mx_rights_t rights)
 
 // Generic object operations
-MAGENTA_SYSCALL_DEF(3, 3, 46, mx_status_t, object_signal, mx_handle_t handle, uint32_t clear_mask,
+MAGENTA_SYSCALL_DEF(3, 3, 45, mx_status_t, object_signal, mx_handle_t handle, uint32_t clear_mask,
                     uint32_t set_mask)
+MAGENTA_SYSCALL_DEF(4, 4, 46, mx_ssize_t, object_get_info, mx_handle_t handle, uint32_t topic,
+                    uint16_t topic_size, USER_PTR(void) buffer, mx_size_t buffer_size)
 
 // Threads
 MAGENTA_SYSCALL_DEF(4, 4, 50, mx_handle_t, thread_create, mx_handle_t process, USER_PTR(const char) name, uint32_t name_len, uint32_t flags)
@@ -104,7 +110,6 @@ MAGENTA_SYSCALL_DEF(6, 6, 62, mx_status_t, msgpipe_write, mx_handle_t handle, US
 // Drivers
 MAGENTA_SYSCALL_DEF(3, 3, 70, mx_handle_t, interrupt_create, mx_handle_t handle, uint32_t vector, uint32_t flags)
 MAGENTA_SYSCALL_DEF(1, 1, 71, mx_status_t, interrupt_complete, mx_handle_t handle)
-MAGENTA_SYSCALL_DEF(1, 1, 72, mx_status_t, interrupt_wait, mx_handle_t handle)
 
 // Processes
 MAGENTA_SYSCALL_DEF(3, 3, 80, mx_handle_t, process_create, USER_PTR(const char) name, uint32_t name_len, uint32_t flags)
@@ -116,27 +121,35 @@ MAGENTA_SYSCALL_DEF(3, 3, 84, mx_status_t, process_unmap_vm, mx_handle_t proc_ha
 MAGENTA_SYSCALL_DEF(4, 4, 85, mx_status_t, process_protect_vm, mx_handle_t proc_handle, uintptr_t address,
                     mx_size_t len, uint32_t prot);
 
+// Shared between process and threads
+MAGENTA_SYSCALL_DEF(2, 2, 86, mx_status_t, task_resume, mx_handle_t task_handle, uint32_t options);
+MAGENTA_SYSCALL_DEF(1, 1, 87, mx_status_t, task_kill, mx_handle_t task_handle);
+
 // Synchronization
 MAGENTA_SYSCALL_DEF(1, 1, 90, mx_handle_t, event_create, uint32_t options)
-MAGENTA_SYSCALL_DEF(3, 4, 93, mx_status_t, futex_wait, int* value_ptr, int current_value, mx_time_t timeout)
-MAGENTA_SYSCALL_DEF(2, 2, 94, mx_status_t, futex_wake, int* value_ptr, uint32_t count)
-MAGENTA_SYSCALL_DEF(5, 5, 95, mx_status_t, futex_requeue, int* wake_ptr, uint32_t wake_count,
-                    int current_value, int* requeue_ptr, uint32_t requeue_count)
+MAGENTA_SYSCALL_DEF(2, 2, 91, mx_status_t, eventpair_create, USER_PTR(mx_handle_t) out_handles /* [2] */,
+                    uint32_t flags)
+MAGENTA_SYSCALL_DEF(3, 4, 93, mx_status_t, futex_wait, USER_PTR(volatile mx_futex_t) value_ptr, mx_futex_t current_value, mx_time_t timeout)
+MAGENTA_SYSCALL_DEF(2, 2, 94, mx_status_t, futex_wake, USER_PTR(volatile mx_futex_t) value_ptr, uint32_t count)
+MAGENTA_SYSCALL_DEF(5, 5, 95, mx_status_t, futex_requeue, USER_PTR(volatile mx_futex_t) wake_ptr, uint32_t wake_count,
+                    mx_futex_t current_value, USER_PTR(volatile mx_futex_t) requeue_ptr, uint32_t requeue_count)
 
 // Memory management
 MAGENTA_SYSCALL_DEF(1, 2, 100, mx_handle_t, vmo_create, uint64_t size)
-MAGENTA_SYSCALL_DEF(4, 5, 101, mx_ssize_t, vmo_read, mx_handle_t handle, void *data, uint64_t offset,
+MAGENTA_SYSCALL_DEF(4, 5, 101, mx_ssize_t, vmo_read, mx_handle_t handle, USER_PTR(void) data, uint64_t offset,
                     mx_size_t len)
-MAGENTA_SYSCALL_DEF(4, 5, 102, mx_ssize_t, vmo_write, mx_handle_t handle, const void *data,
+MAGENTA_SYSCALL_DEF(4, 5, 102, mx_ssize_t, vmo_write, mx_handle_t handle, USER_PTR(const void) data,
                     uint64_t offset, mx_size_t len)
 MAGENTA_SYSCALL_DEF(2, 4, 103, mx_status_t, vmo_get_size, mx_handle_t handle, USER_PTR(uint64_t) size)
 MAGENTA_SYSCALL_DEF(2, 4, 104, mx_status_t, vmo_set_size, mx_handle_t handle, uint64_t size)
+MAGENTA_SYSCALL_DEF(6, 8, 105, mx_status_t, vmo_op_range, mx_handle_t handle, uint32_t op,
+                    uint64_t offset, uint64_t size, USER_PTR(void) buffer, mx_size_t buffer_size)
 
 // temporary syscalls to access port and memory mapped devices
-MAGENTA_SYSCALL_DEF(3, 3, 105, mx_status_t, mmap_device_io, mx_handle_t handle, uint32_t io_addr, uint32_t len)
-MAGENTA_SYSCALL_DEF(5, 5, 106, mx_status_t, mmap_device_memory, mx_handle_t handle, mx_paddr_t paddr,
+MAGENTA_SYSCALL_DEF(3, 3, 110, mx_status_t, mmap_device_io, mx_handle_t handle, uint32_t io_addr, uint32_t len)
+MAGENTA_SYSCALL_DEF(5, 5, 111, mx_status_t, mmap_device_memory, mx_handle_t handle, mx_paddr_t paddr,
                     uint32_t len, mx_cache_policy_t cache_policy, USER_PTR(void *) out_vaddr)
-MAGENTA_SYSCALL_DEF(4, 4, 107, mx_status_t, alloc_device_memory, mx_handle_t handle, uint32_t len,
+MAGENTA_SYSCALL_DEF(4, 4, 112, mx_status_t, alloc_device_memory, mx_handle_t handle, uint32_t len,
                     mx_paddr_t *out_paddr, void **out_vaddr)
 
 MAGENTA_SYSCALL_DEF(2, 2, 160, mx_ssize_t, cprng_draw, USER_PTR(void) buffer, mx_size_t len);
@@ -163,13 +176,12 @@ MAGENTA_SYSCALL_DEF(5, 5, 185, mx_status_t, pci_io_write, mx_handle_t handle, ui
 MAGENTA_SYSCALL_DEF(5, 5, 186, mx_status_t, pci_io_read, mx_handle_t handle, uint32_t bar_num,
                     uint32_t offset, uint32_t len, uint32_t* out_value)
 MAGENTA_SYSCALL_DEF(2, 2, 187, mx_handle_t, pci_map_interrupt, mx_handle_t handle, int32_t which_irq)
-MAGENTA_SYSCALL_DEF(1, 1, 188, mx_status_t, pci_interrupt_wait, mx_handle_t handle)
-MAGENTA_SYSCALL_DEF(1, 1, 189, mx_handle_t, pci_map_config, mx_handle_t handle)
-MAGENTA_SYSCALL_DEF(4, 4, 190, mx_status_t, pci_query_irq_mode_caps, mx_handle_t handle,
+MAGENTA_SYSCALL_DEF(1, 1, 188, mx_handle_t, pci_map_config, mx_handle_t handle)
+MAGENTA_SYSCALL_DEF(4, 4, 189, mx_status_t, pci_query_irq_mode_caps, mx_handle_t handle,
                     mx_pci_irq_mode_t mode, uint32_t* out_max_irqs)
-MAGENTA_SYSCALL_DEF(4, 4, 191, mx_status_t, pci_set_irq_mode, mx_handle_t handle, mx_pci_irq_mode_t mode,
+MAGENTA_SYSCALL_DEF(4, 4, 190, mx_status_t, pci_set_irq_mode, mx_handle_t handle, mx_pci_irq_mode_t mode,
                     uint32_t requested_irq_count)
-MAGENTA_SYSCALL_DEF(3, 3, 192, mx_status_t, pci_init, mx_handle_t handle, USER_PTR(mx_pci_init_arg_t) init_buf, uint32_t len)
+MAGENTA_SYSCALL_DEF(3, 3, 191, mx_status_t, pci_init, mx_handle_t handle, USER_PTR(mx_pci_init_arg_t) init_buf, uint32_t len)
 
 // I/O mapping objects
 MAGENTA_SYSCALL_DEF(3, 3, 200, mx_status_t, io_mapping_get_info, mx_handle_t handle, void** out_vaddr,
@@ -178,24 +190,6 @@ MAGENTA_SYSCALL_DEF(3, 3, 200, mx_status_t, io_mapping_get_info, mx_handle_t han
 // exception handlers
 MAGENTA_SYSCALL_DEF(4, 5, 211, mx_status_t, object_bind_exception_port,
                     mx_handle_t object, mx_handle_t eport, uint64_t key, uint32_t options)
-// TODO(dje): The arguments here assume there will only ever be threads that
-// we want to respond to exceptions on. IWBN to have an API that doesn't make
-// that assumption.
-MAGENTA_SYSCALL_DEF(3, 3, 212, mx_status_t, process_handle_exception,
-                    mx_handle_t process, mx_koid_t tid, mx_exception_status_t status)
-// TODO(dje): Exception handlers get a pid in the exception report but need a process handle to
-// reply to it. Thus we provide a lookup mechanism to go from pid to process handle. The lookup doesn't
-// necessarily have to be directly accomplished via a syscall. This is for bootstrapping for now.
-// Rights checking for this operation (however it is done) is an open issue. For the current support,
-// one possibility is to attach the rights checking to the handle the report came from, which is intuitive.
-// However that's just a handle of an ioport, hardly something one would use to adjudicate process lookup.
-// Another is to attach the rights checking to the handle the exception port was assigned to. This works
-// for most cases: thread, process, and (eventually) debugger. One still needs to provide for the system
-// exception handler, which generally doesn't know about any particular process until it receives an
-// exception from it. Perhaps the system exception handler process itself can have certain rights.
-// So for now |handle| is either a thread or process handle or MX_HANDLE_INVALID for "self process"
-// (for now).
-MAGENTA_SYSCALL_DEF(2, 2, 213, mx_handle_t, process_debug, mx_handle_t handle, mx_koid_t pid)
 
 // IO Ports
 MAGENTA_SYSCALL_DEF(1, 1, 220, mx_handle_t, port_create, uint32_t options)
@@ -208,16 +202,16 @@ MAGENTA_SYSCALL_DEF(4, 6, 223, mx_status_t, port_bind, mx_handle_t handle, uint6
 
 // Data Pipe
 MAGENTA_SYSCALL_DEF(4, 4, 230, mx_handle_t, datapipe_create, uint32_t options, mx_size_t element_size,
-                    mx_size_t capacity, mx_handle_t* handle)
+                    mx_size_t capacity, USER_PTR(mx_handle_t) handle)
 MAGENTA_SYSCALL_DEF(4, 4, 231, mx_ssize_t, datapipe_write, mx_handle_t handle, uint32_t flags,
-                    mx_size_t requested, const void* buffer)
+                    mx_size_t requested, USER_PTR(const void) buffer)
 MAGENTA_SYSCALL_DEF(4, 4, 232, mx_ssize_t, datapipe_read, mx_handle_t handle, uint32_t flags,
-                    mx_size_t requested, void* buffer)
-MAGENTA_SYSCALL_DEF(4, 4, 233, mx_ssize_t, datapipe_begin_write, mx_handle_t handle, uint32_t flags,
-                    mx_size_t requested,  uintptr_t* buffer)
+                    mx_size_t requested, USER_PTR(void) buffer)
+MAGENTA_SYSCALL_DEF(3, 3, 233, mx_ssize_t, datapipe_begin_write, mx_handle_t handle, uint32_t flags,
+                    USER_PTR(uintptr_t) buffer)
 MAGENTA_SYSCALL_DEF(2, 2, 234, mx_status_t, datapipe_end_write, mx_handle_t handle, mx_size_t written)
-MAGENTA_SYSCALL_DEF(4, 4, 235, mx_ssize_t, datapipe_begin_read, mx_handle_t handle, uint32_t flags,
-                    mx_size_t requested, uintptr_t* buffer)
+MAGENTA_SYSCALL_DEF(3, 3, 235, mx_ssize_t, datapipe_begin_read, mx_handle_t handle, uint32_t flags,
+                    USER_PTR(uintptr_t) buffer)
 MAGENTA_SYSCALL_DEF(2, 2, 236, mx_status_t, datapipe_end_read, mx_handle_t handle, mx_size_t read)
 
 // Wait sets
@@ -242,9 +236,13 @@ MAGENTA_SYSCALL_DEF(1, 1, 261, mx_status_t, acpi_cache_flush, mx_handle_t handle
 // Sockets
 MAGENTA_SYSCALL_DEF(2, 2, 280, mx_status_t, socket_create, mx_handle_t out_handles[2], uint32_t flags)
 MAGENTA_SYSCALL_DEF(4, 4, 281, mx_ssize_t, socket_write, mx_handle_t handle, uint32_t flags,
-                    mx_size_t size, const void* buffer)
+                    mx_size_t size, USER_PTR(const void) buffer)
 MAGENTA_SYSCALL_DEF(4, 4, 282, mx_ssize_t, socket_read, mx_handle_t handle, uint32_t flags,
-                    mx_size_t size, void* buffer)
+                    mx_size_t size, USER_PTR(void) buffer)
+
+// Debugger calls
+MAGENTA_SYSCALL_DEF(4, 4, 290, mx_status_t, thread_read_state, mx_handle_t handle, uint32_t kind, USER_PTR(void) buffer, USER_PTR(uint32_t) buffer_len)
+MAGENTA_SYSCALL_DEF(4, 4, 291, mx_status_t, thread_write_state, mx_handle_t handle, uint32_t kind, USER_PTR(const void) buffer, uint32_t buffer_len)
 
 // syscall arg passing tests
 MAGENTA_SYSCALL_DEF(0, 0, 20000, int, syscall_test_0, void)

@@ -26,13 +26,14 @@ typedef struct iostate {
     vnode_t* vn;
     vdircookie_t dircookie;
     size_t io_off;
+    uint32_t io_flags;
 } iostate_t;
 
 static mxio_dispatcher_t* vfs_dispatcher;
 
 static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie);
 
-static mx_handle_t vfs_create_handle(vnode_t* vn) {
+static mx_handle_t vfs_create_handle(vnode_t* vn, uint32_t flags) {
     mx_handle_t h[2];
     mx_status_t r;
     iostate_t* ios;
@@ -40,6 +41,7 @@ static mx_handle_t vfs_create_handle(vnode_t* vn) {
     if ((ios = calloc(1, sizeof(iostate_t))) == NULL)
         return ERR_NO_MEMORY;
     ios->vn = vn;
+    ios->io_flags = flags;
 
     if ((r = mx_msgpipe_create(h, 0)) < 0) {
         free(ios);
@@ -58,19 +60,18 @@ static mx_handle_t vfs_create_handle(vnode_t* vn) {
 
 static mx_handle_t devmgr_connect(const char* where) {
     int fd;
-    if ((fd = open("/dev/class/misc/dmctl", O_RDWR)) < 0) {
-        error("minfs: cannot connect to dmctl\n");
+    if ((fd = open(where, O_DIRECTORY | O_RDWR)) < 0) {
+        error("minfs: cannot open '%s'\n", where);
         return -1;
     }
     mx_handle_t h;
-    if (mxio_ioctl(fd, IOCTL_DEVMGR_MOUNT_FS, where, strlen(where) + 1,
-                   &h, sizeof(h)) != sizeof(h)) {
+    if (ioctl_devmgr_mount_fs(fd, &h) != sizeof(h)) {
         close(fd);
-        error("minfs: failed to attach to %s\n", where);
+        error("minfs: failed to attach to '%s'\n", where);
         return -1;
     }
     close(fd);
-    trace(RPC, "minfs: connected to devmgr @ '%s'\n", where);
+    trace(RPC, "minfs: mounted at '%s'\n", where);
     return h;
 }
 
@@ -128,8 +129,8 @@ static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie) {
         if ((r = vfs_open(vn, &vn, path, arg, msg->arg2.mode)) < 0) {
             return r;
         }
-        if ((msg->handle[0] = vfs_create_handle(vn)) < 0) {
-            vn->ops->close(vn);
+        if ((msg->handle[0] = vfs_create_handle(vn, arg)) < 0) {
+            vfs_close(vn);
             return msg->handle[0];
         }
 
@@ -142,7 +143,7 @@ static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie) {
         return NO_ERROR;
     }
     case MXRIO_CLONE:
-        if ((msg->handle[0] = vfs_create_handle(vn)) < 0) {
+        if ((msg->handle[0] = vfs_create_handle(vn, ios->io_flags)) < 0) {
             return msg->handle[0];
         }
         msg->arg2.protocol = MXIO_PROTOCOL_REMOTE;
@@ -150,7 +151,7 @@ static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie) {
         return NO_ERROR;
     case MXRIO_CLOSE:
         // this will drop the ref on the vn
-        vn->ops->close(vn);
+        vfs_close(vn);
         free(ios);
         return NO_ERROR;
     case MXRIO_READ: {
@@ -170,6 +171,14 @@ static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie) {
         return r;
     }
     case MXRIO_WRITE: {
+        if (ios->io_flags & O_APPEND) {
+            vnattr_t attr;
+            mx_status_t r;
+            if ((r = vn->ops->getattr(vn, &attr)) < 0) {
+                return r;
+            }
+            ios->io_off = attr.size;
+        }
         ssize_t r = vn->ops->write(vn, msg->data, len, ios->io_off);
         if (r >= 0) {
             ios->io_off += r;
@@ -265,6 +274,20 @@ static mx_status_t vfs_handler(mxrio_msg_t* msg, mx_handle_t rh, void* cookie) {
             msg->datalen = r;
         }
         return r;
+    }
+    case MXRIO_RENAME: {
+        if (len < 4) { // At least one byte for src + dst + null terminators
+            return ERR_INVALID_ARGS;
+        }
+        char* data_end = (char*)(msg->data + len - 1);
+        *data_end = '\0';
+        const char* oldpath = (const char*)msg->data;
+        size_t oldlen = strlen(oldpath);
+        const char* newpath = (const char*)msg->data + (oldlen + 1);
+        if (data_end <= newpath) {
+            return ERR_INVALID_ARGS;
+        }
+        return vfs_rename(vn, oldpath, newpath);
     }
     case MXRIO_UNLINK:
         return vn->ops->unlink(vn, (const char*)msg->data, len);

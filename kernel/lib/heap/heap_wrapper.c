@@ -14,6 +14,7 @@
 #include <string.h>
 #include <err.h>
 #include <list.h>
+#include <arch/ops.h>
 #include <kernel/spinlock.h>
 #include <lib/console.h>
 #include <lib/page_alloc.h>
@@ -159,7 +160,9 @@ void heap_trim(void)
 
 void *malloc(size_t size)
 {
-    LTRACEF("size %zd\n", size);
+    DEBUG_ASSERT(!arch_in_int_handler());
+
+    LTRACEF("size %zu\n", size);
 
     // deal with the pending free list
     if (unlikely(!list_is_empty(&delayed_free_list))) {
@@ -174,7 +177,9 @@ void *malloc(size_t size)
 
 void *memalign(size_t boundary, size_t size)
 {
-    LTRACEF("boundary %zu, size %zd\n", boundary, size);
+    DEBUG_ASSERT(!arch_in_int_handler());
+
+    LTRACEF("boundary %zu, size %zu\n", boundary, size);
 
     // deal with the pending free list
     if (unlikely(!list_is_empty(&delayed_free_list))) {
@@ -189,7 +194,9 @@ void *memalign(size_t boundary, size_t size)
 
 void *calloc(size_t count, size_t size)
 {
-    LTRACEF("count %zu, size %zd\n", count, size);
+    DEBUG_ASSERT(!arch_in_int_handler());
+
+    LTRACEF("count %zu, size %zu\n", count, size);
 
     // deal with the pending free list
     if (unlikely(!list_is_empty(&delayed_free_list))) {
@@ -204,7 +211,9 @@ void *calloc(size_t count, size_t size)
 
 void *realloc(void *ptr, size_t size)
 {
-    LTRACEF("ptr %p, size %zd\n", ptr, size);
+    DEBUG_ASSERT(!arch_in_int_handler());
+
+    LTRACEF("ptr %p, size %zu\n", ptr, size);
 
     // deal with the pending free list
     if (unlikely(!list_is_empty(&delayed_free_list))) {
@@ -219,6 +228,8 @@ void *realloc(void *ptr, size_t size)
 
 void free(void *ptr)
 {
+    DEBUG_ASSERT(!arch_in_int_handler());
+
     LTRACEF("ptr %p\n", ptr);
     if (heap_trace)
         printf("caller %p free %p\n", __GET_CALLER(), ptr);

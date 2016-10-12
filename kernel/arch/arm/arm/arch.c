@@ -158,6 +158,9 @@ void arch_init(void)
 }
 
 #if WITH_SMP
+// called from assembly
+void arm_secondary_entry(uint asm_cpu_num);
+
 void arm_secondary_entry(uint asm_cpu_num)
 {
     uint cpu = arch_curr_cpu_num();
@@ -178,9 +181,11 @@ void arm_secondary_entry(uint asm_cpu_num)
     /* run early secondary cpu init routines up to the threading level */
     lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_THREADING - 1);
 
+    arm_mmu_init_percpu();
+
     arch_mp_init_percpu();
 
-    LTRACEF("cpu num %d\n", cpu);
+    LTRACEF("cpu num %u\n", cpu);
     LTRACEF("sctlr 0x%x\n", arm_read_sctlr());
     LTRACEF("actlr 0x%x\n", arm_read_actlr());
 
@@ -426,9 +431,6 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp,
                        uintptr_t arg1, uintptr_t arg2) {
     thread_t *ct = get_current_thread();
 
-    vaddr_t kernel_stack_top = (uintptr_t)ct->stack + ct->stack_size;
-    kernel_stack_top = ROUNDDOWN(kernel_stack_top, 8);
-
     uint32_t spsr = CPSR_MODE_USR;
     // An entry point with the low bit set is Thumb code.
     if (pc & 1)
@@ -441,7 +443,7 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp,
                                  uintptr_t pc) __NO_RETURN;
     LTRACEF("arm_uspace_entry(%#" PRIxPTR ", %#" PRIxPTR ", %#x, %#" PRIxPTR
             ", %#" PRIxPTR ", 0, %#" PRIxPTR ")\n",
-            arg1, arg2, spsr, kernel_stack_top, sp, pc);
-    arm_uspace_entry(arg1, arg2, spsr, kernel_stack_top, sp, 0, pc);
+            arg1, arg2, spsr, ct->stack_top, sp, pc);
+    arm_uspace_entry(arg1, arg2, spsr, ct->stack_top, sp, 0, pc);
     __UNREACHABLE;
 }

@@ -4,6 +4,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -21,11 +22,9 @@ void DumpProcessListKeyMap() {
     printf("#th : number of thread handles\n");
     printf("#vm : number of vm map handles\n");
     printf("#mp : number of message pipe handles\n");
-    printf("#ev : number of event handles\n");
+    printf("#ev : number of event and event pair handles\n");
     printf("#ip : number of io port handles\n");
     printf("#dp : number of data pipe handles (both)\n");
-    printf("#it : number of interrupt handles\n");
-    printf("#io : number of io map handles\n");
 }
 
 char StateChar(const ProcessDispatcher& pd) {
@@ -43,7 +42,7 @@ char StateChar(const ProcessDispatcher& pd) {
 }
 
 const char* ObjectTypeToString(mx_obj_type_t type) {
-    static_assert(MX_OBJ_TYPE_LAST == 17, "need to update switch below");
+    static_assert(MX_OBJ_TYPE_LAST == 18, "need to update switch below");
 
     switch (type) {
         case MX_OBJ_TYPE_PROCESS: return "process";
@@ -57,11 +56,12 @@ const char* ObjectTypeToString(mx_obj_type_t type) {
         case MX_OBJ_TYPE_INTERRUPT: return "interrupt";
         case MX_OBJ_TYPE_IOMAP: return "io-map";
         case MX_OBJ_TYPE_PCI_DEVICE: return "pci-device";
-        case MX_OBJ_TYPE_PCI_INT: return "pci-interrupt";
         case MX_OBJ_TYPE_LOG: return "log";
         case MX_OBJ_TYPE_WAIT_SET: return "wait-set";
         case MX_OBJ_TYPE_SOCKET: return "socket";
         case MX_OBJ_TYPE_RESOURCE: return "resource";
+        case MX_OBJ_TYPE_EVENT_PAIR: return "event-pair";
+        case MX_OBJ_TYPE_JOB: return "job";
         default: return "???";
     }
 }
@@ -71,7 +71,7 @@ uint32_t BuildHandleStats(const ProcessDispatcher& pd, uint32_t* handle_type, si
     uint32_t total = 0;
     for (const auto& handle : pd.handles_) {
         if (handle_type) {
-            uint32_t type = static_cast<uint32_t>(handle.dispatcher()->GetType());
+            uint32_t type = static_cast<uint32_t>(handle.dispatcher()->get_type());
             if (size > type)
                 ++handle_type[type];
         }
@@ -91,17 +91,17 @@ char* DumpHandleTypeCount_NoLock(const ProcessDispatcher& pd) {
     uint32_t types[MX_OBJ_TYPE_LAST] = {0};
     uint32_t handle_count = BuildHandleStats(pd, types, sizeof(types));
 
-    snprintf(buf, sizeof(buf), "%3u: %3u %3u %3u %3u %3u %3u %3u %3u %3u",
+    snprintf(buf, sizeof(buf), "%3u: %3u %3u %3u %3u %3u %3u %3u",
              handle_count,
-             types[1],              // process.
-             types[2],              // thread.
-             types[3],              // vmem
-             types[4],              // msg pipe.
-             types[5],              // event
-             types[6],              // ioport.
-             types[7] + types[8],   // data pipe (both sides),
-             types[9],              // interrupt.
-             types[10]              // io map
+             types[MX_OBJ_TYPE_PROCESS],
+             types[MX_OBJ_TYPE_THREAD],
+             types[MX_OBJ_TYPE_VMEM],
+             types[MX_OBJ_TYPE_MESSAGE_PIPE],
+             // Events and event pairs:
+             types[MX_OBJ_TYPE_EVENT] + types[MX_OBJ_TYPE_EVENT_PAIR],
+             types[MX_OBJ_TYPE_IOPORT],
+             // Both sides of data pipes:
+             types[MX_OBJ_TYPE_DATA_PIPE_PRODUCER] + types[MX_OBJ_TYPE_DATA_PIPE_CONSUMER]
              );
     return buf;
 }
@@ -111,7 +111,7 @@ void DumpProcessList() {
     printf("%8s-s  #t  #h:  #pr #th #vm #mp #ev #ip #dp #it #io[name]\n", "id");
 
     for (const auto& process : ProcessDispatcher::global_process_list_) {
-        printf("%8llu-%c %3u %s [%s]\n",
+        printf("%8" PRIu64 "-%c %3u %s [%s]\n",
                process.get_koid(),
                StateChar(process),
                process.ThreadCount(),
@@ -131,20 +131,20 @@ void DumpProcessHandles(mx_koid_t id) {
         });
 
         if (!process_iter.IsValid()) {
-            printf("process %lld not found\n", id);
+            printf("process %" PRIu64 " not found\n", id);
             return;
         }
-        pd = mxtl::RefPtr<ProcessDispatcher>(process_iter.CopyPointer());
+        pd.reset(process_iter.CopyPointer());
     }
 
-    printf("process [%llu] handles :\n", id);
+    printf("process [%" PRIu64 "] handles :\n", id);
     printf("handle       koid : type\n");
 
     AutoLock lock(&pd->handle_table_lock_);
     uint32_t total = 0;
     for (const auto& handle : pd->handles_) {
-        auto type = handle.dispatcher()->GetType();
-        printf("%9d %7llu : %s\n",
+        auto type = handle.dispatcher()->get_type();
+        printf("%9d %7" PRIu64 " : %s\n",
             pd->MapHandleToValue(&handle),
             handle.dispatcher()->get_koid(),
             ObjectTypeToString(type));
@@ -168,7 +168,7 @@ void KillProcess(mx_koid_t id) {
 
     // if found, outside of the lock hit it with kill
     if (proc_ref) {
-        printf("killing process %llu\n", id);
+        printf("killing process %" PRIu64 "\n", id);
         proc_ref->Kill();
     }
 }

@@ -129,7 +129,7 @@ static bool gfxconsole_putc(char c)
     return inval;
 }
 
-void gfxconsole_print_callback(print_callback_t *cb, const char *str, size_t len)
+static void gfxconsole_print_callback(print_callback_t *cb, const char *str, size_t len)
 {
     int refresh_full_screen = 0;
     for (size_t i = 0; i < len; i++) {
@@ -177,7 +177,7 @@ static void gfxconsole_setup(gfx_surface *surface, gfx_surface *hw_surface)
     gfxconsole.columns = surface->width / FONT_X;
     gfxconsole.extray = surface->height - (gfxconsole.rows * FONT_Y);
 
-    dprintf(SPEW, "gfxconsole: rows %d, columns %d, extray %d\n", gfxconsole.rows,
+    dprintf(SPEW, "gfxconsole: rows %u, columns %u, extray %u\n", gfxconsole.rows,
             gfxconsole.columns, gfxconsole.extray);
 }
 
@@ -256,6 +256,16 @@ void gfxconsole_bind_display(struct display_info *info, void *raw_sw_fb) {
     }
 
     if (gfx_init_surface_from_display(&hw, info)) {
+        return;
+    }
+    if (info->flags & DISPLAY_FLAG_CRASH_FRAMEBUFFER) {
+        // "bluescreen" path. no allocations allowed
+        memcpy(&hw_surface, &hw, sizeof(hw));
+        gfxconsole_setup(&hw_surface, &hw_surface);
+        memcpy(&dispinfo, info, sizeof(*info));
+        gfxconsole_clear();
+        register_print_callback(&cb);
+        active = true;
         return;
     }
     if ((hw.format == hw_surface.format) && (hw.width == hw_surface.width) &&

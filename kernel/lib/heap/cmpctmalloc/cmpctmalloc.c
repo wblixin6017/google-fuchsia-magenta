@@ -8,6 +8,7 @@
 #include <debug.h>
 #include <trace.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +25,7 @@
 // kept in linked lists with 8 different sizes per binary order of magnitude
 // and the header size is two words with eager coalescing on free.
 
-#if defined(DEBUG) || LK_DEBUGLEVEL > 1
+#if defined(DEBUG) || LK_DEBUGLEVEL > 2
 #define CMPCT_DEBUG
 #endif
 
@@ -99,7 +100,8 @@ static void unlock(void)
 
 static void dump_free(header_t *header)
 {
-    dprintf(INFO, "\t\tbase %p, end 0x%lx, len 0x%zx\n", header, (vaddr_t)header + header->size, header->size);
+    dprintf(INFO, "\t\tbase %p, end %#" PRIxPTR ", len %#zx\n",
+            header, (vaddr_t)header + header->size, header->size);
 }
 
 void cmpct_dump(void)

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <ddk/device.h>
 #include <ddk/binding.h>
+#include <ddk/device.h>
 #include <ddk/protocol/console.h>
 #include <ddk/protocol/display.h>
 #include <ddk/protocol/input.h>
@@ -35,6 +35,9 @@
 
 #define VC_DEVNAME "vc"
 
+#define LOW_REPEAT_KEY_FREQUENCY_MICRO 250000000
+#define HIGH_REPEAT_KEY_FREQUENCY_MICRO 50000000
+
 // framebuffer
 static gfx_surface hw_gfx;
 
@@ -49,153 +52,235 @@ static vc_device_t* active_vc;
 static unsigned active_vc_index;
 static mtx_t vc_lock = MTX_INIT;
 
-static int vc_input_thread(void* arg) {
-    int fd = (uintptr_t) arg;
+static void vc_process_kb_report(uint8_t* report_buf, hid_keys_t* key_state,
+                                 int* cur_idx, int* prev_idx,
+                                 hid_keys_t* key_pressed,
+                                 hid_keys_t* key_released, int* modifiers) {
+    // process the key
+    int consumed = 0;
+    uint8_t keycode;
+    hid_keys_t key_delta;
 
+    hid_kbd_parse_report(report_buf, &key_state[*cur_idx]);
+    hid_kbd_pressed_keys(&key_state[*prev_idx], &key_state[*cur_idx], &key_delta);
+    if (key_pressed) {
+        memcpy(key_pressed, &key_delta, sizeof(key_delta));
+    }
+    hid_for_every_key(&key_delta, keycode) {
+        switch (keycode) {
+        // modifier keys are special
+        case HID_USAGE_KEY_LEFT_SHIFT:
+            *modifiers |= MOD_LSHIFT;
+            break;
+        case HID_USAGE_KEY_RIGHT_SHIFT:
+            *modifiers |= MOD_RSHIFT;
+            break;
+        case HID_USAGE_KEY_LEFT_ALT:
+            *modifiers |= MOD_LALT;
+            break;
+        case HID_USAGE_KEY_RIGHT_ALT:
+            *modifiers |= MOD_RALT;
+            break;
+        case HID_USAGE_KEY_LEFT_CTRL:
+            *modifiers |= MOD_LCTRL;
+            break;
+        case HID_USAGE_KEY_RIGHT_CTRL:
+            *modifiers |= MOD_RCTRL;
+            break;
+
+        case HID_USAGE_KEY_F1 ... HID_USAGE_KEY_F10:
+            if (*modifiers & MOD_LALT || *modifiers & MOD_RALT) {
+                vc_set_active_console(keycode - HID_USAGE_KEY_F1);
+                consumed = 1;
+            }
+            break;
+
+        case HID_USAGE_KEY_F11:
+            if (active_vc && (*modifiers & MOD_LALT || *modifiers & MOD_RALT)) {
+                vc_device_set_fullscreen(active_vc, !(active_vc->flags & VC_FLAG_FULLSCREEN));
+                consumed = 1;
+            }
+            break;
+
+        case HID_USAGE_KEY_TAB:
+            if (*modifiers & MOD_LALT || *modifiers & MOD_RALT) {
+                if (*modifiers & MOD_LSHIFT || *modifiers & MOD_RSHIFT) {
+                    vc_set_active_console(active_vc_index == 0 ? vc_count - 1 : active_vc_index - 1);
+                } else {
+                    vc_set_active_console(active_vc_index == vc_count - 1 ? 0 : active_vc_index + 1);
+                }
+                consumed = 1;
+            }
+            break;
+
+        case HID_USAGE_KEY_UP:
+            if (*modifiers & MOD_LALT || *modifiers & MOD_RALT) {
+                vc_device_scroll_viewport(active_vc, -1);
+                consumed = 1;
+            }
+            break;
+        case HID_USAGE_KEY_DOWN:
+            if (*modifiers & MOD_LALT || *modifiers & MOD_RALT) {
+                vc_device_scroll_viewport(active_vc, 1);
+                consumed = 1;
+            }
+            break;
+        case HID_USAGE_KEY_PAGEUP:
+            if (*modifiers & MOD_LSHIFT || *modifiers & MOD_RSHIFT) {
+                vc_device_scroll_viewport(active_vc, -(vc_device_rows(active_vc) / 2));
+                consumed = 1;
+            }
+            break;
+        case HID_USAGE_KEY_PAGEDOWN:
+            if (*modifiers & MOD_LSHIFT || *modifiers & MOD_RSHIFT) {
+                vc_device_scroll_viewport(active_vc, vc_device_rows(active_vc) / 2);
+                consumed = 1;
+            }
+            break;
+
+        case HID_USAGE_KEY_DELETE:
+            // Provide a CTRL-ALT-DEL reboot sequence
+            if ((*modifiers & (MOD_LCTRL | MOD_RCTRL)) &&
+                (*modifiers & (MOD_LALT | MOD_RALT))) {
+
+                int fd;
+                // Send the reboot command to devmgr
+                if ((fd = open("/dev/class/misc/dmctl", O_WRONLY)) >= 0) {
+                    write(fd, "reboot", strlen("reboot"));
+                    close(fd);
+                }
+                consumed = 1;
+            }
+            break;
+
+        // eat everything else
+        default:; // nothing
+        }
+    }
+
+    hid_kbd_released_keys(&key_state[*prev_idx], &key_state[*cur_idx], &key_delta);
+    if (key_released) {
+        memcpy(key_released, &key_delta, sizeof(key_delta));
+    }
+    hid_for_every_key(&key_delta, keycode) {
+        switch (keycode) {
+        // modifier keys are special
+        case HID_USAGE_KEY_LEFT_SHIFT:
+            *modifiers &= ~MOD_LSHIFT;
+            break;
+        case HID_USAGE_KEY_RIGHT_SHIFT:
+            *modifiers &= ~MOD_RSHIFT;
+            break;
+        case HID_USAGE_KEY_LEFT_ALT:
+            *modifiers &= ~MOD_LALT;
+            break;
+        case HID_USAGE_KEY_RIGHT_ALT:
+            *modifiers &= ~MOD_RALT;
+            break;
+        case HID_USAGE_KEY_LEFT_CTRL:
+            *modifiers &= ~MOD_LCTRL;
+            break;
+        case HID_USAGE_KEY_RIGHT_CTRL:
+            *modifiers &= ~MOD_RCTRL;
+            break;
+
+        default:; // nothing
+        }
+    }
+
+    if (!consumed) {
+        // TODO: decouple char device from actual device
+        // TODO: ensure active vc can't change while this is going on
+        mtx_lock(&active_vc->fifo.lock);
+        if ((mx_hid_fifo_size(&active_vc->fifo) == 0) && (active_vc->charcount == 0)) {
+            active_vc->flags |= VC_FLAG_RESETSCROLL;
+            device_state_set(&active_vc->device, DEV_STATE_READABLE);
+        }
+        mx_hid_fifo_write(&active_vc->fifo, report_buf, sizeof(report_buf));
+        mtx_unlock(&active_vc->fifo.lock);
+    }
+
+    // swap key states
+    *cur_idx = 1 - *cur_idx;
+    *prev_idx = 1 - *prev_idx;
+}
+
+static int vc_input_thread(void* arg) {
+    int fd = (uintptr_t)arg;
+
+    uint8_t previous_report_buf[8];
     uint8_t report_buf[8];
     hid_keys_t key_state[2];
-    hid_keys_t key_delta;
     memset(&key_state[0], 0, sizeof(hid_keys_t));
     memset(&key_state[1], 0, sizeof(hid_keys_t));
     int cur_idx = 0;
     int prev_idx = 1;
     int modifiers = 0;
+    uint64_t repeat_interval = MX_TIME_INFINITE;
+    bool repeat_enabled = true;
+    char* flag = getenv("gfxconsole.keyrepeat");
+    if (flag && (!strcmp(flag, "0") || !strcmp(flag, "false"))) {
+        printf("vc: Key repeat disabled\n");
+        repeat_enabled = false;
+    }
 
     for (;;) {
-        mxio_wait_fd(fd, MXIO_EVT_READABLE, NULL, MX_TIME_INFINITE);
+        mx_status_t rc = mxio_wait_fd(fd, MXIO_EVT_READABLE, NULL, repeat_interval);
+
+        if (rc == ERR_TIMED_OUT) {
+            // Times out only when need to repeat.
+            vc_process_kb_report(previous_report_buf, key_state, &cur_idx, &prev_idx, NULL, NULL, &modifiers);
+            vc_process_kb_report(report_buf, key_state, &cur_idx, &prev_idx, NULL, NULL, &modifiers);
+            // Accelerate key repeat until reaching the high frequency
+            repeat_interval = repeat_interval * .75;
+            repeat_interval = repeat_interval < HIGH_REPEAT_KEY_FREQUENCY_MICRO ? HIGH_REPEAT_KEY_FREQUENCY_MICRO : repeat_interval;
+            continue;
+        }
+
+        memcpy(previous_report_buf, report_buf, sizeof(report_buf));
         int r = read(fd, report_buf, sizeof(report_buf));
         if (r < 0) {
             break; // will be restarted by poll thread if needed
         }
         if ((size_t)(r) != sizeof(report_buf)) {
+            repeat_interval = MX_TIME_INFINITE;
             continue;
         }
         // eat the input if there is no active vc
-        if (!active_vc) continue;
-        // process the key
-        int consumed = 0;
-        uint8_t keycode;
-        hid_kbd_parse_report(report_buf, &key_state[cur_idx]);
-
-        hid_kbd_pressed_keys(&key_state[prev_idx], &key_state[cur_idx], &key_delta);
-        hid_for_every_key(&key_delta, keycode) {
-            switch (keycode) {
-            // modifier keys are special
-            case HID_USAGE_KEY_LEFT_SHIFT:
-                modifiers |= MOD_LSHIFT;
-                break;
-            case HID_USAGE_KEY_RIGHT_SHIFT:
-                modifiers |= MOD_RSHIFT;
-                break;
-            case HID_USAGE_KEY_LEFT_ALT:
-                modifiers |= MOD_LALT;
-                break;
-            case HID_USAGE_KEY_RIGHT_ALT:
-                modifiers |= MOD_RALT;
-                break;
-            case HID_USAGE_KEY_LEFT_CTRL:
-                modifiers |= MOD_LCTRL;
-                break;
-            case HID_USAGE_KEY_RIGHT_CTRL:
-                modifiers |= MOD_RCTRL;
-                break;
-
-            case HID_USAGE_KEY_F1:
-                vc_set_active_console(active_vc_index == 0 ? vc_count - 1 : active_vc_index - 1);
-                consumed = 1;
-                break;
-            case HID_USAGE_KEY_F2:
-                vc_set_active_console(active_vc_index == vc_count - 1 ? 0 : active_vc_index + 1);
-                consumed = 1;
-                break;
-
-            case HID_USAGE_KEY_UP:
-                if (modifiers & MOD_LALT || modifiers & MOD_RALT) {
-                    vc_device_scroll_viewport(active_vc, -1);
-                    consumed = 1;
-                }
-                break;
-            case HID_USAGE_KEY_DOWN:
-                if (modifiers & MOD_LALT || modifiers & MOD_RALT) {
-                    vc_device_scroll_viewport(active_vc, 1);
-                    consumed = 1;
-                }
-                break;
-            case HID_USAGE_KEY_PAGEUP:
-                if (modifiers & MOD_LSHIFT || modifiers & MOD_RSHIFT) {
-                    vc_device_scroll_viewport(active_vc, -(active_vc->rows / 2));
-                    consumed = 1;
-                }
-                break;
-            case HID_USAGE_KEY_PAGEDOWN:
-                if (modifiers & MOD_LSHIFT || modifiers & MOD_RSHIFT) {
-                    vc_device_scroll_viewport(active_vc, active_vc->rows / 2);
-                    consumed = 1;
-                }
-                break;
-
-            case HID_USAGE_KEY_DELETE:
-                // Provide a CTRL-ALT-DEL reboot sequence
-                if ((modifiers & (MOD_LCTRL | MOD_RCTRL)) &&
-                    (modifiers & (MOD_LALT | MOD_RALT))) {
-
-                    int fd;
-                    // Send the reboot command to devmgr
-                    if ((fd = open("/dev/dmctl", O_WRONLY)) >= 0) {
-                        write(fd, "reboot", strlen("reboot"));
-                        close(fd);
-                    }
-                    consumed = 1;
-                }
-                break;
-
-            // eat everything else
-            default:; // nothing
-            }
+        if (!active_vc) {
+            repeat_interval = MX_TIME_INFINITE;
+            continue;
         }
 
-        hid_kbd_released_keys(&key_state[prev_idx], &key_state[cur_idx], &key_delta);
-        hid_for_every_key(&key_delta, keycode) {
-            switch (keycode) {
-            // modifier keys are special
-            case HID_USAGE_KEY_LEFT_SHIFT:
-                modifiers &= ~MOD_LSHIFT;
-                break;
-            case HID_USAGE_KEY_RIGHT_SHIFT:
-                modifiers &= ~MOD_RSHIFT;
-                break;
-            case HID_USAGE_KEY_LEFT_ALT:
-                modifiers &= ~MOD_LALT;
-                break;
-            case HID_USAGE_KEY_RIGHT_ALT:
-                modifiers &= ~MOD_RALT;
-                break;
-            case HID_USAGE_KEY_LEFT_CTRL:
-                modifiers &= ~MOD_LCTRL;
-                break;
-            case HID_USAGE_KEY_RIGHT_CTRL:
-                modifiers &= ~MOD_RCTRL;
-                break;
+        hid_keys_t key_pressed, key_released;
+        vc_process_kb_report(report_buf, key_state, &cur_idx, &prev_idx,
+                             &key_pressed, &key_released, &modifiers);
 
-            default:; // nothing
+        if (repeat_enabled) {
+            // Check if any non modifiers were pressed
+            bool pressed = false, released = false;
+            for (int i = 0; i < 7; i++) {
+                if (key_pressed.keymask[i]) {
+                    pressed = true;
+                    break;
+                }
+            }
+            // Check if any key was released
+            for (int i = 0; i < 8; i++) {
+                if (key_released.keymask[i]) {
+                    released = true;
+                    break;
+                }
+            }
+
+            if (released) {
+                // Do not repeat released keys, block on next mxio_wait_fd
+                repeat_interval = MX_TIME_INFINITE;
+            } else if (pressed) {
+                // Set timeout on next mxio_wait_fd
+                repeat_interval = LOW_REPEAT_KEY_FREQUENCY_MICRO;
             }
         }
-
-        if (!consumed) {
-            // TODO: decouple char device from actual device
-            // TODO: ensure active vc can't change while this is going on
-            mtx_lock(&active_vc->fifo.lock);
-            if ((mx_hid_fifo_size(&active_vc->fifo) == 0) && (active_vc->charcount == 0)) {
-                active_vc->flags |= VC_FLAG_RESETSCROLL;
-                device_state_set(&active_vc->device, DEV_STATE_READABLE);
-            }
-            mx_hid_fifo_write(&active_vc->fifo, report_buf, sizeof(report_buf));
-            mtx_unlock(&active_vc->fifo.lock);
-        }
-
-        // swap key states
-        cur_idx = 1 - cur_idx;
-        prev_idx = 1 - prev_idx;
     }
     return 0;
 }
@@ -212,7 +297,7 @@ static mx_status_t vc_input_device_added(int dirfd, const char* fn, void* cookie
 
     // test to see if this is a device we can read
     int proto = INPUT_PROTO_NONE;
-    int rc = mxio_ioctl(fd, IOCTL_INPUT_GET_PROTOCOL, NULL, 0, &proto, sizeof(proto));
+    ssize_t rc = ioctl_input_get_protocol(fd, &proto);
     if (rc > 0 && proto != INPUT_PROTO_KBD) {
         // skip devices that aren't keyboards
         close(fd);
@@ -223,7 +308,7 @@ static mx_status_t vc_input_device_added(int dirfd, const char* fn, void* cookie
     char tname[64];
     thrd_t t;
     snprintf(tname, sizeof(tname), "vc-input-%s", fn);
-    int ret = thrd_create_with_name(&t, vc_input_thread, (void*) (uintptr_t) fd, tname);
+    int ret = thrd_create_with_name(&t, vc_input_thread, (void*)(uintptr_t)fd, tname);
     if (ret != thrd_success) {
         xprintf("vc: input thread %s did not start (return value=%d)\n", tname, ret);
         close(fd);
@@ -234,7 +319,7 @@ static mx_status_t vc_input_device_added(int dirfd, const char* fn, void* cookie
 
 static int vc_input_devices_poll_thread(void* arg) {
     int dirfd;
-    if ((dirfd = open(DEV_INPUT, O_DIRECTORY|O_RDONLY)) < 0) {
+    if ((dirfd = open(DEV_INPUT, O_DIRECTORY | O_RDONLY)) < 0) {
         return -1;
     }
     mxio_watch_directory(dirfd, vc_input_device_added, NULL);
@@ -250,6 +335,28 @@ static void __vc_set_active(vc_device_t* dev, unsigned index) {
     active_vc = dev;
     active_vc->flags &= ~VC_FLAG_HASINPUT;
     active_vc_index = index;
+}
+
+mx_status_t vc_set_console_to_active(vc_device_t* dev) {
+    if (dev == NULL)
+        return ERR_INVALID_ARGS;
+
+    unsigned i = 0;
+    vc_device_t* device = NULL;
+    mtx_lock(&vc_lock);
+    list_for_every_entry (&vc_list, device, vc_device_t, node) {
+        if (device == dev)
+            break;
+        i++;
+    }
+    if (i == vc_count) {
+        mtx_unlock(&vc_lock);
+        return ERR_INVALID_ARGS;
+    }
+    __vc_set_active(dev, i);
+    mtx_unlock(&vc_lock);
+    vc_device_render(active_vc);
+    return NO_ERROR;
 }
 
 mx_status_t vc_set_active_console(unsigned console) {
@@ -304,12 +411,17 @@ static mx_status_t vc_device_release(mx_device_t* dev) {
     list_delete(&vc->node);
     vc_count -= 1;
 
-    if (vc->active) active_vc = NULL;
+    if (vc->active) {
+        active_vc = NULL;
+        if (active_vc_index >= vc_count) {
+            active_vc_index = vc_count - 1;
+        }
+    }
 
     // need to fixup active_vc and active_vc_index after deletion
     vc_device_t* d = NULL;
     unsigned i = 0;
-    list_for_every_entry(&vc_list, d, vc_device_t, node) {
+    list_for_every_entry (&vc_list, d, vc_device_t, node) {
         if (active_vc) {
             if (d == active_vc) {
                 active_vc_index = i;
@@ -328,7 +440,9 @@ static mx_status_t vc_device_release(mx_device_t* dev) {
     vc_device_free(vc);
 
     // redraw the status line, or the full screen
-    if (active_vc) vc_device_render(active_vc);
+    if (active_vc) {
+        vc_device_render(active_vc);
+    }
     return NO_ERROR;
 }
 
@@ -514,7 +628,7 @@ static ssize_t vc_device_read(mx_device_t* dev, void* buf, size_t count, mx_off_
 static ssize_t vc_device_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
     vc_device_t* vc = get_vc_device(dev);
     mtx_lock(&vc->lock);
-    vc->invy0 = vc->rows + 1;
+    vc->invy0 = vc_device_rows(vc) + 1;
     vc->invy1 = -1;
     const uint8_t* str = (const uint8_t*)buf;
     for (size_t i = 0; i < count; i++) {
@@ -538,15 +652,17 @@ static ssize_t vc_device_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, s
     case IOCTL_CONSOLE_GET_DIMENSIONS: {
         ioctl_console_dimensions_t* dims = reply;
         if (max < sizeof(*dims)) {
-            return ERR_NOT_ENOUGH_BUFFER;
+            return ERR_BUFFER_TOO_SMALL;
         }
         dims->width = vc->columns;
-        dims->height = vc->rows;
+        dims->height = vc_device_rows(vc);
         return sizeof(*dims);
     }
+    case IOCTL_CONSOLE_SET_ACTIVE_VC:
+        return vc_set_console_to_active(vc);
     case IOCTL_DISPLAY_GET_FB: {
         if (max < sizeof(ioctl_display_get_fb_t)) {
-            return ERR_NOT_ENOUGH_BUFFER;
+            return ERR_BUFFER_TOO_SMALL;
         }
         ioctl_display_get_fb_t* fb = reply;
         fb->info.format = vc->gfx->format;
@@ -568,6 +684,13 @@ static ssize_t vc_device_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, s
             return ERR_INVALID_ARGS;
         }
         vc_gfx_invalidate_region(vc, rect->x, rect->y, rect->width, rect->height);
+        return NO_ERROR;
+    }
+    case IOCTL_DISPLAY_SET_FULLSCREEN: {
+        if (cmdlen < sizeof(uint32_t) || !cmd) {
+            return ERR_INVALID_ARGS;
+        }
+        vc_device_set_fullscreen(vc, !!*(uint32_t*)cmd);
         return NO_ERROR;
     }
     default:
@@ -719,15 +842,12 @@ fail:
     return status;
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_DISPLAY),
-};
-
-mx_driver_t _driver_vc_root BUILTIN_DRIVER = {
-    .name = "vc-root",
+mx_driver_t _driver_vc_root = {
     .ops = {
         .bind = vc_root_bind,
     },
-    .binding = binding,
-    .binding_size = sizeof(binding),
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_vc_root, "virtconsole", "magenta", "0.1", 1)
+    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_DISPLAY),
+MAGENTA_DRIVER_END(_driver_vc_root)

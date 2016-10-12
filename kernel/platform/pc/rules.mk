@@ -18,7 +18,7 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/acpi.c \
     $(LOCAL_DIR)/console.c \
     $(LOCAL_DIR)/debug.c \
-    $(LOCAL_DIR)/hpet.c \
+    $(LOCAL_DIR)/hpet.cpp \
     $(LOCAL_DIR)/interrupts.c \
     $(LOCAL_DIR)/keyboard.c \
     $(LOCAL_DIR)/memory.c \
@@ -27,13 +27,18 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/platform.c \
     $(LOCAL_DIR)/power.c \
     $(LOCAL_DIR)/timer.c \
+    $(LOCAL_DIR)/watchdog.c \
 
 MODULE_DEPS += \
     lib/acpica \
     lib/gfxconsole \
+    lib/fixed_point \
     lib/pow2_range_allocator \
     dev/interrupt \
     dev/pcie \
+
+KERNEL_DEFINES += \
+    PLATFORM_SUPPORTS_PANIC_SHELL=1
 
 LK_HEAP_IMPLEMENTATION ?= cmpctmalloc
 

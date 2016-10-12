@@ -45,18 +45,15 @@ status_t udisplay_bind_gfxconsole(void) {
     assert(g_udisplay.framebuffer_phys);
     assert(g_udisplay.framebuffer_size);
 
-    // unmap the framebuffer from the user's aspace
-    vmm_aspace_t* aspace = vaddr_to_aspace(g_udisplay.framebuffer_user_virt);
-    vmm_free_region(aspace, (vaddr_t)g_udisplay.framebuffer_user_virt);
-
     // map the framebuffer
-    aspace = vmm_get_kernel_aspace();
+    vmm_aspace_t* aspace = vmm_get_kernel_aspace();
     status_t result = vmm_alloc_physical(
             aspace,
             "udisplay_fb",
             g_udisplay.framebuffer_size,
             &g_udisplay.framebuffer_virt,
             PAGE_SIZE_SHIFT,
+            0 /* min alloc gap */,
             g_udisplay.framebuffer_phys,
             0 /* vmm flags */,
             ARCH_MMU_FLAG_WRITE_COMBINING | ARCH_MMU_FLAG_PERM_READ |
@@ -65,7 +62,7 @@ status_t udisplay_bind_gfxconsole(void) {
 
     // bind the display to the gfxconsole
     g_udisplay.info.framebuffer = g_udisplay.framebuffer_virt;
-
+    g_udisplay.info.flags = DISPLAY_FLAG_HW_FRAMEBUFFER | DISPLAY_FLAG_CRASH_FRAMEBUFFER;
     gfxconsole_bind_display(&g_udisplay.info, NULL);
 
     return NO_ERROR;

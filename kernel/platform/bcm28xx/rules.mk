@@ -8,14 +8,15 @@ LOCAL_DIR := $(GET_LOCAL_DIR)
 
 MODULE := $(LOCAL_DIR)
 
-WITH_SMP := 0
+WITH_SMP := 1
 LK_HEAP_IMPLEMENTATION ?= cmpctmalloc
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/gpio.c \
 	$(LOCAL_DIR)/intc.c \
 	$(LOCAL_DIR)/platform.c \
-	$(LOCAL_DIR)/miniuart.c
+	$(LOCAL_DIR)/miniuart.c \
+	$(LOCAL_DIR)/atag.c
 
 MEMBASE := 0x00000000
 
@@ -29,7 +30,7 @@ ARCH := arm64
 ARM_CPU := cortex-a53
 
 KERNEL_LOAD_OFFSET := 0x00080000
-MEMSIZE ?= 0x40000000 # 1GB
+MEMSIZE ?= 0x20000000 # Limit to 512MB for now (GPU uses 1/2 of the 1GB total)
 
 GLOBAL_DEFINES += \
 	MEMBASE=$(MEMBASE) \

@@ -5,21 +5,23 @@
 #pragma once
 
 #include <stdint.h>
+#include <assert.h>
+
+#include <ddk/ioctl.h>
+#include <mxdm/mxdm.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
 
 #define VERITY_MAGIC 0x797469726556784Dull // 'MxVerity'
-#define VERITY_BLOCK_SIZE 8192
 #define VERITY_DIGEST_LEN 32 // SHA-256
 #define VERITY_MAX_DEPTH 8
 #define VERITY_MAX_SALT 256
 #define VERITY_MAX_KEY_LEN 256
 #define VERITY_VERSION_1_0 0x00010000
 
-
-static_assert(VERITY_BLOCK_SIZE / VERITY_DIGEST_LEN >=
+static_assert(MXDM_BLOCK_SIZE / VERITY_DIGEST_LEN >=
                   (1 << ((sizeof(uint64_t) * 8) / VERITY_MAX_DEPTH)),
               "Hash tree must be deep enough to address all blocks");
 
@@ -54,26 +56,13 @@ typedef struct verity_header {
   uint8_t key_digest[VERITY_DIGEST_LEN];
 }
 verity_header_t;
-static_assert(sizeof(verity_header_t) <= VERITY_BLOCK_SIZE, "Verity header must fit in a single block");
+static_assert(sizeof(verity_header_t) <= MXDM_BLOCK_SIZE, "Verity header must fit in a single block");
 
 typedef enum verity_mode {
-  kVerityModeStopped,
-  kVerityModeBypassing,
-  kVerityModeIgnoring,
-  kVerityModeEnforcing,
+  kVerityModeIgnore,
+  kVerityModeWarn,
+  kVerityModeEnforce,
 } verity_mode_t;
-
-typedef enum verity_state {
-  kVerityStateFullyVerified,
-  kVerityStatePartiallyVerified,
-  kVerityStateUnverified,
-  kVerityStateCorrupted,
-} verity_state_t;
-
-typedef struct verity_status_msg_t {
-  verity_state_t state;
-  uint64_t lba;
-} verity_status_msg_t;
 
 
 #ifdef __cplusplus

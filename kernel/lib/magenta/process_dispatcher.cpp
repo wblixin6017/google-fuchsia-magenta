@@ -31,10 +31,9 @@
 #define LOCAL_TRACE 0
 
 
-static constexpr mx_rights_t kDefaultProcessRights = MX_RIGHT_READ  |
-                                                     MX_RIGHT_WRITE |
-                                                     MX_RIGHT_DUPLICATE |
-                                                     MX_RIGHT_TRANSFER;
+static constexpr mx_rights_t kDefaultProcessRights =
+        MX_RIGHT_READ  | MX_RIGHT_WRITE | MX_RIGHT_DUPLICATE | MX_RIGHT_TRANSFER |
+        MX_RIGHT_GET_PROPERTY | MX_RIGHT_SET_PROPERTY;
 
 mutex_t ProcessDispatcher::global_process_list_mutex_ =
     MUTEX_INITIAL_VALUE(global_process_list_mutex_);
@@ -123,11 +122,12 @@ status_t ProcessDispatcher::Initialize() {
     return NO_ERROR;
 }
 
-status_t ProcessDispatcher::Start(ThreadDispatcher *thread, uintptr_t pc,
-                                  uintptr_t sp, uintptr_t arg1, uintptr_t arg2) {
+status_t ProcessDispatcher::Start(mxtl::RefPtr<ThreadDispatcher> thread,
+                                  uintptr_t pc, uintptr_t sp,
+                                  uintptr_t arg1, uintptr_t arg2) {
     LTRACEF("process %p thread %p, entry %#" PRIxPTR ", sp %#" PRIxPTR
             ", arg1 %#" PRIxPTR ", arg2 %#" PRIxPTR "\n",
-            this, thread, pc, sp, arg1, arg2);
+            this, thread.get(), pc, sp, arg1, arg2);
 
     // grab and hold the state lock across this entire routine, since we're
     // effectively transitioning from INITIAL to RUNNING
@@ -250,8 +250,17 @@ void ProcessDispatcher::RemoveThread(UserThread* t) {
 
 void ProcessDispatcher::AllHandlesClosed() {
     LTRACE_ENTRY_OBJ;
-    // Here we should call Kill(). Currently not advisable since launchpad launcher
-    // closes the handle to each launched process.
+
+    // check that we're not already entering a dead state
+    // note this is checked outside of a mutex to avoid a reentrant case where the
+    // process is already being destroyed, the handle table is being cleaned up, and
+    // the last ref to itself is being dropped. In that case it recurses into this function
+    // and would wedge up if Kill() is called
+    if (state_ == State::DYING || state_ == State::DEAD)
+        return;
+
+    // last handle going away acts as a kill to the process object
+    Kill();
 }
 
 void ProcessDispatcher::SetState(State s) {
@@ -290,7 +299,7 @@ void ProcessDispatcher::SetState(State s) {
         aspace_->Destroy();
 
         // signal waiter
-        LTRACEF_LEVEL(2, "signalling waiters\n");
+        LTRACEF_LEVEL(2, "signaling waiters\n");
         state_tracker_.UpdateSatisfied(0u, MX_SIGNAL_SIGNALED);
 
         {
@@ -356,7 +365,7 @@ bool ProcessDispatcher::GetDispatcher(mx_handle_t handle_value,
     return true;
 }
 
-status_t ProcessDispatcher::GetInfo(mx_process_info_t* info) {
+status_t ProcessDispatcher::GetInfo(mx_record_process_t* info) {
     info->return_code = retcode_;
 
     return NO_ERROR;
@@ -364,9 +373,8 @@ status_t ProcessDispatcher::GetInfo(mx_process_info_t* info) {
 
 status_t ProcessDispatcher::CreateUserThread(mxtl::StringPiece name, uint32_t flags, mxtl::RefPtr<UserThread>* user_thread) {
     AllocChecker ac;
-    auto ut = mxtl::AdoptRef(new (&ac) UserThread(GenerateKernelObjectId(),
-                                                   mxtl::RefPtr<ProcessDispatcher>(this),
-                                                   flags));
+    auto ut = mxtl::AdoptRef(new (&ac) UserThread(mxtl::WrapRefPtr(this),
+                                                  flags));
     if (!ac.check())
         return ERR_NO_MEMORY;
 
@@ -378,27 +386,64 @@ status_t ProcessDispatcher::CreateUserThread(mxtl::StringPiece name, uint32_t fl
     return NO_ERROR;
 }
 
-status_t ProcessDispatcher::SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport) {
+// Fill in |info| with the current set of threads.
+// |num_info_threads| is the number of threads |info| can hold.
+// Return the actual number of threads, which may be more than |num_info_threads|.
+
+status_t ProcessDispatcher::GetThreads(mxtl::Array<mx_record_process_thread_t>* out_threads) {
+    AutoLock lock(&thread_list_lock_);
+    size_t n = thread_list_.size_slow();
+    mxtl::Array<mx_record_process_thread_t> threads;
+    AllocChecker ac;
+    threads.reset(new (&ac) mx_record_process_thread_t[n], n);
+    if (!ac.check())
+        return ERR_NO_MEMORY;
+    size_t i = 0;
+    for (auto& thread : thread_list_) {
+        threads[i].koid = thread.get_koid();
+        ++i;
+    }
+    DEBUG_ASSERT(i == n);
+    *out_threads = mxtl::move(threads);
+    return NO_ERROR;
+}
+
+status_t ProcessDispatcher::SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport, bool debugger) {
     // Lock both |state_lock_| and |exception_lock_| to ensure the process
     // doesn't transition to dead while we're setting the exception handler.
     AutoLock state_lock(&state_lock_);
     AutoLock excp_lock(&exception_lock_);
     if (state_ == State::DEAD)
         return ERR_NOT_FOUND; // TODO(dje): ?
-    if (exception_port_)
-        return ERR_BAD_STATE; // TODO(dje): ?
-    exception_port_ = eport;
+    if (debugger) {
+        if (debugger_exception_port_)
+            return ERR_BAD_STATE; // TODO(dje): ?
+        debugger_exception_port_ = eport;
+    } else {
+        if (exception_port_)
+            return ERR_BAD_STATE; // TODO(dje): ?
+        exception_port_ = eport;
+    }
     return NO_ERROR;
 }
 
-void ProcessDispatcher::ResetExceptionPort() {
+void ProcessDispatcher::ResetExceptionPort(bool debugger) {
     AutoLock lock(&exception_lock_);
-    exception_port_.reset();
+    if (debugger) {
+        debugger_exception_port_.reset();
+    } else {
+        exception_port_.reset();
+    }
 }
 
 mxtl::RefPtr<ExceptionPort> ProcessDispatcher::exception_port() {
     AutoLock lock(&exception_lock_);
     return exception_port_;
+}
+
+mxtl::RefPtr<ExceptionPort> ProcessDispatcher::debugger_exception_port() {
+    AutoLock lock(&exception_lock_);
+    return debugger_exception_port_;
 }
 
 void ProcessDispatcher::AddProcess(ProcessDispatcher* process) {
@@ -407,7 +452,8 @@ void ProcessDispatcher::AddProcess(ProcessDispatcher* process) {
 
     global_process_list_.push_back(process);
 
-    LTRACEF("Adding process %p : koid = %llu\n", process, process->get_koid());
+    LTRACEF("Adding process %p : koid = %" PRIu64 "\n",
+            process, process->get_koid());
 }
 
 void ProcessDispatcher::RemoveProcess(ProcessDispatcher* process) {
@@ -415,7 +461,8 @@ void ProcessDispatcher::RemoveProcess(ProcessDispatcher* process) {
 
     DEBUG_ASSERT(process != nullptr);
     global_process_list_.erase(*process);
-    LTRACEF("Removing process %p : koid = %llu\n", process, process->get_koid());
+    LTRACEF("Removing process %p : koid = %" PRIu64 "\n",
+            process, process->get_koid());
 }
 
 // static
@@ -425,7 +472,7 @@ mxtl::RefPtr<ProcessDispatcher> ProcessDispatcher::LookupProcessById(mx_koid_t k
     auto iter = global_process_list_.find_if([koid](const ProcessDispatcher& p) {
                                                 return p.get_koid() == koid;
                                              });
-    return mxtl::RefPtr<ProcessDispatcher>(iter.CopyPointer());
+    return mxtl::WrapRefPtr(iter.CopyPointer());
 }
 
 mxtl::RefPtr<UserThread> ProcessDispatcher::LookupThreadById(mx_koid_t koid) {
@@ -433,7 +480,7 @@ mxtl::RefPtr<UserThread> ProcessDispatcher::LookupThreadById(mx_koid_t koid) {
     AutoLock lock(&thread_list_lock_);
 
     auto iter = thread_list_.find_if([koid](const UserThread& t) { return t.get_koid() == koid; });
-    return mxtl::RefPtr<UserThread>(iter.CopyPointer());
+    return mxtl::WrapRefPtr(iter.CopyPointer());
 }
 
 mx_status_t ProcessDispatcher::set_bad_handle_policy(uint32_t new_policy) {
@@ -471,11 +518,26 @@ mx_status_t ProcessDispatcher::Unmap(uintptr_t address, mx_size_t len) {
     mx_status_t status;
 
     // TODO: support range unmapping
-    // at the moment only support unmapping what is at a given address, signalled with len = 0
+    // at the moment only support unmapping what is at a given address, signaled with len = 0
     if (len != 0)
         return ERR_INVALID_ARGS;
 
     status = aspace_->FreeRegion(address);
 
     return status;
+}
+
+mx_status_t ProcessDispatcher::BadHandle(mx_handle_t handle_value,
+                                         mx_status_t error) {
+    // TODO(mcgrathr): Maybe treat other errors the same?
+    // This also gets ERR_WRONG_TYPE and ERR_ACCESS_DENIED (for rights checks).
+    if (error != ERR_BAD_HANDLE)
+        return error;
+
+    // TODO(cpu): Generate an exception when exception handling lands.
+    if (get_bad_handle_policy() == MX_POLICY_BAD_HANDLE_EXIT) {
+        printf("\n[fatal: %s used a bad handle]\n", name().data());
+        Exit(error);
+    }
+    return error;
 }

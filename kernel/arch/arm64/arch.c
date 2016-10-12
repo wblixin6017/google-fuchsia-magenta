@@ -5,6 +5,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
+#include <assert.h>
 #include <debug.h>
 #include <stdlib.h>
 #include <arch.h>
@@ -12,10 +13,12 @@
 #include <arch/arm64.h>
 #include <arch/arm64/mmu.h>
 #include <arch/mp.h>
+#include <bits.h>
 #include <kernel/cmdline.h>
 #include <kernel/thread.h>
 #include <lk/init.h>
 #include <lk/main.h>
+#include <inttypes.h>
 #include <platform.h>
 #include <trace.h>
 
@@ -31,6 +34,11 @@ static thread_t _init_thread[SMP_MAX_CPUS - 1];
 
 static void arm64_cpu_early_init(void)
 {
+    uint64_t mmfr0 = ARM64_READ_SYSREG(ID_AA64MMFR0_EL1);
+
+    /* check to make sure implementation supports 16 bit asids */
+    ASSERT( (mmfr0 & ARM64_MMFR0_ASIDBITS_MASK) == ARM64_MMFR0_ASIDBITS_16);
+
     /* set the vector base */
     ARM64_WRITE_SYSREG(VBAR_EL1, (uint64_t)&arm64_exception_base);
 
@@ -41,11 +49,23 @@ static void arm64_cpu_early_init(void)
     }
 
     arch_enable_fiqs();
+
+    /* enable cycle counter */
+    ARM64_WRITE_SYSREG(pmcr_el0, 1);
+    ARM64_WRITE_SYSREG(pmcntenset_el0, (1u << 31));
 }
 
 void arch_early_init(void)
 {
     arm64_cpu_early_init();
+
+    /* read the block size of DC ZVA */
+    uint32_t dczid = ARM64_READ_SYSREG(dczid_el0);
+    if (BIT(dczid, 4) == 0) {
+        arm64_zva_shift = (ARM64_READ_SYSREG(dczid_el0) & 0xf) + 2;
+    }
+    ASSERT(arm64_zva_shift != 0); /* for now, fail if DC ZVA is unavailable */
+
     platform_init_mmu_mappings();
 }
 
@@ -54,7 +74,7 @@ void arch_init(void)
 #if WITH_SMP
     arch_mp_init_percpu();
 
-    LTRACEF("midr_el1 0x%llx\n", ARM64_READ_SYSREG(midr_el1));
+    LTRACEF("midr_el1 %#" PRIx64 "\n", ARM64_READ_SYSREG(midr_el1));
 
     uint32_t cmdline_max_cpus = cmdline_get_uint32("smp.maxcpus", SMP_MAX_CPUS);
     if (cmdline_max_cpus > SMP_MAX_CPUS || cmdline_max_cpus <= 0) {
@@ -94,9 +114,6 @@ void arch_chain_load(void *entry, ulong arg0, ulong arg1, ulong arg2, ulong arg3
 void arch_enter_uspace(uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg2) {
     thread_t *ct = get_current_thread();
 
-    vaddr_t kernel_stack_top = (uintptr_t)ct->stack + ct->stack_size;
-    kernel_stack_top = ROUNDDOWN(kernel_stack_top, 16);
-
     /* set up a default spsr to get into 64bit user space:
      * zeroed NZCV
      * no SS, no IL, no D
@@ -107,11 +124,17 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg
 
     arch_disable_ints();
 
-    arm64_uspace_entry(arg1, arg2, pc, sp, kernel_stack_top, spsr);
+    LTRACEF("arm_uspace_entry(%#" PRIxPTR ", %#" PRIxPTR ", %#x, %#" PRIxPTR
+            ", %#" PRIxPTR ", 0, %#" PRIxPTR ")\n",
+            arg1, arg2, spsr, ct->stack_top, sp, pc);
+    arm64_uspace_entry(arg1, arg2, pc, sp, ct->stack_top, spsr);
     __UNREACHABLE;
 }
 
 #if WITH_SMP
+/* called from assembly */
+void arm64_secondary_entry(ulong asm_cpu_num);
+
 void arm64_secondary_entry(ulong asm_cpu_num)
 {
     uint cpu = arch_curr_cpu_num();
@@ -128,7 +151,7 @@ void arm64_secondary_entry(ulong asm_cpu_num)
 
     arch_mp_init_percpu();
 
-    LTRACEF("cpu num %d\n", cpu);
+    LTRACEF("cpu num %u\n", cpu);
 
     /* we're done, tell the main cpu we're up */
     atomic_add(&secondaries_to_init, -1);

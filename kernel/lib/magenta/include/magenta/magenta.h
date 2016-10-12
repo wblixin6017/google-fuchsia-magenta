@@ -18,6 +18,8 @@
 class Handle;
 class Dispatcher;
 class ExceptionPort;
+class ProcessDispatcher;
+class JobDispatcher;
 
 // Creates a handle attached to |dispatcher| and with |rights| from a
 // specific arena which makes their addresses come from a fixed range.
@@ -40,13 +42,15 @@ mx_status_t SetSystemExceptionPort(mxtl::RefPtr<ExceptionPort> eport);
 void ResetSystemExceptionPort();
 mxtl::RefPtr<ExceptionPort> GetSystemExceptionPort();
 
+mxtl::RefPtr<JobDispatcher> GetRootJobDispatcher();
+
+bool magenta_rights_check(mx_rights_t actual, mx_rights_t desired);
+
 struct handle_delete {
     inline void operator()(Handle* h) const {
         DeleteHandle(h);
     }
 };
-
-bool magenta_rights_check(mx_rights_t actual, mx_rights_t desired);
 
 using HandleUniquePtr = mxtl::unique_ptr<Handle, handle_delete>;
 
@@ -69,3 +73,13 @@ inline lk_time_t timeout_to_deadline(lk_time_t now, lk_time_t timeout) {
 }
 
 mx_status_t magenta_sleep(mx_time_t nanoseconds);
+
+// Determines if this handle is to a Resource object.
+// Used to provide access to privileged syscalls.
+// Later, Resource objects will be finer-grained.
+mx_status_t validate_resource_handle(mx_handle_t handle);
+
+// Convenience function to get go from process handle to process.
+mx_status_t get_process(ProcessDispatcher* up,
+                        mx_handle_t proc_handle,
+                        mxtl::RefPtr<ProcessDispatcher>* proc);

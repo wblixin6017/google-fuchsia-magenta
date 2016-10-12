@@ -43,7 +43,7 @@ static void usb_interrupt_callback(iotxn_t* txn, void* cookie) {
 
     bool requeue = true;
     switch (txn->status) {
-    case ERR_CHANNEL_CLOSED:
+    case ERR_REMOTE_CLOSED:
         requeue = false;
         break;
     case NO_ERROR:
@@ -211,8 +211,8 @@ static mx_status_t usb_hid_bind(mx_driver_t* drv, mx_device_t* dev) {
         mx_status_t status = hid_add_device(drv, &usbhid->hiddev, dev);
         if (status != NO_ERROR) {
             usb_desc_iter_release(&iter);
-            free(usbhid);
             hid_release_device(&usbhid->hiddev);
+            free(usbhid);
             return status;
         }
 
@@ -229,18 +229,15 @@ next_interface:
     return NO_ERROR;
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_USB_DEVICE),
-    BI_MATCH_IF(EQ, BIND_USB_CLASS, USB_CLASS_HID),
-    BI_ABORT_IF(NE, BIND_USB_CLASS, 0),
-    BI_MATCH_IF(EQ, BIND_USB_IFC_CLASS, USB_CLASS_HID),
-};
-
-mx_driver_t _driver_usb_hid BUILTIN_DRIVER = {
-    .name = "usb-hid",
+mx_driver_t _driver_usb_hid = {
     .ops = {
         .bind = usb_hid_bind,
     },
-    .binding = binding,
-    .binding_size = sizeof(binding),
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_usb_hid, "usb-hid", "magenta", "0.1", 4)
+    BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_USB),
+    BI_MATCH_IF(EQ, BIND_USB_CLASS, USB_CLASS_HID),
+    BI_ABORT_IF(NE, BIND_USB_CLASS, 0),
+    BI_MATCH_IF(EQ, BIND_USB_IFC_CLASS, USB_CLASS_HID),
+MAGENTA_DRIVER_END(_driver_usb_hid)

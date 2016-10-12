@@ -1,4 +1,5 @@
 #include <err.h>
+#include <inttypes.h>
 #include <new.h>
 #include <string.h>
 
@@ -63,7 +64,8 @@ IOP_Packet* ExceptionPort::MakePacket(uint64_t key, const mx_exception_report_t*
 }
 
 mx_status_t ExceptionPort::SendReport(const mx_exception_report_t* report) {
-    LTRACEF("Sending exception report, type %u, pid %llu, tid %llu\n",
+    LTRACEF("Sending exception report, type %u, pid %"
+            PRIu64 ", tid %" PRIu64 "\n",
             report->header.type, report->context.pid, report->context.tid);
 
     auto iopk = MakePacket(io_port_key_, report, sizeof(*report));
@@ -77,7 +79,7 @@ void ExceptionPort::BuildProcessGoneReport(mx_exception_report_t* report,
                                            mx_koid_t pid) {
     memset(report, 0, sizeof(*report));
     report->header.size = sizeof(*report);
-    report->header.type = MX_EXCEPTION_TYPE_GONE;
+    report->header.type = MX_EXCP_GONE;
     report->context.pid = pid;
     report->context.tid = MX_KOID_INVALID;
 }
@@ -86,7 +88,7 @@ void ExceptionPort::BuildThreadGoneReport(mx_exception_report_t* report,
                                           mx_koid_t pid, mx_koid_t tid) {
     memset(report, 0, sizeof(*report));
     report->header.size = sizeof(*report);
-    report->header.type = MX_EXCEPTION_TYPE_GONE;
+    report->header.type = MX_EXCP_GONE;
     report->context.pid = pid;
     report->context.tid = tid;
 }
@@ -97,7 +99,7 @@ void ExceptionPort::BuildThreadGoneReport(mx_exception_report_t* report,
 
 void ExceptionPort::OnProcessExit(ProcessDispatcher* process) {
     mx_koid_t pid = process->get_koid();
-    LTRACEF("process %llu gone\n", pid);
+    LTRACEF("process %" PRIu64 " gone\n", pid);
     mx_exception_report_t report;
     BuildProcessGoneReport(&report, pid);
     // The result is ignored, not much else we can do.
@@ -111,7 +113,7 @@ void ExceptionPort::OnProcessExit(ProcessDispatcher* process) {
 void ExceptionPort::OnThreadExit(UserThread* thread) {
     mx_koid_t pid = thread->process()->get_koid();
     mx_koid_t tid = thread->get_koid();
-    LTRACEF("thread %llu.%llu gone\n", pid, tid);
+    LTRACEF("thread %" PRIu64 ".%" PRIu64 " gone\n", pid, tid);
     mx_exception_report_t report;
     BuildThreadGoneReport(&report, pid, tid);
     // The result is ignored, not much else we can do.

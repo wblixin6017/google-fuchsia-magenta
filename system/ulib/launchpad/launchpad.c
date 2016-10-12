@@ -4,9 +4,10 @@
 
 #include <launchpad/launchpad.h>
 #include "elf.h"
-#include "stack.h"
 
+#include <magenta/assert.h>
 #include <magenta/processargs.h>
+#include <magenta/stack.h>
 #include <magenta/syscalls.h>
 #include <mxio/util.h>
 #include <stdbool.h>
@@ -72,7 +73,7 @@ mx_status_t launchpad_create_with_process(mx_handle_t proc,
     if (lp == NULL)
         return ERR_NO_MEMORY;
 
-    lp->stack_size = DEFAULT_STACK_SIZE;
+    lp->stack_size = MAGENTA_DEFAULT_STACK_SIZE;
 
     mx_status_t status = launchpad_add_handle(lp, proc, MX_HND_TYPE_PROC_SELF);
     if (status == NO_ERROR) {
@@ -225,6 +226,21 @@ mx_status_t launchpad_add_handles(launchpad_t* lp, size_t n,
     return status;
 }
 
+mx_status_t launchpad_clone_mxio_cwd(launchpad_t* lp) {
+    mx_handle_t handles[MXIO_MAX_HANDLES];
+    uint32_t types[MXIO_MAX_HANDLES];
+    mx_status_t status = mxio_clone_cwd(handles, types);
+    if(status > 0) {
+        size_t n = status;
+        status = launchpad_add_handles(lp, status, handles, types);
+        if (status != NO_ERROR) {
+            for (size_t i = 0; i < n; ++i)
+                mx_handle_close(handles[i]);
+        }
+    }
+    return status;
+}
+
 mx_status_t launchpad_add_pipe(launchpad_t* lp, int* fd_out, int target_fd) {
     mx_handle_t handle;
     uint32_t id;
@@ -301,7 +317,7 @@ static mx_handle_t loader_svc_rpc(mx_handle_t loader_svc, uint32_t opcode,
     } msg;
 
     if (len >= sizeof(msg.data))
-        return ERR_NOT_ENOUGH_BUFFER;
+        return ERR_BUFFER_TOO_SMALL;
 
     memset(&msg.header, 0, sizeof(msg.header));
     msg.header.opcode = opcode;
@@ -658,7 +674,8 @@ static mx_status_t prepare_start(launchpad_t* lp, const char* thread_name,
             lp_proc(lp), stack_vmo, 0, lp->stack_size, &stack_base,
             MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
         if (status == NO_ERROR) {
-            *sp = sp_from_mapping(stack_base, lp->stack_size);
+            DEBUG_ASSERT(lp->stack_size % PAGE_SIZE == 0);
+            *sp = compute_initial_stack_pointer(stack_base, lp->stack_size);
             // Pass the stack VMO to the process.  Our protocol with the
             // new process is that we warrant that this is the VMO from
             // which the initial stack is mapped and that we've exactly
@@ -720,7 +737,7 @@ static mx_status_t prepare_start(launchpad_t* lp, const char* thread_name,
     if (size > lp->stack_size / 2) {
         free(msg);
         mx_handle_close(*thread);
-        return ERR_NOT_ENOUGH_BUFFER;
+        return ERR_BUFFER_TOO_SMALL;
     }
 
     mx_status_t status = mx_msgpipe_write(to_child, msg, size,
@@ -756,7 +773,7 @@ mx_handle_t launchpad_start(launchpad_t* lp) {
 
     mx_handle_t thread;
     uintptr_t sp;
-    status = prepare_start(lp, "initial", to_child, &thread, &sp);
+    status = prepare_start(lp, "main", to_child, &thread, &sp);
     mx_handle_close(to_child);
     if (status == NO_ERROR) {
         status = mx_process_start(proc, thread, lp->entry, sp,
@@ -771,9 +788,9 @@ mx_handle_t launchpad_start(launchpad_t* lp) {
     return status;
 }
 
-mx_status_t launchpad_start_extra(launchpad_t* lp, const char* thread_name,
-                                  mx_handle_t to_child,
-                                  uintptr_t bootstrap_handle_in_child) {
+mx_status_t launchpad_start_injected(launchpad_t* lp, const char* thread_name,
+                                     mx_handle_t to_child,
+                                     uintptr_t bootstrap_handle_in_child) {
     mx_handle_t thread;
     uintptr_t sp;
     mx_status_t status = prepare_start(lp, thread_name, to_child,

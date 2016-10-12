@@ -23,7 +23,7 @@ void mxr_once(mxr_once_t* once, void (*func)(void)) {
                                            &old_state, RUNNING)) {
             (*func)();
             if (atomic_exchange(&once->futex, RAN) == WAITING) {
-                mx_status_t status = mx_futex_wake(&once->futex, UINT32_MAX);
+                mx_status_t status = _mx_futex_wake(&once->futex, UINT32_MAX);
                 if (status != NO_ERROR)
                     __builtin_trap();
             }
@@ -37,17 +37,17 @@ void mxr_once(mxr_once_t* once, void (*func)(void)) {
                 if (!atomic_compare_exchange_strong(&once->futex,
                                                     &old_state, WAITING))
                     continue;
-                // Fall through.
+            // Fall through.
 
             case WAITING:;
                 mx_status_t status =
-                    mx_futex_wait(&once->futex, WAITING, MX_TIME_INFINITE);
-                if (status != NO_ERROR && status != ERR_BUSY)
+                    _mx_futex_wait(&once->futex, WAITING, MX_TIME_INFINITE);
+                if (status != NO_ERROR && status != ERR_BAD_STATE)
                     __builtin_trap();
                 continue;
 
             case UNUSED:
-                // This should have triggered the 'if' branch.
+            // This should have triggered the 'if' branch.
 
             default:
                 __builtin_unreachable();

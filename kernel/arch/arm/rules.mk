@@ -220,7 +220,6 @@ KERNEL_DEFINES += \
 	ARCH_DEFAULT_STACK_SIZE=4096
 
 ARCH_OPTFLAGS := -O2
-WITH_LINKER_GC ?= 1
 
 # we have a mmu and want the vmm/pmm
 WITH_KERNEL_VM ?= 1
@@ -284,8 +283,10 @@ MODULE_DEPS += \
 	arch/arm/arm-m/CMSIS
 
 ARCH_OPTFLAGS := -Os
-WITH_LINKER_GC ?= 1
 endif
+
+MODULE_SRCS += \
+	$(LOCAL_DIR)/arm/debugger.c
 
 # try to find toolchain
 include $(LOCAL_DIR)/toolchain.mk

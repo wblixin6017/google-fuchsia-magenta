@@ -8,11 +8,14 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/param.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <ifaddrs.h>
 
 #include <fcntl.h>
+#include <libgen.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -42,10 +45,17 @@ static int pull_file(int s, const char* dst, const char* src) {
         return r;
     }
 
-    int fd = open(dst, O_WRONLY|O_TRUNC|O_CREAT, 0664);
-    if (!fd) {
+    char final_dst[MAXPATHLEN];
+    struct stat st;
+    strncpy(final_dst, dst, sizeof(final_dst));
+    if (stat(dst, &st) == 0 && (st.st_mode & S_IFDIR)) {
+        strncat(final_dst, "/", sizeof(final_dst) - strlen(final_dst) - 1);
+        strncat(final_dst, basename((char*)src), sizeof(final_dst) - strlen(final_dst) - 1);
+    }
+    int fd = open(final_dst, O_WRONLY|O_TRUNC|O_CREAT, 0664);
+    if (fd < 0) {
         fprintf(stderr, "%s: cannot open %s for writing: %s\n",
-                appname, dst, strerror(errno));
+                appname, final_dst, strerror(errno));
         return -1;
     }
 
@@ -101,23 +111,41 @@ static int push_file(int s, const char* dst, const char* src) {
     int r;
     msg in, out;
     size_t dst_len = strlen(dst);
+    const char* ptr;
 
     out.hdr.cmd = NB_OPEN;
     out.hdr.arg = O_WRONLY;
     memcpy(out.data, dst, dst_len);
     out.data[dst_len] = 0;
 
+again:
     r = netboot_txn(s, &in, &out, sizeof(out.hdr) + dst_len + 1);
     if (r < 0) {
+        if (errno == EISDIR) {
+            ptr = strrchr(src, '/');
+            if (!ptr) {
+                ptr = src;
+            } else {
+                ptr += 1;
+            }
+            int print_len = snprintf((char*)out.data, sizeof(out.data), "%s/%s", dst, ptr);
+            if (print_len >= MAXSIZE) {
+                errno = ENAMETOOLONG;
+                return -1;
+            } else if (print_len < 0) {
+                return print_len;
+            }
+            goto again;
+        }
         fprintf(stderr, "%s: error opening remote file %s (%d)\n",
-                appname, src, errno);
+                appname, out.data, errno);
         return r;
     }
 
     int fd = open(src, O_RDONLY, 0664);
     if (!fd) {
         fprintf(stderr, "%s: cannot open %s for reading: %s\n",
-                appname, dst, strerror(errno));
+                appname, src, strerror(errno));
         return -1;
     }
 

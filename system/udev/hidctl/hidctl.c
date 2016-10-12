@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/binding.h>
 #include <ddk/device.h>
 #include <ddk/driver.h>
 #include <ddk/common/hid.h>
@@ -124,8 +125,10 @@ static ssize_t hidctl_ioctl(mx_device_t* dev, uint32_t op,
 static mx_status_t hidctl_release(mx_device_t* dev) {
     hidctl_instance_t* inst = from_mx_device(dev);
     hid_release_device(&inst->hiddev);
-    free(inst->hid_report_desc);
-    device_remove(&inst->hiddev.dev);
+    if (inst->hid_report_desc) {
+        free(inst->hid_report_desc);
+        device_remove(&inst->hiddev.dev);
+    }
     free(inst);
     return NO_ERROR;
 }
@@ -159,16 +162,18 @@ static mx_protocol_device_t hidctl_device_proto = {
 
 static mx_status_t hidctl_init(mx_driver_t* driver) {
     if (device_create(&hidctl_dev, driver, "hidctl", &hidctl_device_proto) == NO_ERROR) {
-        if (device_add(hidctl_dev, NULL) < 0) {
+        if (device_add(hidctl_dev, driver_get_misc_device()) < 0) {
             free(hidctl_dev);
         }
     }
     return NO_ERROR;
 }
 
-mx_driver_t _driver_hidctl BUILTIN_DRIVER = {
-    .name = "hidctl",
+mx_driver_t _driver_hidctl = {
     .ops = {
         .init = hidctl_init,
     },
 };
+
+MAGENTA_DRIVER_BEGIN(_driver_hidctl, "hidctl", "magenta", "0.1", 0)
+MAGENTA_DRIVER_END(_driver_hidctl)

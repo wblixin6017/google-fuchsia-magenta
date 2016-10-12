@@ -8,7 +8,6 @@
 #include <err.h>
 #include <inttypes.h>
 #include <kernel/cmdline.h>
-#include <kernel/vm.h>
 #include <kernel/vm/vm_object.h>
 #include <lib/console.h>
 #include <lk/init.h>
@@ -22,12 +21,13 @@
 #include <magenta/process_dispatcher.h>
 #include <magenta/processargs.h>
 #include <magenta/resource_dispatcher.h>
+#include <magenta/stack.h>
 #include <magenta/thread_dispatcher.h>
 #include <magenta/vm_object_dispatcher.h>
 
 #include "code-start.h"
 
-static const size_t stack_size = 16 * PAGE_SIZE;
+static const size_t stack_size = MAGENTA_DEFAULT_STACK_SIZE;
 
 extern char __kernel_cmdline[CMDLINE_MAX];
 extern unsigned __kernel_cmdline_size;
@@ -36,45 +36,6 @@ extern unsigned __kernel_cmdline_count;
 // These are defined in assembly by vdso.S; code-start.h
 // gives details about their size and layout.
 extern "C" const char vdso_image[], userboot_image[];
-
-// Hold onto the vmos constructed from pages stolen from the kernel forever.
-// Since user space code may close the last handle to these, we need
-// to make sure they never get destructed to avoid returning the pages to the system.
-//
-// TODO: make this unnecessary by making sure on all archtectures the kernel can
-// tolerate a hole in its mapping. Currently on arm/arm64 this is not possible.
-static mxtl::RefPtr<VmObject> vdso_vmo;
-static mxtl::RefPtr<VmObject> userboot_vmo;
-static mxtl::RefPtr<VmObject> bootfs_vmo;
-static mxtl::RefPtr<VmObject> rootfs_vmo;
-
-// Make a new VM object populated from some pages we have on hand.
-static mxtl::RefPtr<VmObject> make_vmo_from_memory(const void* data,
-                                                    size_t size) {
-    auto vmo = VmObject::Create(PMM_ALLOC_FLAG_ANY, size);
-    if (vmo && size > 0) {
-        ASSERT(IS_PAGE_ALIGNED((uintptr_t)data));
-        ASSERT(IS_PAGE_ALIGNED(size));
-
-        // do a direct lookup of the physical pages backing the range of the kernel
-        // that these addresses belong to and jam directly into the VMO.
-        // NOTE: relies on the kernel not otherwise owning the pages. If the set up
-        // of the kernel's address space changes so that the pages are attached to a
-        // kernel VMO, this will need to change.
-        paddr_t start_paddr = vaddr_to_paddr(data);
-        ASSERT(start_paddr != 0);
-        for (size_t count = 0; count < size / PAGE_SIZE; count++) {
-            vm_page_t *page = paddr_to_vm_page(start_paddr + count * PAGE_SIZE);
-            ASSERT(page);
-
-            // make sure the page isn't already attached to another object
-            ASSERT(!list_in_list(&page->node));
-
-            vmo->AddPage(page, count * PAGE_SIZE);
-        }
-    }
-    return vmo;
-}
 
 // Get a handle to a VM object, with full rights except perhaps for writing.
 static mx_status_t get_vmo_handle(mxtl::RefPtr<VmObject> vmo, bool readonly,
@@ -88,7 +49,7 @@ static mx_status_t get_vmo_handle(mxtl::RefPtr<VmObject> vmo, bool readonly,
         mxtl::move(vmo), &dispatcher, &rights);
     if (result == NO_ERROR) {
         if (disp_ptr)
-            disp_ptr->reset(dispatcher->get_vm_object_dispatcher());
+            disp_ptr->reset(dispatcher->get_specific<VmObjectDispatcher>());
         if (readonly)
             rights &= ~MX_RIGHT_WRITE;
         if (ptr)
@@ -127,7 +88,7 @@ static mx_status_t map_dso_segment(ProcessDispatcher* process,
 
     size_t len = end_offset - start_offset;
 
-    mx_status_t status = process->Map(vmo, MX_RIGHT_READ, start_offset, len,
+    mx_status_t status = process->Map(vmo, MX_RIGHT_READ | MX_RIGHT_EXECUTE | MX_RIGHT_MAP, start_offset, len,
                                       mapped_address, flags);
 
     if (status != NO_ERROR) {
@@ -183,7 +144,7 @@ static HandleUniquePtr make_bootstrap_pipe(
         if (status != NO_ERROR)
             return nullptr;
         user_pipe_handle.reset(MakeHandle(mxtl::move(mpd0), rights));
-        kernel_pipe.reset(mpd1->get_message_pipe_dispatcher());
+        kernel_pipe.reset(mpd1->get_specific<MessagePipeDispatcher>());
     }
     if (!user_pipe_handle)
         return nullptr;
@@ -279,21 +240,19 @@ static int attempt_userboot(const void* bootfs, size_t bfslen) {
     if (rbase)
         dprintf(INFO, "userboot: ramdisk %15zu @ %p\n", rsize, rbase);
 
-    vdso_vmo = make_vmo_from_memory(vdso_image, VDSO_CODE_END);
-    userboot_vmo = make_vmo_from_memory(userboot_image, USERBOOT_CODE_END);
+    auto vdso_vmo = VmObject::CreateFromROData(vdso_image, VDSO_CODE_END);
+    auto userboot_vmo = VmObject::CreateFromROData(userboot_image,
+                                                   USERBOOT_CODE_END);
     auto stack_vmo = VmObject::Create(PMM_ALLOC_FLAG_ANY, stack_size);
-    if (!vdso_vmo || !userboot_vmo || !stack_vmo)
-        return ERR_NO_MEMORY;
+    auto bootfs_vmo = VmObject::CreateFromROData(bootfs, bfslen);
+    auto rootfs_vmo = VmObject::CreateFromROData(rbase, rsize);
 
     HandleUniquePtr handles[BOOTSTRAP_HANDLES];
-    bootfs_vmo = make_vmo_from_memory(bootfs, bfslen);
     mx_status_t status = get_vmo_handle(bootfs_vmo, false, NULL,
                                         &handles[BOOTSTRAP_BOOTFS]);
-    if (status == NO_ERROR) {
-        rootfs_vmo = make_vmo_from_memory(rbase, rsize);
+    if (status == NO_ERROR)
         status = get_vmo_handle(rootfs_vmo, false, NULL,
                                 &handles[BOOTSTRAP_RAMDISK]);
-    }
     mxtl::RefPtr<VmObjectDispatcher> userboot_vmo_dispatcher;
     if (status == NO_ERROR)
         status = get_vmo_handle(userboot_vmo, true,
@@ -319,7 +278,7 @@ static int attempt_userboot(const void* bootfs, size_t bfslen) {
 
     handles[BOOTSTRAP_PROC].reset(MakeHandle(proc_disp, rights));
 
-    auto proc = proc_disp->get_process_dispatcher();
+    auto proc = proc_disp->get_specific<ProcessDispatcher>();
 
     // Map the userboot image anywhere.
     uintptr_t userboot_base = 0;
@@ -350,23 +309,14 @@ static int attempt_userboot(const void* bootfs, size_t bfslen) {
         return status;
 
     // Map the stack anywhere.
-    uintptr_t sp;
+    uintptr_t stack_base;
     status = proc->Map(mxtl::move(stack_vmo_dispatcher),
-                       MX_RIGHT_READ | MX_RIGHT_WRITE,
-                       0, stack_size, &sp,
+                       MX_RIGHT_READ | MX_RIGHT_WRITE | MX_RIGHT_MAP,
+                       0, stack_size, &stack_base,
                        MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
     if (status != NO_ERROR)
         return status;
-    sp += stack_size;
-#ifdef __x86_64__
-    // The x86-64 ABI requires %rsp % 16 = 8 on entry.  The zero word
-    // at (%rsp) serves as the return address for the outermost frame.
-    sp -= 8;
-#elif defined(__arm__) || defined(__aarch64__)
-    // The ARMv7 and ARMv8 ABIs both just require that SP be aligned.
-#else
-# error what machine?
-#endif
+    uintptr_t sp = compute_initial_stack_pointer(stack_base, stack_size);
 
     // Create the user thread and stash its handle for the bootstrap message.
     ThreadDispatcher* thread;
@@ -379,7 +329,7 @@ static int attempt_userboot(const void* bootfs, size_t bfslen) {
         status = ThreadDispatcher::Create(ut, &ut_disp, &rights);
         if (status < 0)
             return status;
-        thread = ut_disp->get_thread_dispatcher();
+        thread = ut_disp->get_specific<ThreadDispatcher>();
         handles[BOOTSTRAP_THREAD].reset(MakeHandle(mxtl::move(ut_disp), rights));
     }
     DEBUG_ASSERT(thread);
@@ -407,7 +357,7 @@ static int attempt_userboot(const void* bootfs, size_t bfslen) {
     dprintf(SPEW, "userboot: %-23s @ %#" PRIxPTR "\n", "entry point", entry);
 
     // start the process
-    status = proc->Start(thread, entry, sp, hv, vdso_base);
+    status = proc->Start(mxtl::WrapRefPtr(thread), entry, sp, hv, vdso_base);
     if (status != NO_ERROR) {
         printf("userboot: failed to start process %d\n", status);
         return status;

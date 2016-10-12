@@ -90,12 +90,14 @@ struct mx_proc_args {
 #define MX_HND_TYPE_MXIO_PIPE 0x12
 #define MX_HND_TYPE_MXIO_EVENT 0x13
 #define MX_HND_TYPE_MXIO_LOGGER 0x14
+#define MX_HND_TYPE_MXIO_CWD 0x15
 
 // Handle types used by the device manager and device hosts
 #define MX_HND_TYPE_RESOURCE 0x20
 
 // Handle types used by the mojo application model
 #define MX_HND_TYPE_APPLICATION_REQUEST 0x100
+#define MX_HND_TYPE_APPLICATION_LAUNCHER 0x101
 
 // Message pipe for dynamic loader service
 #define MX_HND_TYPE_LOADER_SVC 0x200

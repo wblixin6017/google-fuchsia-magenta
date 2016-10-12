@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <threads.h>
@@ -10,13 +11,13 @@
 #include <magenta/syscalls.h>
 #include <stdatomic.h>
 
-static uint64_t count = 0;
+static atomic_uint_fast64_t count = ATOMIC_VAR_INIT(0);
 
 static int thread_func(void* arg) {
     uint64_t val = atomic_fetch_add(&count, 1);
     val++;
     if (val % 1000 == 0) {
-        printf("Created %lld threads, time %lld us\n", val, mx_current_time() / 1000000);
+        printf("Created %" PRId64 " threads, time %" PRId64 " us\n", val, mx_current_time() / 1000000);
     }
 
     thrd_t thread;
@@ -30,7 +31,7 @@ static int thread_func(void* arg) {
         val = atomic_fetch_sub(&count, 1);
         val--;
         if (val % 1000 == 0)
-            printf("Joined %lld threads, time %lld us\n", val, mx_current_time() / 1000000);
+            printf("Joined %" PRId64 " threads, time %" PRId64 " us\n", val, mx_current_time() / 1000000);
     }
 
     return 0;
@@ -47,6 +48,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    printf("Created %lld threads\n", count);
+    // TODO(phosek): The cast here shouldn't be required.
+    printf("Created %" PRIdFAST64 " threads\n", (uint_fast64_t)atomic_load(&count));
     return 0;
 }

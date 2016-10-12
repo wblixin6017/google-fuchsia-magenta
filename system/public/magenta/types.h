@@ -42,6 +42,9 @@ typedef uint32_t mx_signals_t;
 #define MX_SIGNAL_SIGNAL4         ((mx_signals_t)1u << 7)
 #define MX_SIGNAL_SIGNAL_ALL      ((mx_signals_t)31u << 3)
 
+#define MX_SIGNAL_READ_THRESHOLD  ((mx_signals_t)1u << 8)
+#define MX_SIGNAL_WRITE_THRESHOLD ((mx_signals_t)1u << 9)
+
 typedef struct {
     mx_signals_t satisfied;
     mx_signals_t satisfiable;
@@ -54,7 +57,10 @@ typedef uint32_t mx_rights_t;
 #define MX_RIGHT_READ             ((mx_rights_t)1u << 2)
 #define MX_RIGHT_WRITE            ((mx_rights_t)1u << 3)
 #define MX_RIGHT_EXECUTE          ((mx_rights_t)1u << 4)
-#define MX_RIGHT_DEBUG            ((mx_rights_t)1u << 5)
+#define MX_RIGHT_MAP              ((mx_rights_t)1u << 5)
+#define MX_RIGHT_GET_PROPERTY     ((mx_rights_t)1u << 6)
+#define MX_RIGHT_SET_PROPERTY     ((mx_rights_t)1u << 7)
+#define MX_RIGHT_DEBUG            ((mx_rights_t)1u << 8)
 #define MX_RIGHT_SAME_RIGHTS      ((mx_rights_t)1u << 31)
 
 // flags to vm map routines

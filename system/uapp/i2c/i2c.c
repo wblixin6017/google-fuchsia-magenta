@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <ddk/protocol/i2c.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <magenta/syscalls.h>
 #include <magenta/types.h>
+#include <magenta/device/i2c.h>
 #include <mxio/util.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -70,11 +70,9 @@ int cmd_add_slave(int fd, int argc, const char** argv) {
         .chip_address = address,
     };
 
-    int ret = mxio_ioctl(fd, IOCTL_I2C_BUS_ADD_SLAVE,
-                         &add_slave_args, sizeof(add_slave_args),
-                         NULL, 0);
+    ssize_t ret = ioctl_i2c_bus_add_slave(fd, &add_slave_args);
     if (ret < 0) {
-        printf("Error when adding I2C slave. (%d)\n", ret);
+        printf("Error when adding I2C slave. (%zd)\n", ret);
         return 1;
     }
 
@@ -98,11 +96,9 @@ int cmd_remove_slave(int fd, int argc, const char** argv) {
         .chip_address = address,
     };
 
-    int ret = mxio_ioctl(fd, IOCTL_I2C_BUS_REMOVE_SLAVE,
-                         &remove_slave_args, sizeof(remove_slave_args),
-                         NULL, 0);
+    ssize_t ret = ioctl_i2c_bus_remove_slave(fd, &remove_slave_args);
     if (ret < 0) {
-        printf("Error when removing I2C slave. (%d)\n", ret);
+        printf("Error when removing I2C slave. (%zd)\n", ret);
         return 1;
     }
 
@@ -125,12 +121,9 @@ int cmd_set_bus_frequency(int fd, int argc, const char** argv) {
         .frequency = frequency,
     };
 
-    int ret = mxio_ioctl(fd, IOCTL_I2C_BUS_SET_FREQUENCY,
-                         &set_bus_frequency_args,
-                         sizeof(set_bus_frequency_args),
-                         NULL, 0);
+    ssize_t ret = ioctl_i2c_bus_set_frequency(fd, &set_bus_frequency_args);
     if (ret < 0) {
-        printf("Error when setting bus frequency. (%d)\n", ret);
+        printf("Error when setting bus frequency. (%zd)\n", ret);
         return 1;
     }
 
@@ -163,6 +156,7 @@ int cmd_read(int fd, int argc, const char** argv) {
 
     for (int i = 0; i < length; i++) {
         printf(" %02x", buf[i]);
+        if (i % 32 == 31) printf("\n");
     }
     printf("\n");
 
@@ -204,12 +198,15 @@ cmd_write_finish:
 }
 
 int cmd_transfer(int fd, int argc, const char** argv) {
-    const size_t base_size = offsetof(i2c_slave_ioctl_segment_t, buf);
+    const size_t base_size = sizeof(i2c_slave_ioctl_segment_t);
     int ret = NO_ERROR;
 
     // Figure out how big our buffers need to be.
-    size_t in_len = 0;
+    // Start the counters with enough space for the I2C_SEGMENT_TYPE_END
+    // segment.
+    size_t in_len = base_size;
     size_t out_len = 0;
+    int segments = 1;
     int count = argc;
     const char** arg = argv;
     while (count) {
@@ -229,6 +226,7 @@ int cmd_transfer(int fd, int argc, const char** argv) {
             print_usage();
             goto cmd_transfer_finish_2;
         }
+        segments++;
 
         long int length = strtol(arg[1], NULL, 10);
         if (errno) {
@@ -257,24 +255,23 @@ int cmd_transfer(int fd, int argc, const char** argv) {
         ret = 1;
         goto cmd_transfer_finish_1;
     }
+    uint8_t* data_addr = (uint8_t*)in_buf + segments * base_size;
+    uint8_t* data_buf = data_addr;
 
     // Fill the "input" buffer which is sent to the ioctl.
     uintptr_t in_addr = (uintptr_t)in_buf;
     int i = 0;
+    i2c_slave_ioctl_segment_t* ioctl_segment = (i2c_slave_ioctl_segment_t*)in_addr;
     while (i < argc) {
-        i2c_slave_ioctl_segment_t* ioctl_segment =
-            (i2c_slave_ioctl_segment_t*)in_addr;
-        in_addr += base_size;
-
         if (!strcmp(argv[i++], "r")) {
-            ioctl_segment->read = 1;
+            ioctl_segment->type = I2C_SEGMENT_TYPE_READ;
             ioctl_segment->len = strtol(argv[i++], NULL, 10);
             if (errno) {
                 print_usage();
                 return errno;
             }
         } else {
-            ioctl_segment->read = 0;
+            ioctl_segment->type = I2C_SEGMENT_TYPE_WRITE;
             ioctl_segment->len = strtol(argv[i++], NULL, 10);
             if (errno) {
                 print_usage();
@@ -282,17 +279,25 @@ int cmd_transfer(int fd, int argc, const char** argv) {
             }
 
             for (int seg = 0; seg < ioctl_segment->len; seg++) {
-                *(uint8_t*)(in_addr++) = strtol(argv[i++], NULL, 16);
+                *data_buf++ = strtol(argv[i++], NULL, 16);
                 if (errno) {
                     print_usage();
                     return errno;
                 }
             }
         }
+        ioctl_segment++;
+    }
+    ioctl_segment->type = I2C_SEGMENT_TYPE_END;
+    ioctl_segment->len = 0;
+    ioctl_segment++;
+    // We should be at the start of the data section now.
+    if ((uint8_t*)ioctl_segment != data_addr) {
+        ret = 1;
+        goto cmd_transfer_finish_1;
     }
 
-    ret = mxio_ioctl(fd, IOCTL_I2C_SLAVE_TRANSFER,
-                     in_buf, in_len, out_buf, out_len);
+    ret = ioctl_i2c_slave_transfer(fd, in_buf, in_len, out_buf, out_len);
     if (ret < 0)
         goto cmd_transfer_finish_1;
 

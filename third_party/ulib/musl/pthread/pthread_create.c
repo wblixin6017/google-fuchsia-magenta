@@ -33,7 +33,7 @@ int __mprotect(void*, size_t, int);
 
 void* __copy_tls(unsigned char*);
 
-static intptr_t start_pthread(void* arg) {
+static void start_pthread(void* arg) {
     pthread_t self = arg;
     // TODO(kulakowski) Signals?
     // if (self->startlock[0]) {
@@ -49,10 +49,9 @@ static intptr_t start_pthread(void* arg) {
     //               SIGPT_SET, 0, _NSIG / 8);
     mxr_tp_set(pthread_to_tp(self));
     pthread_exit(self->start(self->start_arg));
-    return 0;
 }
 
-static intptr_t start_c11(void* arg) {
+static void start_c11(void* arg) {
     pthread_t self = arg;
     mxr_tp_set(pthread_to_tp(self));
     int (*start)(void*) = (int (*)(void*))self->start;
@@ -66,12 +65,14 @@ static mx_status_t allocate_stack(size_t stack_size, size_t guard_size, uintptr_
     // break up mapped regions and have PROT_NONE, the guard stuff is
     // easy to reintroduce.
 
-    mx_handle_t thread_stack_vmo = mx_vmo_create(stack_size);
+    mx_handle_t thread_stack_vmo = _mx_vmo_create(stack_size);
     if (thread_stack_vmo < 0)
         return thread_stack_vmo;
 
-    mx_status_t status = mx_process_map_vm(libc.proc, thread_stack_vmo, 0, stack_size, stack_out, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
-    mx_handle_close(thread_stack_vmo);
+    mx_status_t status = _mx_process_map_vm(
+        libc.proc, thread_stack_vmo, 0, stack_size, stack_out,
+        MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    _mx_handle_close(thread_stack_vmo);
 
     return status;
 }
@@ -272,7 +273,7 @@ _Noreturn void pthread_exit(void* result) {
     __do_orphaned_stdio_locks();
     __dl_thread_cleanup();
 
-    mxr_thread_exit(mxr_thread, 0);
+    mxr_thread_exit(mxr_thread);
 }
 
 void __do_cleanup_push(struct __ptcb* cb) {

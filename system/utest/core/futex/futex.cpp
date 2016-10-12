@@ -19,7 +19,7 @@ static bool test_futex_wait_value_mismatch() {
     int futex_value = 123;
     mx_status_t rc = mx_futex_wait(&futex_value, futex_value + 1,
                                          MX_TIME_INFINITE);
-    ASSERT_EQ(rc, ERR_BUSY, "Futex wait should have reurned busy");
+    ASSERT_EQ(rc, ERR_BAD_STATE, "Futex wait should have reurned bad state");
     END_TEST;
 }
 
@@ -272,7 +272,7 @@ bool test_futex_requeue_value_mismatch() {
     int futex_value2 = 200;
     mx_status_t rc = mx_futex_requeue(&futex_value1, 1, futex_value1 + 1,
                                             &futex_value2, 1);
-    ASSERT_EQ(rc, ERR_BUSY, "requeue should have returned busy");
+    ASSERT_EQ(rc, ERR_BAD_STATE, "requeue should have returned bad state");
     END_TEST;
 }
 
@@ -357,23 +357,23 @@ static void log(const char* str) {
 class Event {
 public:
     Event()
-        : signalled_(0) {}
+        : signaled_(0) {}
 
     void wait() {
-        if (signalled_ == 0) {
-            mx_futex_wait(&signalled_, signalled_, MX_TIME_INFINITE);
+        if (signaled_ == 0) {
+            mx_futex_wait(&signaled_, signaled_, MX_TIME_INFINITE);
         }
     }
 
     void signal() {
-        if (signalled_ == 0) {
-            signalled_ = 1;
-            mx_futex_wake(&signalled_, UINT32_MAX);
+        if (signaled_ == 0) {
+            signaled_ = 1;
+            mx_futex_wake(&signaled_, UINT32_MAX);
         }
     }
 
 private:
-    int signalled_;
+    int signaled_;
 };
 
 Event event;
@@ -399,7 +399,7 @@ static int signal_thread3(void* arg) {
     return 0;
 }
 
-static bool test_event_signalling() {
+static bool test_event_signaling() {
     BEGIN_TEST;
     thrd_t thread1, thread2, thread3;
 
@@ -409,7 +409,7 @@ static bool test_event_signalling() {
     thrd_create_with_name(&thread3, signal_thread3, NULL, "thread 3");
 
     mx_nanosleep(300 * 1000 * 1000);
-    log("signalling event\n");
+    log("signaling event\n");
     event.signal();
 
     log("joining signal threads\n");
@@ -437,7 +437,7 @@ RUN_TEST(test_futex_requeue_value_mismatch);
 RUN_TEST(test_futex_requeue_same_addr);
 RUN_TEST(test_futex_requeue);
 RUN_TEST(test_futex_requeue_unqueued_on_timeout);
-RUN_TEST(test_event_signalling);
+RUN_TEST(test_event_signaling);
 END_TEST_CASE(futex_tests)
 
 #ifndef BUILD_COMBINED_TESTS

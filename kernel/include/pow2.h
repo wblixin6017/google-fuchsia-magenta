@@ -5,8 +5,7 @@
 // license that can be found in the LICENSE file or at
 // https://opensource.org/licenses/MIT
 
-#ifndef __POW2_H
-#define __POW2_H
+#pragma once
 
 #include <sys/types.h>
 #include <stdbool.h>
@@ -15,33 +14,67 @@
 
 __BEGIN_CDECLS
 
-/* routines for dealing with power of 2 values for efficiency */
+/* routines for dealing with power of 2 values for efficiency
+ * Considers 0 to be a power of 2 */
 static inline __ALWAYS_INLINE bool ispow2(uint val)
 {
     return ((val - 1) & val) == 0;
 }
 
-static inline __ALWAYS_INLINE uint log2_uint(uint val)
+// Compute log2(|val|), rounded as requested by |ceiling|.  We define
+// log2(0) to be 0.
+static inline __ALWAYS_INLINE uint _log2_uint(uint val, bool ceiling)
 {
     if (val == 0)
-        return 0; // undefined
+        return 0;
 
-    return (uint)(sizeof(val) * 8) - 1 - __builtin_clz(val);
+    uint log2 = (uint)(sizeof(val) * CHAR_BIT) - 1 - __builtin_clz(val);
+
+    if (ceiling && val - (1u << log2) > 0) {
+        ++log2;
+    }
+
+    return log2;
 }
 
-static inline __ALWAYS_INLINE uint log2_uint_roundup(uint val)
+// Compute floor(log2(|val|)), or 0 if |val| is 0
+static inline __ALWAYS_INLINE uint log2_uint_floor(uint val)
+{
+    return _log2_uint(val, false);
+}
+
+// Compute ceil(log2(|val|)), or 0 if |val| is 0
+static inline __ALWAYS_INLINE uint log2_uint_ceil(uint val)
+{
+    return _log2_uint(val, true);
+}
+
+// Compute log2(|val|), rounded as requested by |ceiling|.  We define
+// log2(0) to be 0.
+static inline __ALWAYS_INLINE uint _log2_ulong(ulong val, bool ceiling)
 {
     if (val == 0)
-        return 0; // undefined
+        return 0;
 
-    // log2 of anything greater than a uint with just the MSB set will round up
-    // to number-of-bits-in-uint.
-    if (val > (1u << ((sizeof(val) * 8) - 1)))
-        return (sizeof(val) * 8);
+    uint log2 = (uint)(sizeof(val) * CHAR_BIT) - 1 - __builtin_clzl(val);
 
-    val = (val << 1) - 1;
+    if (ceiling && val - (1ul << log2) > 0) {
+        ++log2;
+    }
 
-    return (uint)(sizeof(val) * 8) - 1 - __builtin_clz(val);
+    return log2;
+}
+
+// Compute floor(log2(|val|)), or 0 if |val| is 0
+static inline __ALWAYS_INLINE uint log2_ulong_floor(ulong val)
+{
+    return _log2_ulong(val, false);
+}
+
+// Compute ceil(log2(|val|)), or 0 if |val| is 0
+static inline __ALWAYS_INLINE uint log2_ulong_ceil(ulong val)
+{
+    return _log2_ulong(val, true);
 }
 
 static inline __ALWAYS_INLINE uint valpow2(uint valp2)
@@ -66,6 +99,8 @@ static inline __ALWAYS_INLINE uint64_t modpow2_u64(uint64_t val, uint modp2)
 
 // Cribbed from:
 // http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+// Returns 0 if given 0 (i.e. considers 0 to be a power of 2 greater than
+// 2^31).
 static inline __ALWAYS_INLINE uint32_t round_up_pow2_u32(uint32_t v)
 {
     v--;
@@ -79,6 +114,3 @@ static inline __ALWAYS_INLINE uint32_t round_up_pow2_u32(uint32_t v)
 }
 
 __END_CDECLS
-
-#endif
-

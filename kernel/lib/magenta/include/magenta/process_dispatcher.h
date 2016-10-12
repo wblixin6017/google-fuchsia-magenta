@@ -18,6 +18,7 @@
 #include <magenta/types.h>
 #include <magenta/user_thread.h>
 
+#include <mxtl/array.h>
 #include <mxtl/intrusive_double_list.h>
 #include <mxtl/ref_counted.h>
 #include <mxtl/ref_ptr.h>
@@ -37,8 +38,7 @@ public:
     }
 
     // Dispatcher implementation
-    mx_obj_type_t GetType() const final { return MX_OBJ_TYPE_PROCESS; }
-    ProcessDispatcher* get_process_dispatcher() final { return this; }
+    mx_obj_type_t get_type() const final { return MX_OBJ_TYPE_PROCESS; }
     StateTracker* get_state_tracker() final { return &state_tracker_; }
     void on_zero_handles() final { return AllHandlesClosed(); }
 
@@ -81,6 +81,37 @@ public:
     bool GetDispatcher(mx_handle_t handle_value, mxtl::RefPtr<Dispatcher>* dispatcher,
                        uint32_t* rights);
 
+    template <typename T>
+    mx_status_t GetDispatcher(mx_handle_t handle_value,
+                              mxtl::RefPtr<T>* dispatcher,
+                              mx_rights_t* out_rights) {
+        mxtl::RefPtr<Dispatcher> generic_dispatcher;
+        if (!GetDispatcher(handle_value, &generic_dispatcher, out_rights))
+            return BadHandle(handle_value, ERR_BAD_HANDLE);
+        *dispatcher = DownCastDispatcher<T>(mxtl::move(generic_dispatcher));
+        if (!*dispatcher)
+            return BadHandle(handle_value, ERR_WRONG_TYPE);
+        return NO_ERROR;
+    }
+
+    template <typename T>
+    mx_status_t GetDispatcher(mx_handle_t handle_value,
+                              mxtl::RefPtr<T>* dispatcher,
+                              mx_rights_t check_rights = 0) {
+        mx_rights_t rights;
+        mx_status_t status = GetDispatcher(handle_value, dispatcher, &rights);
+        if (status == NO_ERROR && check_rights &&
+            !magenta_rights_check(rights, check_rights)) {
+            dispatcher->reset();
+            status = BadHandle(handle_value, ERR_ACCESS_DENIED);
+        }
+        return status;
+    }
+
+    // Called when this process attempts to use an invalid handle,
+    // a handle of the wrong type, or a handle with insufficient rights.
+    mx_status_t BadHandle(mx_handle_t handle_value, mx_status_t error);
+
     // accessors
     Mutex& handle_table_lock() { return handle_table_lock_; }
     FutexContext* futex_context() { return &futex_context_; }
@@ -90,20 +121,23 @@ public:
     const mxtl::StringPiece name() const { return name_; }
 
     // Starts the process running
-    status_t Start(ThreadDispatcher *thread, uintptr_t pc, uintptr_t sp,
-                   uintptr_t arg1, uintptr_t arg2);
+    status_t Start(mxtl::RefPtr<ThreadDispatcher> thread,
+                   uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg2);
 
     void Exit(int retcode);
     void Kill();
 
-    status_t GetInfo(mx_process_info_t* info);
+    status_t GetInfo(mx_record_process_t* info);
 
     status_t CreateUserThread(mxtl::StringPiece name, uint32_t flags, mxtl::RefPtr<UserThread>* user_thread);
 
+    status_t GetThreads(mxtl::Array<mx_record_process_thread_t>* threads);
+
     // exception handling support
-    status_t SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport);
-    void ResetExceptionPort();
+    status_t SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport, bool debugger);
+    void ResetExceptionPort(bool debugger);
     mxtl::RefPtr<ExceptionPort> exception_port();
+    mxtl::RefPtr<ExceptionPort> debugger_exception_port();
 
     // The following two methods can be slow and innacurrate and should only be
     // called from diagnostics code.
@@ -176,7 +210,7 @@ private:
     mutable Mutex handle_table_lock_; // protects |handles_|.
     mxtl::DoublyLinkedList<Handle*> handles_;
 
-    StateTracker state_tracker_;
+    NonIrqStateTracker state_tracker_;
 
     FutexContext futex_context_;
 
@@ -188,6 +222,7 @@ private:
     int retcode_ = 0;
 
     mxtl::RefPtr<ExceptionPort> exception_port_;
+    mxtl::RefPtr<ExceptionPort> debugger_exception_port_;
     Mutex exception_lock_;
 
     uint32_t bad_handle_policy_ = MX_POLICY_BAD_HANDLE_IGNORE;

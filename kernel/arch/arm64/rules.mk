@@ -20,6 +20,7 @@ MODULE_SRCS += \
 	$(LOCAL_DIR)/arch.c \
 	$(LOCAL_DIR)/asm.S \
 	$(LOCAL_DIR)/cache-ops.S \
+	$(LOCAL_DIR)/debugger.c \
 	$(LOCAL_DIR)/exceptions.S \
 	$(LOCAL_DIR)/exceptions_c.c \
 	$(LOCAL_DIR)/fpu.c \
@@ -56,7 +57,6 @@ KERNEL_DEFINES += \
 endif
 
 ARCH_OPTFLAGS := -O2
-WITH_LINKER_GC ?= 1
 
 # we have a mmu and want the vmm/pmm
 WITH_KERNEL_VM ?= 1
@@ -102,7 +102,7 @@ $(info TOOLCHAIN_PREFIX = $(TOOLCHAIN_PREFIX))
 
 ARCH_COMPILEFLAGS += $(ARCH_$(ARCH)_COMPILEFLAGS)
 
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 GLOBAL_LDFLAGS += -m aarch64elf
 GLOBAL_MODULE_LDFLAGS += -m aarch64elf
 endif
@@ -111,15 +111,17 @@ GLOBAL_LDFLAGS += -z max-page-size=4096
 # kernel hard disables floating point
 KERNEL_COMPILEFLAGS += -mgeneral-regs-only -DWITH_NO_FP=1
 
-ifeq ($(CLANG),1)
-ifeq ($(FUCHSIA),1)
-GLOBAL_COMPILEFLAGS += --target=aarch64-fuchsia
-else
-GLOBAL_COMPILEFLAGS += --target=aarch64-elf -integrated-as
+#TODO: remove once userspace backtracing is smarter
+USER_COMPILEFLAGS += -mno-omit-leaf-frame-pointer
+
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
+ifndef ARCH_arm64_CLANG_TARGET
+ARCH_arm64_CLANG_TARGET := aarch64-fuchsia
 endif
+GLOBAL_COMPILEFLAGS += --target=$(ARCH_arm64_CLANG_TARGET)
 endif
 
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 ifeq ($(LIBGCC),)
 $(error cannot find runtime library, please set LIBGCC)
 endif

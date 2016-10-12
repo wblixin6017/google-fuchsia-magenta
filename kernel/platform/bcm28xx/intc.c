@@ -13,8 +13,9 @@
 #include <kernel/thread.h>
 #include <platform/bcm28xx.h>
 #include <trace.h>
-
 #include <arch/arm64.h>
+
+#include "platform_p.h"
 
 #define LOCAL_TRACE 0
 
@@ -147,8 +148,8 @@ unsigned int remap_interrupt(unsigned int vector) {
     return vector;
 }
 
-/* dummy handler to satiate magenta pci dependencies
- *  TODO - remove once pcie dependencies are resolved (see bug MG-246)
+/*
+ *  TODO(hollande) - Implement!
  */
 status_t configure_interrupt(unsigned int vector,
                              enum interrupt_trigger_mode tm,
@@ -157,9 +158,21 @@ status_t configure_interrupt(unsigned int vector,
     return NO_ERROR;
 }
 
+/*
+ *  TODO(hollande) - Implement!
+ */
+status_t get_interrupt_config(unsigned int vector,
+                              enum interrupt_trigger_mode* tm,
+                              enum interrupt_polarity* pol)
+{
+    if (tm)  *tm  = IRQ_TRIGGER_MODE_EDGE;
+    if (pol) *pol = IRQ_POLARITY_ACTIVE_HIGH;
+    return NO_ERROR;
+}
+
 void register_int_handler(unsigned int vector, int_handler handler, void* arg) {
     if (vector >= MAX_INT)
-        panic("register_int_handler: vector out of range %d\n", vector);
+        panic("register_int_handler: vector out of range %u\n", vector);
 
     spin_lock_saved_state_t state;
     spin_lock_irqsave(&lock, state);
@@ -170,7 +183,7 @@ void register_int_handler(unsigned int vector, int_handler handler, void* arg) {
     spin_unlock_irqrestore(&lock, state);
 }
 
-enum handler_return platform_irq(struct iframe* frame) {
+enum handler_return platform_irq(struct arm64_iframe_short* frame) {
     uint vector;
     uint cpu = arch_curr_cpu_num();
 
@@ -254,11 +267,14 @@ decoded:
     return ret;
 }
 
-enum handler_return platform_fiq(struct iframe* frame) {
+enum handler_return platform_fiq(struct arm64_iframe_short* frame) {
     PANIC_UNIMPLEMENTED;
 }
 
-void bcm2835_send_ipi(uint irq, uint cpu_mask) {
+/* called from arm64 code. TODO: put in shared header */
+void bcm28xx_send_ipi(uint irq, uint cpu_mask);
+
+void bcm28xx_send_ipi(uint irq, uint cpu_mask) {
     LTRACEF("irq %u, cpu_mask 0x%x\n", irq, cpu_mask);
 
     for (uint i = 0; i < 4; i++) {

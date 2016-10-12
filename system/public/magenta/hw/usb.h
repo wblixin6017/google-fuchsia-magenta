@@ -12,6 +12,9 @@
 
 __BEGIN_CDECLS;
 
+// maximum number of endpoints per device
+#define USB_MAX_EPS                     32
+
 /* Request Types */
 #define USB_DIR_OUT                     (0 << 7)
 #define USB_DIR_IN                      (1 << 7)
@@ -69,6 +72,8 @@ __BEGIN_CDECLS;
 #define USB_DT_HID                         0x21
 #define USB_DT_HIDREPORT                   0x22
 #define USB_DT_HIDPHYSICAL                 0x23
+#define USB_DT_SS_EP_COMPANION             0x30
+#define USB_DT_SS_ISOCH_EP_COMPANION       0x31
 
 /* USB device feature selectors */
 #define USB_DEVICE_SELF_POWERED            0x00
@@ -86,6 +91,19 @@ __BEGIN_CDECLS;
 #define USB_ENDPOINT_BULK                  0x02
 #define USB_ENDPOINT_INTERRUPT             0x03
 #define USB_ENDPOINT_TYPE_MASK             0x03
+
+/* Endpoint synchronization type (bmAttributes) */
+#define USB_ENDPOINT_NO_SYNCHRONIZATION    0x00
+#define USB_ENDPOINT_ASYNCHRONOUS          0x04
+#define USB_ENDPOINT_ADAPTIVE              0x08
+#define USB_ENDPOINT_SYNCHRONOUS           0x0C
+#define USB_ENDPOINT_SYNCHRONIZATION_MASK  0x0C
+
+/* Endpoint usage type (bmAttributes) */
+#define USB_ENDPOINT_DATA                  0x00
+#define USB_ENDPOINT_FEEDBACK              0x10
+#define USB_ENDPOINT_IMPLICIT_FEEDBACK     0x20
+#define USB_ENDPOINT_USAGE_MASK            0x30
 
 #define USB_ENDPOINT_HALT                  0x00
 
@@ -114,7 +132,7 @@ typedef struct {
 
 typedef struct {
     uint8_t bLength;
-    uint8_t bDescriptorType;
+    uint8_t bDescriptorType;    // USB_DT_DEVICE
     uint16_t bcdUSB;
     uint8_t bDeviceClass;
     uint8_t bDeviceSubClass;
@@ -131,7 +149,7 @@ typedef struct {
 
 typedef struct {
     uint8_t bLength;
-    uint8_t bDescriptorType;
+    uint8_t bDescriptorType;    // USB_DT_CONFIG
     uint16_t wTotalLength;
     uint8_t bNumInterfaces;
     uint8_t bConfigurationValue;
@@ -142,7 +160,7 @@ typedef struct {
 
 typedef struct {
     uint8_t bLength;
-    uint8_t bDescriptorType;
+    uint8_t bDescriptorType;    // USB_DT_INTERFACE
     uint8_t bInterfaceNumber;
     uint8_t bAlternateSetting;
     uint8_t bNumEndpoints;
@@ -154,7 +172,7 @@ typedef struct {
 
 typedef struct {
     uint8_t bLength;
-    uint8_t bDescriptorType;
+    uint8_t bDescriptorType;    // USB_DT_ENDPOINT
     uint8_t bEndpointAddress;
     uint8_t bmAttributes;
     uint16_t wMaxPacketSize;
@@ -162,6 +180,25 @@ typedef struct {
 } __attribute__ ((packed)) usb_endpoint_descriptor_t;
 #define usb_ep_direction(ep)    ((ep)->bEndpointAddress & USB_ENDPOINT_DIR_MASK)
 #define usb_ep_type(ep)         ((ep)->bmAttributes & USB_ENDPOINT_TYPE_MASK)
-#define usb_ep_max_packet(ep)   (le16toh((ep)->wMaxPacketSize))
+// max packet size is in bits 10..0
+#define usb_ep_max_packet(ep)   (le16toh((ep)->wMaxPacketSize) & 0x07FF)
+// for isochronous endpoints, additional transactions per microframe
+// are in bits 12..11
+#define usb_ep_max_burst(ep) (((le16toh((ep)->wMaxPacketSize) >> 11) & 3) + 1)
+
+typedef struct {
+    uint8_t bLength;
+    uint8_t bDescriptorType;    // USB_DT_SS_EP_COMPANION
+    uint8_t bMaxBurst;
+    uint8_t bmAttributes;
+    uint16_t wBytesPerInterval;
+} __attribute__ ((packed)) usb_ss_ep_comp_descriptor_t;
+
+typedef struct {
+    uint8_t bLength;
+    uint8_t bDescriptorType;    // USB_DT_SS_ISOCH_EP_COMPANION
+    uint16_t wReserved;
+    uint16_t wBytesPerInterval;
+} __attribute__ ((packed)) usb_ss_isoch_ep_comp_descriptor_t;
 
 __END_CDECLS;

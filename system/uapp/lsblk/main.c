@@ -6,6 +6,7 @@
 #include <mxio/io.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +14,7 @@
 #include <limits.h>
 
 #include <magenta/device/block.h>
+#include <magenta/device/device.h>
 #include <hexdump/hexdump.h>
 
 #define DEV_BLOCK "/dev/class/block"
@@ -36,7 +38,7 @@ static char* size_to_cstring(char* str, size_t maxlen, uint64_t size) {
         unit = "T";
         div = 1024llu * 1024 * 1024 * 1024;
     }
-    snprintf(str, maxlen, "%llu%s", size / div, unit);
+    snprintf(str, maxlen, "%" PRIu64 "%s", size / div, unit);
     return str;
 }
 
@@ -58,6 +60,15 @@ static const char* guid_to_type(char* guid) {
     }
 }
 
+typedef struct blkinfo {
+    char path[128];
+    char devname[128];
+    char drvname[128];
+    char guid[40];
+    char label[40];
+    char sizestr[6];
+} blkinfo_t;
+
 static int cmd_list_blk(void) {
     struct dirent* de;
     DIR* dir = opendir(DEV_BLOCK);
@@ -65,42 +76,32 @@ static int cmd_list_blk(void) {
         printf("Error opening %s\n", DEV_BLOCK);
         return -1;
     }
-    char devname[128];
-    char guid[40];
-    char name[40];
-    char sstr[8];
-    const char* type = NULL;
+    blkinfo_t info;
+    const char* type;
     uint64_t size;
     int fd;
-    int rc;
-    printf("%-25s %-4s  %-14s %s\n", "DEVNAME", "SIZE", "TYPE", "NAME");
+    printf("%-3s %-8s %-8s %-4s %-14s %s\n", "ID", "DEV", "DRV", "SIZE", "TYPE", "LABEL");
     while ((de = readdir(dir)) != NULL) {
-        snprintf(devname, sizeof(devname), "%s/%s", DEV_BLOCK, de->d_name);
-        fd = open(devname, O_RDONLY);
+        memset(&info, 0, sizeof(blkinfo_t));
+        type = NULL;
+        snprintf(info.path, sizeof(info.path), "%s/%s", DEV_BLOCK, de->d_name);
+        fd = open(info.path, O_RDONLY);
         if (fd < 0) {
-            printf("Error opening %s\n", devname);
+            printf("Error opening %s\n", info.path);
             goto devdone;
         }
-        rc = mxio_ioctl(fd, IOCTL_BLOCK_GET_SIZE, NULL, 0, &size, sizeof(size));
-        if (rc < 0) {
-            strncpy(sstr, "N/A", sizeof(sstr));
-        } else {
-            size_to_cstring(sstr, sizeof(sstr), size);
+        ioctl_device_get_device_name(fd, info.devname, sizeof(info.devname));
+        ioctl_device_get_driver_name(fd, info.drvname, sizeof(info.drvname));
+        if (ioctl_block_get_size(fd, &size) > 0) {
+            size_to_cstring(info.sizestr, sizeof(info.sizestr), size);
         }
-        rc = mxio_ioctl(fd, IOCTL_BLOCK_GET_GUID, NULL, 0, guid, sizeof(guid));
-        if (rc < 0) {
-            type = "N/A";
-        } else {
-            type = guid_to_type(guid);
+        if (ioctl_block_get_guid(fd, info.guid, sizeof(info.guid)) == NO_ERROR) {
+            type = guid_to_type(info.guid);
         }
-        memset(name, 0, sizeof(name));
-        rc = mxio_ioctl(fd, IOCTL_BLOCK_GET_NAME, NULL, 0, name, sizeof(name));
-        if (rc < 0) {
-            strncpy(name, "N/A", sizeof(name));
-        }
+        ioctl_block_get_name(fd, info.label, sizeof(info.label));
 devdone:
         close(fd);
-        printf("%-25s %4s  %-14s %s\n", devname, sstr, type, name);
+        printf("%-3s %-8s %-8s %4s %-14s %s\n", de->d_name, info.devname, info.drvname, info.sizestr, type ? type : "", info.label);
     }
 out:
     closedir(dir);
@@ -116,19 +117,19 @@ static int cmd_read_blk(const char* dev, off_t offset, size_t count) {
 
     // check that count and offset are aligned to block size
     uint64_t blksize;
-    int rc = mxio_ioctl(fd, IOCTL_BLOCK_GET_BLOCKSIZE, NULL, 0, &blksize, sizeof(blksize));
+    ssize_t rc = ioctl_block_get_blocksize(fd, &blksize);
     if (rc < 0) {
         printf("Error getting block size for %s\n", dev);
         close(fd);
         goto out;
     }
     if (count % blksize) {
-        printf("Bytes read must be a multiple of blksize=%llu\n", blksize);
+        printf("Bytes read must be a multiple of blksize=%" PRIu64 "\n", blksize);
         rc = -1;
         goto out;
     }
     if (offset % blksize) {
-        printf("Offset must be a multiple of blksize=%llu\n", blksize);
+        printf("Offset must be a multiple of blksize=%" PRIu64 "\n", blksize);
         rc = -1;
         goto out;
     }
@@ -138,7 +139,7 @@ static int cmd_read_blk(const char* dev, off_t offset, size_t count) {
     if (offset) {
         rc = lseek(fd, offset, SEEK_SET);
         if (rc < 0) {
-            printf("Error %d seeking to offset %lld\n", rc, offset);
+            printf("Error %zd seeking to offset %jd\n", rc, (intmax_t)offset);
             goto out2;
         }
     }
@@ -155,7 +156,7 @@ out2:
     free(buf);
 out:
     close(fd);
-    return 0;
+    return rc;
 }
 
 int main(int argc, const char** argv) {

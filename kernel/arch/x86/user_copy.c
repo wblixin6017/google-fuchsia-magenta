@@ -17,6 +17,10 @@
 
 #define LOCAL_TRACE 0
 
+// called from assembly
+bool _x86_usercopy_can_read(const void *base, size_t len);
+bool _x86_usercopy_can_write(const void *base, size_t len);
+
 static inline bool ac_flag(void)
 {
     return x86_save_flags() & X86_FLAGS_AC;
@@ -50,7 +54,7 @@ status_t arch_copy_to_user(void *dst, const void *src, size_t len)
 
 static bool can_access(const void *base, size_t len, bool for_write)
 {
-    LTRACEF("can_access: base %p, len %lu\n", base, len);
+    LTRACEF("can_access: base %p, len %zu\n", base, len);
 
     // If the target wraps around, it would be possible for the start
     // and end to be user addresses but intermediate address to not be.

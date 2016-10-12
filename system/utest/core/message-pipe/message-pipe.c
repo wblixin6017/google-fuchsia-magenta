@@ -7,7 +7,8 @@
 #include <unittest/unittest.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <test-utils/test-utils.h>
+#include <stdlib.h>
+#include <threads.h>
 #include <unistd.h>
 
 mx_handle_t _pipe[4];
@@ -34,7 +35,7 @@ mx_handle_t _pipe[4];
  *  14. Reader wake up with pipe 2 closed, closes both pipes and exit.
  */
 
-static intptr_t reader_thread(void* arg) {
+static int reader_thread(void* arg) {
     const unsigned int index = 2;
     mx_handle_t* pipe = &_pipe[index];
     mx_status_t status;
@@ -64,25 +65,24 @@ static intptr_t reader_thread(void* arg) {
     } while (!closed[0] || !closed[1]);
     assert(packets[0] == 3);
     assert(packets[1] == 2);
-    mx_thread_exit();
     return 0;
 }
 
-mx_signals_t get_satisfied_signals(mx_handle_t handle) {
+static mx_signals_t get_satisfied_signals(mx_handle_t handle) {
     mx_signals_state_t signals_state = {0};
     mx_status_t status = mx_handle_wait_one(handle, 0u, 0u, &signals_state);
     assert(status == ERR_BAD_STATE);  // "Unsatisfiable".
     return signals_state.satisfied;
 }
 
-mx_signals_t get_satisfiable_signals(mx_handle_t handle) {
+static mx_signals_t get_satisfiable_signals(mx_handle_t handle) {
     mx_signals_state_t signals_state = {0};
     mx_status_t status = mx_handle_wait_one(handle, 0u, 0u, &signals_state);
     assert(status == ERR_BAD_STATE);  // "Unsatisfiable".
     return signals_state.satisfiable;
 }
 
-bool message_pipe_test(void) {
+static bool message_pipe_test(void) {
     BEGIN_TEST;
 
     mx_status_t status;
@@ -113,9 +113,8 @@ bool message_pipe_test(void) {
     _pipe[1] = h[0];
     _pipe[3] = h[1];
 
-    const char* reader = "reader";
-    mx_handle_t thread = tu_thread_create(reader_thread, NULL, reader);
-    ASSERT_GE(thread, 0, "error in thread create");
+    thrd_t thread;
+    ASSERT_EQ(thrd_create(&thread, reader_thread, NULL), thrd_success, "error in thread create");
 
     status = mx_msgpipe_write(_pipe[1], &write_data, sizeof(uint32_t), NULL, 0u, 0u);
     ASSERT_EQ(status, NO_ERROR, "error in message write");
@@ -141,7 +140,7 @@ bool message_pipe_test(void) {
     usleep(1);
     mx_handle_close(_pipe[0]);
 
-    mx_handle_wait_one(thread, MX_SIGNAL_SIGNALED, MX_TIME_INFINITE, NULL);
+    EXPECT_EQ(thrd_join(thread, NULL), thrd_success, "error in thread join");
 
     // Since the the other side of _pipe[3] is closed, and the read thread read everything from it,
     // the only satisfied/satisfiable signals should be "peer closed".
@@ -154,7 +153,7 @@ bool message_pipe_test(void) {
     END_TEST;
 }
 
-bool message_pipe_read_error_test(void) {
+static bool message_pipe_read_error_test(void) {
     BEGIN_TEST;
     mx_handle_t pipe[2];
     mx_status_t status = mx_msgpipe_create(pipe, 0);
@@ -180,7 +179,7 @@ bool message_pipe_read_error_test(void) {
 
     // Read from an empty pipe with a closed peer, should yield a channel closed error.
     status = mx_msgpipe_read(pipe[0], NULL, 0u, NULL, 0u, 0u);
-    ASSERT_EQ(status, ERR_CHANNEL_CLOSED, "read on empty closed pipe produced incorrect error");
+    ASSERT_EQ(status, ERR_REMOTE_CLOSED, "read on empty closed pipe produced incorrect error");
 
     // Waiting for readability should yield a bad state error.
     status = mx_handle_wait_one(pipe[0], MX_SIGNAL_READABLE, 0u, NULL);
@@ -189,7 +188,7 @@ bool message_pipe_read_error_test(void) {
     END_TEST;
 }
 
-bool message_pipe_close_test(void) {
+static bool message_pipe_close_test(void) {
     BEGIN_TEST;
     mx_handle_t pipe[2];
     ASSERT_EQ(mx_msgpipe_create(pipe, 0), NO_ERROR, "");
@@ -228,18 +227,18 @@ bool message_pipe_close_test(void) {
     END_TEST;
 }
 
-bool message_pipe_non_transferable(void) {
+static bool message_pipe_non_transferable(void) {
     BEGIN_TEST;
 
     mx_handle_t pipe[2];
     ASSERT_EQ(mx_msgpipe_create(pipe, 0), NO_ERROR, "");
     mx_handle_t event = mx_event_create(0u);
     ASSERT_GT(event, 0, "failed to create event");
-    mx_handle_basic_info_t event_handle_info;
-    mx_ssize_t get_info_result = mx_handle_get_info(event, MX_INFO_HANDLE_BASIC, &event_handle_info,
-                                                    sizeof(event_handle_info));
+    mx_info_handle_basic_t event_handle_info;
+    mx_ssize_t get_info_result = mx_object_get_info(event, MX_INFO_HANDLE_BASIC,
+            sizeof(event_handle_info.rec), &event_handle_info, sizeof(event_handle_info));
     ASSERT_EQ(get_info_result, (mx_ssize_t)sizeof(event_handle_info), "failed to get event info");
-    mx_rights_t initial_event_rights = event_handle_info.rights;
+    mx_rights_t initial_event_rights = event_handle_info.rec.rights;
     mx_handle_t non_transferable_event =
             mx_handle_duplicate(event, initial_event_rights & ~MX_RIGHT_TRANSFER);
 
@@ -252,7 +251,7 @@ bool message_pipe_non_transferable(void) {
     END_TEST;
 }
 
-bool message_pipe_duplicate_handles(void) {
+static bool message_pipe_duplicate_handles(void) {
     BEGIN_TEST;
 
     mx_handle_t pipe[2];
@@ -275,12 +274,103 @@ bool message_pipe_duplicate_handles(void) {
     END_TEST;
 }
 
+static const uint32_t multithread_read_num_messages = 5000u;
+
+#define MSG_UNSET       ((uint32_t)-1)
+#define MSG_READ_FAILED ((uint32_t)-2)
+#define MSG_WRONG_SIZE  ((uint32_t)-3)
+#define MSG_BAD_DATA    ((uint32_t)-4)
+
+static int multithread_reader(void* arg) {
+    for (uint32_t i = 0; i < multithread_read_num_messages / 2; i++) {
+        uint32_t msg = MSG_UNSET;
+        uint32_t msg_size = sizeof(msg);
+        if (mx_msgpipe_read(_pipe[0], &msg, &msg_size, NULL, 0, 0) != NO_ERROR) {
+            ((uint32_t*)arg)[i] = MSG_READ_FAILED;
+            break;
+        }
+        if (msg_size != sizeof(msg)) {
+            ((uint32_t*)arg)[i] = MSG_WRONG_SIZE;
+            break;
+        }
+        if (msg >= multithread_read_num_messages) {
+            ((uint32_t*)arg)[i] = MSG_BAD_DATA;
+            break;
+        }
+
+        ((uint32_t*)arg)[i] = msg;
+    }
+    return 0;
+}
+
+static bool message_pipe_multithread_read(void) {
+    BEGIN_TEST;
+
+    // We'll write from pipe[0] and read from pipe[1].
+    mx_handle_t pipe[2];
+    ASSERT_EQ(mx_msgpipe_create(pipe, 0u), NO_ERROR, "");
+
+    for (uint32_t i = 0; i < multithread_read_num_messages; i++)
+        ASSERT_EQ(mx_msgpipe_write(pipe[0], &i, sizeof(i), NULL, 0, 0), NO_ERROR, "");
+
+    _pipe[0] = pipe[1];
+
+    // Start two threads to read messages (each will read half). Each will store the received
+    // message data in the corresponding array.
+    uint32_t* received0 = malloc(multithread_read_num_messages / 2 * sizeof(uint32_t));
+    ASSERT_TRUE(received0, "malloc failed");
+    uint32_t* received1 = malloc(multithread_read_num_messages / 2 * sizeof(uint32_t));
+    ASSERT_TRUE(received1, "malloc failed");
+    thrd_t reader0;
+    ASSERT_EQ(thrd_create(&reader0, multithread_reader, received0), thrd_success,
+              "thrd_create failed");
+    thrd_t reader1;
+    ASSERT_EQ(thrd_create(&reader1, multithread_reader, received1), thrd_success,
+              "thrd_create failed");
+
+    // Wait for threads.
+    EXPECT_EQ(thrd_join(reader0, NULL), thrd_success, "");
+    EXPECT_EQ(thrd_join(reader1, NULL), thrd_success, "");
+
+    EXPECT_EQ(mx_handle_close(pipe[0]), NO_ERROR, "");
+    EXPECT_EQ(mx_handle_close(pipe[1]), NO_ERROR, "");
+
+    // Check data.
+    bool* received_flags = calloc(multithread_read_num_messages, sizeof(bool));
+
+    for (uint32_t i = 0; i < multithread_read_num_messages / 2; i++) {
+        uint32_t msg = received0[i];
+        ASSERT_NEQ(msg, MSG_READ_FAILED, "read failed");
+        ASSERT_NEQ(msg, MSG_WRONG_SIZE, "got wrong message size");
+        ASSERT_NEQ(msg, MSG_BAD_DATA, "got bad message data");
+        ASSERT_LT(msg, multithread_read_num_messages, "???");
+        ASSERT_FALSE(received_flags[msg], "got duplicate message");
+    }
+    for (uint32_t i = 0; i < multithread_read_num_messages / 2; i++) {
+        uint32_t msg = received1[i];
+        ASSERT_NEQ(msg, MSG_READ_FAILED, "read failed");
+        ASSERT_NEQ(msg, MSG_WRONG_SIZE, "got wrong message size");
+        ASSERT_NEQ(msg, MSG_BAD_DATA, "got bad message data");
+        ASSERT_LT(msg, multithread_read_num_messages, "???");
+        ASSERT_FALSE(received_flags[msg], "got duplicate message");
+    }
+
+    free(received0);
+    free(received1);
+    free(received_flags);
+
+    _pipe[0] = MX_HANDLE_INVALID;
+
+    END_TEST;
+}
+
 BEGIN_TEST_CASE(message_pipe_tests)
 RUN_TEST(message_pipe_test)
 RUN_TEST(message_pipe_read_error_test)
 RUN_TEST(message_pipe_close_test)
 RUN_TEST(message_pipe_non_transferable)
 RUN_TEST(message_pipe_duplicate_handles)
+RUN_TEST(message_pipe_multithread_read)
 END_TEST_CASE(message_pipe_tests)
 
 #ifndef BUILD_COMBINED_TESTS

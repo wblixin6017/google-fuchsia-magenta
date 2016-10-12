@@ -36,7 +36,7 @@ LOCAL_CFLAGS := \
     -Wno-type-limits \
     -Werror=strict-prototypes \
 
-ifeq ($(CLANG),1)
+ifeq ($(call TOBOOL,$(USE_CLANG)),true)
 LOCAL_CFLAGS += \
     -Wno-missing-field-initializers \
     -Wno-incompatible-pointer-types-discards-qualifiers \
@@ -63,6 +63,7 @@ LOCAL_SRCS := \
     $(LOCAL_DIR)/magenta/debug.c \
     $(LOCAL_DIR)/magenta/linuxisms.c \
     $(LOCAL_DIR)/magenta/mx_process_self.c \
+    $(LOCAL_DIR)/magenta/thrd_get_mx_handle.c \
     $(LOCAL_DIR)/pthread/pthread_atfork.c \
     $(LOCAL_DIR)/pthread/pthread_attr_destroy.c \
     $(LOCAL_DIR)/pthread/pthread_attr_get.c \
@@ -267,7 +268,6 @@ LOCAL_SRCS := \
     $(LOCAL_DIR)/src/exit/exit.c \
     $(LOCAL_DIR)/src/exit/quick_exit.c \
     $(LOCAL_DIR)/src/fcntl/creat.c \
-    $(LOCAL_DIR)/src/fcntl/openat.c \
     $(LOCAL_DIR)/src/fcntl/posix_fadvise.c \
     $(LOCAL_DIR)/src/fcntl/posix_fallocate.c \
     $(LOCAL_DIR)/src/fenv/__flt_rounds.c \
@@ -295,13 +295,9 @@ LOCAL_SRCS := \
     $(LOCAL_DIR)/src/ipc/shmctl.c \
     $(LOCAL_DIR)/src/ipc/shmdt.c \
     $(LOCAL_DIR)/src/ipc/shmget.c \
-    $(LOCAL_DIR)/src/ldso/__dlsym.c \
-    $(LOCAL_DIR)/src/ldso/dl_iterate_phdr.c \
-    $(LOCAL_DIR)/src/ldso/dladdr.c \
     $(LOCAL_DIR)/src/ldso/dlclose.c \
     $(LOCAL_DIR)/src/ldso/dlerror.c \
     $(LOCAL_DIR)/src/ldso/dlinfo.c \
-    $(LOCAL_DIR)/src/ldso/dlopen.c \
     $(LOCAL_DIR)/src/legacy/cuserid.c \
     $(LOCAL_DIR)/src/legacy/daemon.c \
     $(LOCAL_DIR)/src/legacy/err.c \
@@ -732,12 +728,9 @@ LOCAL_SRCS := \
     $(LOCAL_DIR)/src/signal/sigwait.c \
     $(LOCAL_DIR)/src/signal/sigwaitinfo.c \
     $(LOCAL_DIR)/src/stat/fchmodat.c \
-    $(LOCAL_DIR)/src/stat/fstatat.c \
     $(LOCAL_DIR)/src/stat/futimens.c \
     $(LOCAL_DIR)/src/stat/futimesat.c \
     $(LOCAL_DIR)/src/stat/lchmod.c \
-    $(LOCAL_DIR)/src/stat/lstat.c \
-    $(LOCAL_DIR)/src/stat/mkdirat.c \
     $(LOCAL_DIR)/src/stat/mkfifoat.c \
     $(LOCAL_DIR)/src/stat/mknodat.c \
     $(LOCAL_DIR)/src/stat/statvfs.c \
@@ -965,7 +958,6 @@ LOCAL_SRCS := \
     $(LOCAL_DIR)/src/unistd/alarm.c \
     $(LOCAL_DIR)/src/unistd/ctermid.c \
     $(LOCAL_DIR)/src/unistd/dup3.c \
-    $(LOCAL_DIR)/src/unistd/faccessat.c \
     $(LOCAL_DIR)/src/unistd/fchdir.c \
     $(LOCAL_DIR)/src/unistd/fchownat.c \
     $(LOCAL_DIR)/src/unistd/gethostname.c \
@@ -1090,7 +1082,6 @@ ifeq ($(ARCH),arm64)
 LOCAL_SRCS += \
     $(LOCAL_DIR)/src/fenv/aarch64/fenv.s \
     $(LOCAL_DIR)/src/internal/syscall.c \
-    $(LOCAL_DIR)/src/ldso/aarch64/dlsym.s \
     $(LOCAL_DIR)/src/ldso/aarch64/tlsdesc.s \
     $(LOCAL_DIR)/src/math/aarch64/fabs.s \
     $(LOCAL_DIR)/src/math/aarch64/fabsf.s \
@@ -1116,7 +1107,6 @@ LOCAL_SRCS += \
     $(LOCAL_DIR)/src/signal/aarch64/restore.s \
     $(LOCAL_DIR)/src/signal/aarch64/sigsetjmp.s \
     $(LOCAL_DIR)/src/thread/aarch64/__unmapself.s \
-    $(LOCAL_DIR)/src/thread/aarch64/clone.s \
     $(LOCAL_DIR)/src/thread/aarch64/syscall_cp.s \
     $(LOCAL_DIR)/third_party/math/acosl.c \
     $(LOCAL_DIR)/third_party/math/asinl.c \
@@ -1136,7 +1126,6 @@ LOCAL_SRCS += \
     $(LOCAL_DIR)/src/fenv/arm/fenv-hf.S \
     $(LOCAL_DIR)/src/fenv/fenv.c \
     $(LOCAL_DIR)/src/internal/syscall.c \
-    $(LOCAL_DIR)/src/ldso/arm/dlsym.s \
     $(LOCAL_DIR)/src/ldso/arm/find_exidx.c \
     $(LOCAL_DIR)/src/ldso/tlsdesc.c \
     $(LOCAL_DIR)/src/math/ceill.c \
@@ -1162,7 +1151,6 @@ LOCAL_SRCS += \
     $(LOCAL_DIR)/src/signal/arm/sigsetjmp.s \
     $(LOCAL_DIR)/src/thread/arm/__unmapself.s \
     $(LOCAL_DIR)/src/thread/arm/atomics.s \
-    $(LOCAL_DIR)/src/thread/arm/clone.s \
     $(LOCAL_DIR)/src/thread/arm/syscall_cp.s \
     $(LOCAL_DIR)/third_party/math/acosl.c \
     $(LOCAL_DIR)/third_party/math/asinl.c \
@@ -1181,7 +1169,6 @@ LOCAL_SRCS += \
 else ifeq ($(SUBARCH),x86-64)
 LOCAL_SRCS += \
     $(LOCAL_DIR)/src/fenv/x86_64/fenv.s \
-    $(LOCAL_DIR)/src/ldso/x86_64/dlsym.s \
     $(LOCAL_DIR)/src/ldso/x86_64/tlsdesc.s \
     $(LOCAL_DIR)/src/math/x86_64/__invtrigl.s \
     $(LOCAL_DIR)/src/math/x86_64/acosl.s \
@@ -1217,7 +1204,6 @@ LOCAL_SRCS += \
     $(LOCAL_DIR)/src/signal/x86_64/restore.s \
     $(LOCAL_DIR)/src/signal/x86_64/sigsetjmp.s \
     $(LOCAL_DIR)/third_party/arch/x86_64/__unmapself.s \
-    $(LOCAL_DIR)/src/thread/x86_64/clone.s \
     $(LOCAL_DIR)/src/thread/x86_64/syscall_cp.s \
     $(LOCAL_DIR)/third_party/arch/x86_64/longjmp.s \
     $(LOCAL_DIR)/third_party/arch/x86_64/setjmp.s \
@@ -1229,19 +1215,6 @@ endif
 
 # Include src/string sources
 include $(LOCAL_DIR)/src/string/rules.mk
-
-
-# static library
-
-MODULE := $(LOCAL_DIR)-static
-MODULE_TYPE := userlib
-MODULE_COMPILEFLAGS := $(LOCAL_COMPILEFLAGS)
-MODULE_DEPS := ulib/magenta ulib/runtime
-MODULE_CFLAGS := $(LOCAL_CFLAGS)
-MODULE_SRCS := $(LOCAL_SRCS)
-MODULE_EXPORT := c
-
-include make/module.mk
 
 
 # shared library (which is also the dynamic linker)

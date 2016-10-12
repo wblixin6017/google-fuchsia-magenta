@@ -13,9 +13,18 @@ The kernel commandline is passed from the kernel to the userboot process
 and the device manager, so some of the options described below apply to
 those userspace processes, not the kernel itself.
 
+## crashlogger.disable
+
+If this option is set, the crashlogger is not started. You should leave this
+option off unless you suspect the crashlogger is causing problems.
+
+## kernel.watchdog=<bool>
+If this option is set (disabled by default), the system will attempt
+to detect hangs/crashes and reboot upon detection.
+
 ## gfxconsole.early=<bool>
 
-This option (enabled by default) requests that the kernel start a graphics
+This option (disabled by default) requests that the kernel start a graphics
 console during early boot (if possible), to display kernel debug print
 messages while the system is starting.  When userspace starts up, a usermode
 graphics console driver takes over.
@@ -32,6 +41,16 @@ only "9x16" (the default) and "18x32" (a double-size font) are supported.
 
 This option caps the number of CPUs to initialize.  It cannot be greater than
 *SMP\_MAX\_CPUS* for a specific architecture.
+
+## smp.ht=<bool>
+
+This option can be used to disable the initialization of hyperthread logical
+CPUs.  Defaults to true.
+
+## timer.wallclock=<name>
+
+This option can be used to force the selection of a particular wall clock.  It
+only is used on pc builds.  Options are "tsc", "hpet", and "pit".
 
 ## userboot=<path>
 

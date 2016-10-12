@@ -58,29 +58,26 @@
 //
 namespace mxtl {
 
-// Default specialization of the rank state.  Stores just the rank parity as a
-// bool instead of the explicit rank of a node.
-template <>
-struct WAVLTreeNodeRank<bool> {
-    bool rank_parity() const   { return rank_; }
-    void promote_rank()        { rank_ = !rank_; }
-    void double_promote_rank() { }
-    void demote_rank()         { rank_ = !rank_; }
-    void double_demote_rank()  { }
-
-    bool rank_;
-};
-
-template <typename PtrType, typename RankType = bool>
-struct WAVLTreeNodeState : public WAVLTreeNodeRank<RankType> {
+template <typename PtrType, typename RankType>
+struct WAVLTreeNodeStateBase {
     using PtrTraits = internal::ContainerPtrTraits<PtrType>;
 
     typename PtrTraits::RawPtrType parent_ = nullptr;
     typename PtrTraits::PtrType    left_   = nullptr;
     typename PtrTraits::PtrType    right_  = nullptr;
+    RankType rank_;
 
     bool IsValid() const     { return (parent_ || (!parent_ && !left_ && !right_)); }
     bool InContainer() const { return (parent_ != nullptr); }
+};
+
+template <typename PtrType>
+struct WAVLTreeNodeState<PtrType, bool> : public WAVLTreeNodeStateBase<PtrType, bool> {
+    bool rank_parity() const   { return this->rank_; }
+    void promote_rank()        { this->rank_ = !this->rank_; }
+    void double_promote_rank() { }
+    void demote_rank()         { this->rank_ = !this->rank_; }
+    void double_demote_rank()  { }
 };
 
 template <typename PtrType, typename RankType = bool>
@@ -112,8 +109,8 @@ class WAVLTree {
 private:
     // Private fwd decls of the iterator implementation.
     template <typename IterTraits> class iterator_impl;
-    class iterator_traits;
-    class const_iterator_traits;
+    struct iterator_traits;
+    struct const_iterator_traits;
 
 public:
     // Aliases used to reduce verbosity and expose types/traits to tests
@@ -554,7 +551,10 @@ private:
             return ret;
         }
 
-        typename PtrTraits::PtrType CopyPointer()          { return PtrTraits::Copy(node_); }
+        typename PtrTraits::PtrType CopyPointer() {
+            return IsValid() ? PtrTraits::Copy(node_) : nullptr;
+        }
+
         typename IterTraits::RefType operator*()     const { DEBUG_ASSERT(node_); return *node_; }
         typename IterTraits::RawPtrType operator->() const { DEBUG_ASSERT(node_); return node_; }
 

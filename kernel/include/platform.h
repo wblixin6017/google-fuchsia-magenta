@@ -33,7 +33,10 @@ typedef enum {
     HALT_REASON_SW_UPDATE,      // SW triggered reboot in order to begin firmware update
 } platform_halt_reason;
 
+/* current time in milliseconds */
 lk_time_t current_time(void);
+
+/* current time in nanoseconds */
 lk_bigtime_t current_time_hires(void);
 
 /* super early platform initialization, before almost everything */
@@ -65,6 +68,9 @@ platform_halt_reason platform_get_reboot_reason(void);
  */
 void platform_halt(platform_halt_action suggested_action,
                    platform_halt_reason reason) __NO_RETURN;
+
+/* optionally stop the current cpu in a way the platform finds appropriate */
+void platform_halt_cpu(void);
 
 /* called during chain loading to make sure drivers and platform is put into a stopped state */
 void platform_quiesce(void);

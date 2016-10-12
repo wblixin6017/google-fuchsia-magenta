@@ -92,7 +92,7 @@ static int mem_arena_init(boot_addr_range_t *range)
          !range->is_reset && used < PMM_ARENAS;
          range->advance(range)) {
 
-        LTRACEF("Range at %#llx of %#llx bytes is %smemory.\n",
+        LTRACEF("Range at %#" PRIx64 " of %#" PRIx64 " bytes is %smemory.\n",
                 range->base, range->size, range->is_mem ? "" : "not ");
 
         if (!range->is_mem)
@@ -132,18 +132,19 @@ static int mem_arena_init(boot_addr_range_t *range)
             arena->size = size;
 
             if ((uint64_t)arena->base != base) {
-                LTRACEF("Range base %#llx is too high.\n", base);
+                LTRACEF("Range base %#" PRIx64 " is too high.\n", base);
                 break;
             }
             if ((uint64_t)arena->size != size) {
-                LTRACEF("Range size %#llx is too large, splitting it.\n", size);
+                LTRACEF("Range size %#" PRIx64 " is too large, splitting it.\n",
+                        size);
                 arena->size = -PAGE_SIZE;
             }
 
             size -= arena->size;
             base += arena->size;
 
-            LTRACEF("Adding pmm range at %#lx of %#lx bytes.\n",
+            LTRACEF("Adding pmm range at %#" PRIxPTR " of %#zx bytes.\n",
                     arena->base, arena->size);
 
             arena->name = "memory";
@@ -321,7 +322,7 @@ static int multiboot_range_init(boot_addr_range_t *range,
     return 0;
 }
 
-int addr_range_cmp(const void* p1, const void* p2)
+static int addr_range_cmp(const void* p1, const void* p2)
 {
     const struct addr_range *a1 = p1;
     const struct addr_range *a2 = p2;

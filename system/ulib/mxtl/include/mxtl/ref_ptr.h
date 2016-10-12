@@ -75,6 +75,14 @@ public:
         return *this;
     }
 
+    // Construct via explicit downcast.
+    // ptr must be the same object as base.ptr_.
+    template <typename baseT>
+    explicit RefPtr(T* ptr, RefPtr<baseT>&& base) : ptr_(ptr) {
+        ASSERT(static_cast<baseT*>(ptr_) == base.ptr_);
+        base.ptr_ = nullptr;
+    }
+
     ~RefPtr() {
         if (ptr_ && ptr_->Release()) delete static_cast<T*>(ptr_);
     }
@@ -156,6 +164,12 @@ static inline bool operator!=(decltype(nullptr), const RefPtr<T>& ptr) {
 template <typename T>
 inline RefPtr<T> AdoptRef(T* ptr) {
     return RefPtr<T>(ptr, RefPtr<T>::ADOPT);
+}
+
+// Convenience wrapper to construct a RefPtr with argument type deduction.
+template <typename T>
+inline RefPtr<T> WrapRefPtr(T* ptr) {
+    return RefPtr<T>(ptr);
 }
 
 namespace internal {
