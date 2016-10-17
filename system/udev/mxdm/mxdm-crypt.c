@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <ddk/common/mxdm.h>
+#include "mxdm.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include <ddk/binding.h>
 #include <ddk/iotxn.h>
+#include <magenta/fuchsia-types.h>
 
 #define CRYPT_TAG_LEN 16
 
@@ -18,7 +19,6 @@ typedef struct crypt_metadata {
 } crypt_metadata_t;
 
 typedef struct crypt {
-    mxdm_t* mxdm;
     uint64_t data_blkoff;
     uint64_t primary_metadata_blkoff;
     uint64_t secondary_metadata_blkoff;
@@ -26,12 +26,8 @@ typedef struct crypt {
 
 //
 
-static crypt_t* crypt_get(mxdm_worker_t* worker) {
-    mxdm_t* mxdm = mxdm_from_worker(worker);
-    return containerof(mxdm, crypt_t, mxdm);
-}
-
-static uint64_t crypt_get_offsets(crypt_t* crypt, uint64_t blkoff, uint64_t* blkoff1, uint64_t* blkoff2) {
+static uint64_t crypt_get_offsets(crypt_t* crypt, uint64_t blkoff,
+                                  uint64_t* blkoff1, uint64_t* blkoff2) {
     uint64_t md_off = (blkoff - crypt->data_blkoff) * sizeof(crypt_metadata_t);
     uint64_t md_blk = md_off / MXDM_BLOCK_SIZE;
     *blkoff1 = md_blk + crypt->primary_metadata_blkoff;
@@ -50,11 +46,13 @@ static bool crypt_aead_open(crypt_metadata_t metadata, iotxn_t* txn) {
 
 //
 
-static ssize_t crypt_ioctl(mxdm_t* mxdm, uint32_t op, const void* in_buf, size_t in_len, void* out_buf, size_t out_len) {
+static ssize_t crypt_ioctl(mxdm_device_t* device, uint32_t op, const void* in_buf,
+                           size_t in_len, void* out_buf, size_t out_len) {
     return 0;
 }
 
-static mx_status_t crypt_prepare(mxdm_worker_t* worker, uint64_t blklen, uint64_t* data_blkoff, uint64_t* data_blklen) {
+static mx_status_t crypt_prepare(mxdm_worker_t* worker, uint64_t blklen,
+                                 uint64_t* data_blkoff, uint64_t* data_blklen) {
     return NO_ERROR;
 }
 
@@ -62,8 +60,9 @@ static mx_status_t crypt_release(mxdm_worker_t* worker) {
     return NO_ERROR;
 }
 
-static mxdm_txn_action_t crypt_before_write(mxdm_worker_t* worker, iotxn_t* txn, uint64_t* blkoff, uint64_t blkmax) {
-    crypt_t* crypt = crypt_get(worker);
+static mxdm_txn_action_t crypt_before_write(mxdm_worker_t* worker, iotxn_t* txn,
+                                            uint64_t* blkoff, uint64_t blkmax) {
+    crypt_t* crypt = mxdm_worker_get_context(worker);
     uint64_t blkoff1, blkoff2;
     while (*blkoff < blkmax) {
         uint64_t md_off = crypt_get_offsets(crypt, *blkoff, &blkoff1, &blkoff2);
@@ -95,8 +94,9 @@ static mxdm_txn_action_t crypt_before_write(mxdm_worker_t* worker, iotxn_t* txn,
     return kMxdmContinueTxn;
 }
 
-static mxdm_txn_action_t crypt_after_read(mxdm_worker_t* worker, iotxn_t* txn, uint64_t* blkoff, uint64_t blkmax) {
-    crypt_t* crypt = crypt_get(worker);
+static mxdm_txn_action_t crypt_after_read(mxdm_worker_t* worker, iotxn_t* txn,
+                                          uint64_t* blkoff, uint64_t blkmax) {
+    crypt_t* crypt = mxdm_worker_get_context(worker);
     uint64_t blkoff1, blkoff2;
     while (*blkoff < blkmax) {
         uint64_t md_off = crypt_get_offsets(crypt, *blkoff, &blkoff1, &blkoff2);
@@ -127,7 +127,7 @@ static mxdm_txn_action_t crypt_after_read(mxdm_worker_t* worker, iotxn_t* txn, u
                 mxdm_put_block(&metadata2, md_off, sizeof(metadata2), block1);
             }
         } else {
-            txn->status = ERR_CHECKSUM_FAIL;
+            txn->status = ERR_IO_DATA_INTEGRITY;
             break;
         }
         mxdm_release_block(worker, block1);
@@ -139,27 +139,30 @@ static mxdm_txn_action_t crypt_after_read(mxdm_worker_t* worker, iotxn_t* txn, u
 
 //
 
-static mxdm_ops_t crypt_ops = {
-    .prepare = crypt_prepare,
+static mxdm_device_ops_t crypt_device_ops = {
     .ioctl = crypt_ioctl,
+};
+
+static mxdm_worker_ops_t crypt_worker_ops = {
+    .prepare = crypt_prepare,
     .release = crypt_release,
     .before_write = crypt_before_write,
     .after_read = crypt_after_read,
 };
 
 static mx_status_t crypt_bind(mx_driver_t* drv, mx_device_t* parent) {
-    return mxdm_init(drv, parent, "crypt", &crypt_ops, sizeof(crypt_t));
+    return mxdm_init(drv, parent, "crypt", &crypt_device_ops, &crypt_worker_ops,
+                     sizeof(crypt_t));
 }
 
-static mx_bind_inst_t binding[] = {
-    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_BLOCK),
+mx_driver_t _driver_crypt = {
+    .ops =
+        {
+            .bind = crypt_bind,
+        },
+    .flags = DRV_FLAG_NO_AUTOBIND,
 };
 
-mx_driver_t _driver_crypt BUILTIN_DRIVER = {
-    .name = "mxdm-crypt",
-    .ops = {
-        .bind = crypt_bind,
-    },
-    .binding = binding,
-    .binding_size = sizeof(binding),
-};
+MAGENTA_DRIVER_BEGIN(_driver_crypt, "mxdm-crypt", "magenta", "0.1", 1)
+BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_BLOCK)
+, MAGENTA_DRIVER_END(_driver_crypt)
