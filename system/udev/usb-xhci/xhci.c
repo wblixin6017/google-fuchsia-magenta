@@ -287,6 +287,24 @@ void xhci_start(xhci_t* xhci) {
     xhci_start_device_thread(xhci);
 }
 
+mx_status_t xhci_suspend(xhci_t* xhci) {
+    // stop endpoints first
+
+    mx_status_t status = xhci_rh_suspend(xhci);
+    if (status != NO_ERROR) {
+        return status;
+    }
+    // do more stuff here
+
+    return NO_ERROR;
+}
+
+mx_status_t xhci_resume(xhci_t* xhci) {
+    // do more stuff here
+
+    return xhci_rh_resume(xhci);
+}
+
 void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t control_bits,
                        xhci_command_context_t* context) {
     // FIXME - check that command ring is not full?

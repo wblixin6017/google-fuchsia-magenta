@@ -15,7 +15,7 @@
 //#define TRACE 1
 #include "xhci-debug.h"
 
-#define DEBUG_PORTSC    0
+#define DEBUG_PORTSC    1
 
 #define MANUFACTURER_STRING 1
 #define PRODUCT_STRING_2    2
@@ -133,43 +133,43 @@ static void print_portsc(int port, uint32_t portsc) {
     if (portsc & PORTSC_PR) printf(" PR");
     uint32_t pls = (portsc >> PORTSC_PLS_START) & ((1 << PORTSC_PLS_BITS) - 1);
     switch (pls) {
-        case 0:
+        case PORTSC_PLS_U0:
             printf(" U0");
             break;
-        case 1:
+        case PORTSC_PLS_U1:
             printf(" U1");
             break;
-        case 2:
+        case PORTSC_PLS_U2:
             printf(" U2");
             break;
-        case 3:
+        case PORTSC_PLS_U3:
             printf(" U3");
             break;
-        case 4:
+        case PORTSC_PLS_DISABLED:
             printf(" Disabled");
             break;
-        case 5:
+        case PORTSC_PLS_RX_DETECT:
             printf(" RxDetect");
             break;
-        case 6:
+        case PORTSC_PLS_INACTIVE:
             printf(" Inactive");
             break;
-        case 7:
+        case PORTSC_PLS_POLLING:
             printf(" Polling");
             break;
-        case 8:
+        case PORTSC_PLS_RECOVERY:
             printf(" Recovery");
             break;
-        case 9:
+        case PORTSC_PLS_HOT_RESET:
             printf(" Hot Reset");
             break;
-        case 10:
+        case PORTSC_PLS_COMPLIANCE:
             printf(" Compliance Mode");
             break;
-        case 11:
+        case PORTSC_PLS_TEST:
             printf(" Test Mode");
             break;
-        case 15:
+        case PORTSC_PLS_RESUME:
             printf(" Resume");
             break;
         default:
@@ -555,4 +555,66 @@ void xhci_handle_root_hub_change(xhci_t* xhci, bool initial_state) {
             }
         }
     }
+}
+
+mx_status_t xhci_rh_suspend(xhci_t* xhci) {
+    volatile xhci_port_regs_t* port_regs = xhci->op_regs->port_regs;
+
+printf("suspending\n");
+    for (uint32_t i = 0; i < xhci->rh_num_ports; i++) {
+        volatile uint32_t* portsc = &port_regs[i].portsc;
+        uint32_t temp = XHCI_READ32(portsc);
+        bool enabled = !!(temp & PORTSC_PED);
+        
+        if (enabled) {
+printf("before\n");
+print_portsc(i, temp);
+            // Set U3 link state
+            temp = (temp & PORTSC_CONTROL_BITS & ~PORTSC_PLS_MASK) | (PORTSC_PLS_U3 << PORTSC_PLS_START) | PORTSC_LWS;
+printf("writing\n");
+print_portsc(i, temp);
+            XHCI_WRITE32(portsc, temp);
+            xhci_wait_bits(portsc, PORTSC_PLS_MASK, PORTSC_PLS_U3 << PORTSC_PLS_START);
+printf("after wait\n");
+print_portsc(i, XHCI_READ32(portsc));
+        }
+    }
+
+    return NO_ERROR;
+}
+
+mx_status_t xhci_rh_resume(xhci_t* xhci) {
+    volatile xhci_port_regs_t* port_regs = xhci->op_regs->port_regs;
+
+printf("resuming\n");
+    for (uint32_t i = 0; i < xhci->rh_num_ports; i++) {
+        volatile uint32_t* portsc = &port_regs[i].portsc;
+        uint32_t temp = XHCI_READ32(portsc);
+
+        // if enabled and in U3 state
+        if ((temp & (PORTSC_PED | PORTSC_PLS_MASK)) == (PORTSC_PED | (PORTSC_PLS_U3 << PORTSC_PLS_START))) {
+            uint32_t new_pls;
+            int rh_index = xhci->rh_map[i];
+            if (xhci_rh_speeds[rh_index] == USB_SPEED_SUPER) {
+                new_pls = PORTSC_PLS_U0;
+            } else {
+                new_pls = PORTSC_PLS_RESUME;
+            }
+        
+printf("before\n");
+print_portsc(i, temp);
+            // Set U0 link state
+            temp = (temp & PORTSC_CONTROL_BITS & ~PORTSC_PLS_MASK) | (new_pls << PORTSC_PLS_START) | PORTSC_LWS;
+printf("writing\n");
+print_portsc(i, temp);
+            XHCI_WRITE32(portsc, temp);
+printf("after write\n");
+print_portsc(i, XHCI_READ32(portsc));
+            xhci_wait_bits(portsc, PORTSC_PLS_MASK, PORTSC_PLS_U0 << PORTSC_PLS_START);
+printf("after wait\n");
+print_portsc(i, XHCI_READ32(portsc));
+        }
+    }
+
+    return NO_ERROR;
 }

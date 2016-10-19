@@ -9,12 +9,8 @@
 #include <unistd.h>
 
 int main(int argc, char **argv) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <device path>\n", argv[0]);
-        return -1;
-    }
 
-    const char* path = argv[1];
+    const char* path = "/dev/class/usb-hci/000";
 
     int fd = open(path, O_RDWR);
     if (fd < 0) {

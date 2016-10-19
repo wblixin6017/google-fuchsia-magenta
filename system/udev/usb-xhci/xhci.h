@@ -106,6 +106,8 @@ struct xhci {
 
 mx_status_t xhci_init(xhci_t* xhci, void* mmio);
 void xhci_start(xhci_t* xhci);
+mx_status_t xhci_suspend(xhci_t* xhci);
+mx_status_t xhci_resume(xhci_t* xhci);
 void xhci_handle_interrupt(xhci_t* xhci, bool legacy);
 void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t control_bits,
                        xhci_command_context_t* context);

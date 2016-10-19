@@ -31,3 +31,5 @@ void xhci_root_hub_free(xhci_root_hub_t* rh);
 mx_status_t xhci_start_root_hubs(xhci_t* xhci);
 mx_status_t xhci_rh_iotxn_queue(xhci_t* xhci, iotxn_t* txn, int rh_index);
 void xhci_handle_root_hub_change(xhci_t* xhci, bool initial_state);
+mx_status_t xhci_rh_suspend(xhci_t* xhci);
+mx_status_t xhci_rh_resume(xhci_t* xhci);

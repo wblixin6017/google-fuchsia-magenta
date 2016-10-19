@@ -280,7 +280,7 @@ void xhci_process_deferred_txns(xhci_t* xhci, xhci_transfer_ring_t* ring, bool c
     }
 }
 
-static void xhci_iotxn_queue(mx_device_t* hci_device, iotxn_t* txn) {
+static void usb_xhci_iotxn_queue(mx_device_t* hci_device, iotxn_t* txn) {
     usb_xhci_t* uxhci = dev_to_usb_xhci(hci_device);
     xhci_t* xhci = &uxhci->xhci;
 
@@ -290,7 +290,19 @@ static void xhci_iotxn_queue(mx_device_t* hci_device, iotxn_t* txn) {
     }
 }
 
-static void xhci_unbind(mx_device_t* dev) {
+static mx_status_t usb_xhci_suspend(mx_device_t* dev) {
+    printf("usb_xhci_suspend\n");
+    usb_xhci_t* uxhci = dev_to_usb_xhci(dev);
+    return xhci_suspend(&uxhci->xhci);
+}
+
+static mx_status_t usb_xhci_resume(mx_device_t* dev) {
+    printf("usb_xhci_resume\n");
+    usb_xhci_t* uxhci = dev_to_usb_xhci(dev);
+    return xhci_resume(&uxhci->xhci);
+}
+
+static void usb_xhci_unbind(mx_device_t* dev) {
     xprintf("usb_xhci_unbind\n");
     usb_xhci_t* uxhci = dev_to_usb_xhci(dev);
 
@@ -299,15 +311,17 @@ static void xhci_unbind(mx_device_t* dev) {
     }
 }
 
-static mx_status_t xhci_release(mx_device_t* device) {
+static mx_status_t usb_xhci_release(mx_device_t* device) {
     // FIXME - do something here
     return NO_ERROR;
 }
 
 static mx_protocol_device_t xhci_device_proto = {
-    .iotxn_queue = xhci_iotxn_queue,
-    .unbind = xhci_unbind,
-    .release = xhci_release,
+    .iotxn_queue = usb_xhci_iotxn_queue,
+    .suspend = usb_xhci_suspend,
+    .resume = usb_xhci_resume,
+    .unbind = usb_xhci_unbind,
+    .release = usb_xhci_release,
 };
 
 static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {

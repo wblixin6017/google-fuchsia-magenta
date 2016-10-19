@@ -274,11 +274,13 @@ typedef volatile struct {
 #define PORTSC_PR           (1 << 4)    // Port Reset
 #define PORTSC_PLS_START    5           // Port Link State
 #define PORTSC_PLS_BITS     4
+#define PORTSC_PLS_MASK     XHCI_MASK(PORTSC_PLS_START, PORTSC_PLS_BITS)
 #define PORTSC_PP           (1 << 9)    // Port Power
 #define PORTSC_SPEED_START  10          // Port Speed
 #define PORTSC_SPEED_BITS   4
 #define PORTSC_PIC_START    14          // Port Indicator Control
 #define PORTSC_PIC_BITS     2
+#define PORTSC_PIC_MASK     XHCI_MASK(PORTSC_PIC_START, PORTSC_PIC_BITS)
 #define PORTSC_LWS          (1 << 16)   // Port Link State Write Strobe
 #define PORTSC_CSC          (1 << 17)   // Connect Status Change
 #define PORTSC_PEC          (1 << 18)   // Port Enabled/Disabled Change
@@ -294,11 +296,25 @@ typedef volatile struct {
 #define PORTSC_DR           (1 << 30)   // Device Removable
 #define PORTSC_WPR          (1 << 31)   // Warm Port Reset
 
+// PORTSC Port Link State values
+#define PORTSC_PLS_U0           0
+#define PORTSC_PLS_U1           1
+#define PORTSC_PLS_U2           2
+#define PORTSC_PLS_U3           3
+#define PORTSC_PLS_DISABLED     4
+#define PORTSC_PLS_RX_DETECT    5
+#define PORTSC_PLS_INACTIVE     6
+#define PORTSC_PLS_POLLING      7
+#define PORTSC_PLS_RECOVERY     8
+#define PORTSC_PLS_HOT_RESET    9
+#define PORTSC_PLS_COMPLIANCE   10
+#define PORTSC_PLS_TEST         11
+#define PORTSC_PLS_RESUME       15
+
 // PORTSC control bits
 #define PORTSC_CONTROL_BITS (PORTSC_PR | PORTSC_PP | PORTSC_LWS | \
                              PORTSC_WCE | PORTSC_WDE | PORTSC_WOE | \
-                             XHCI_MASK(PORTSC_PLS_START, PORTSC_PLS_BITS) | \
-                             XHCI_MASK(PORTSC_PIC_START, PORTSC_PIC_BITS))
+                             PORTSC_PLS_MASK | PORTSC_PIC_MASK)
 
 // PORTSC status bits, set to clear
 #define PORTSC_STATUS_BITS  (PORTSC_CSC | PORTSC_PEC | PORTSC_WRC | PORTSC_OCC | \
