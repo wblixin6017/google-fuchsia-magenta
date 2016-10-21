@@ -45,6 +45,8 @@ static volatile struct dwc_regs* regs;
 typedef struct usb_dwc_transfer_request {
     list_node_t node;
 
+    uint8_t bMaxPacketSize0;
+
     iotxn_t *txn;
 } usb_dwc_transfer_request_t;
 
@@ -62,9 +64,32 @@ typedef struct usb_dwc {
     list_node_t rh_txn_head;
 } usb_dwc_t;
 
+typedef struct dwc_channel_context {
+    uint8_t channel_id;
+    usb_dwc_transfer_request_t* active_request;
+
+    completion_t request_ready_completion;
+    completion_t transaction_finished_completion;
+
+    thrd_t channel_thread;
+} dwc_channel_context_t;
+
 static mtx_t rh_status_mtx;
 static usb_dwc_transfer_request_t* rh_intr_req;
 static usb_port_status_t root_port_status;
+
+static mtx_t pending_transfer_mtx;
+static completion_t pending_transfer_completion = COMPLETION_INIT;
+static list_node_t pending_transfer_list;
+
+static dwc_channel_context_t channel_context[NUM_HOST_CHANNELS];
+
+#define ALL_CHANNELS_FREE 0xff
+static mtx_t free_channel_mtx;
+static completion_t free_channel_completion = COMPLETION_INIT;
+static uint8_t free_channels = ALL_CHANNELS_FREE;
+static uint acquire_channel_blocking(void);
+static void release_channel(uint ch);
 
 #define MANUFACTURER_STRING 1
 #define PRODUCT_STRING_2    2
@@ -275,6 +300,7 @@ static void do_dwc_iotxn_queue(usb_dwc_t* dwc, iotxn_t* txn) {
 
     // Initialize the request.
     req->txn = txn;
+    req->bMaxPacketSize0 = 8;
 
     if (is_roothub_request(req)) {
         dwc_iotxn_queue_rh(dwc, req);
@@ -623,6 +649,114 @@ static int dwc_root_hub_txn_worker(void* arg) {
     return -1;
 }
 
+static int dwc_channel_worker_thread(void* arg) {
+    dwc_channel_context_t* self = (dwc_channel_context_t*)arg;
+    while (1) {
+        completion_wait(&self->request_ready_completion, MX_TIME_INFINITE);
+        completion_reset(&self->request_ready_completion);
+
+        if (!self->active_request) {
+            printf("WARNING - Channel Worker Thread %d woken with no work to"
+                   "do!\n", self->channel_id);
+            continue;
+        }
+
+
+
+        printf("Request ready on channel %u\n", self->channel_id);
+    }
+
+    return -1;
+}
+
+
+static int dwc_channel_scheduler_thread(void *arg) {
+
+    while (true) {
+        // Wait for somebody to tell us to schedule a transfer.
+        completion_wait(&pending_transfer_completion, MX_TIME_INFINITE);
+
+        // Wait for a channel to become available.
+        uint channel = acquire_channel_blocking();
+
+        mtx_lock(&pending_transfer_mtx);
+        usb_dwc_transfer_request_t* req =
+            list_remove_head_type(&pending_transfer_list, usb_dwc_transfer_request_t, 
+                                  node);
+
+        if (list_is_empty(&pending_transfer_list)) {
+            completion_reset(&pending_transfer_completion);
+        }
+
+        mtx_unlock(&pending_transfer_mtx);
+
+        if (!req) {
+            printf("WARNING - channel scheduler thread woken up with no work "
+                   "to do!\n");
+            continue;
+        }
+
+        // Assign this request to a channel and signal the channel's thread to 
+        // execute the request.
+        dwc_channel_context_t* ch = &channel_context[channel];
+        
+        ch->active_request = req;
+        completion_signal(&ch->request_ready_completion);
+    }
+
+    return -1;
+}
+
+static uint acquire_channel_blocking(void) {
+    int next_channel = -1;
+
+    while (true) {
+        mtx_lock(&free_channel_mtx);
+
+        // A quick sanity check. We should never mark a channel that doesn't 
+        // exist on the system as free.
+        assert((free_channels & ALL_CHANNELS_FREE) == free_channels);
+
+        // Is there at least one channel that's free?
+        next_channel = -1;
+        if (free_channels) {
+            next_channel = __builtin_ctz(free_channels);
+            
+            // Mark the bit in the free_channel bitfield = 0, meaning the
+            // channel is in use.
+            free_channels &= (ALL_CHANNELS_FREE ^ (1 << next_channel)); 
+        }
+
+        if (next_channel == -1) {
+            completion_reset(&free_channel_completion);
+        }
+
+        mtx_unlock(&free_channel_mtx);
+
+        if (next_channel >= 0) {
+            return next_channel;
+        }
+
+        // We couldn't find a free channel, wait for somebody to tell us to 
+        // wake up and attempt to acquire a channel again.
+        completion_wait(&free_channel_completion, MX_TIME_INFINITE);
+    }
+
+    __UNREACHABLE;
+}
+
+static void release_channel(uint ch) {
+    assert(ch < DWC_NUM_CHANNELS);
+
+    mtx_lock(&free_channel_mtx);
+
+    free_channels |= (1 << ch);
+
+    mtx_unlock(&free_channel_mtx);
+
+    completion_signal(&free_channel_completion);
+}
+
 // Bind is the entry point for this driver.
 static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
     xprintf("usb_dwc_bind drv = %p, dev = %p\n", drv, dev);
@@ -660,6 +794,8 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
     usb_dwc->irq_handle = irq_handle;
     usb_dwc->parent = dev;
     list_initialize(&usb_dwc->rh_txn_head);
+
+    list_initialize(&pending_transfer_list);
     
     // TODO(gkalsi):
     // The BCM Mailbox Driver currently turns on USB power but it should be 
@@ -682,12 +818,32 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
 
     // Thread that responds to requests for the root hub.
     thrd_t root_hub_txn_worker;
-    thrd_create_with_name(&root_hub_txn_worker, dwc_root_hub_txn_worker, usb_dwc, "dwc_root_hub_txn_worker");
+    thrd_create_with_name(&root_hub_txn_worker, dwc_root_hub_txn_worker,
+                          usb_dwc, "dwc_root_hub_txn_worker");
     thrd_detach(root_hub_txn_worker);
 
+    for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
+        channel_context[i].channel_id = i;
+        channel_context[i].active_request = NULL;
+
+        channel_context[i].request_ready_completion = COMPLETION_INIT;
+        channel_context[i].transaction_finished_completion = COMPLETION_INIT;
+
+        thrd_create(
+            &channel_context[i].channel_thread,
+            dwc_channel_worker_thread,
+            &channel_context[i]
+        );
+
+        thrd_detach(channel_context[i].channel_thread);
+    }
+
     thrd_t irq_thread;
-    thrd_create_with_name(&irq_thread, dwc_irq_thread, usb_dwc, "dwc_irq_thread");
+    thrd_create_with_name(&irq_thread, dwc_irq_thread, usb_dwc,
+                          "dwc_irq_thread");
     thrd_detach(irq_thread);
+
+    completion_signal(&channel_context[0].request_ready_completion);
 
     xprintf("usb_dwc_bind success!\n"); 
     return NO_ERROR;
