@@ -42,10 +42,19 @@ static volatile struct dwc_regs* regs;
 #define TRACE 1
 #include "bcm-usb-dwc-debug.h"
 
+typedef enum dwc_ctrl_phase {
+    CTRL_PHASE_SETUP = 1;
+    CTRL_PHASE_DATA = 2;
+    CTRL_PHASE_STATUS = 3;
+} dwc_ctrl_phase_t;
+
 typedef struct usb_dwc_transfer_request {
     list_node_t node;
 
-    uint8_t bMaxPacketSize0;
+    uint8_t max_packet_size;
+    uint8_t ep_type;
+    dwc_ctrl_phase_t ctrl_phase;
+
 
     iotxn_t *txn;
 } usb_dwc_transfer_request_t;
@@ -64,15 +73,16 @@ typedef struct usb_dwc {
     list_node_t rh_txn_head;
 } usb_dwc_t;
 
-typedef struct dwc_channel_context {
-    uint8_t channel_id;
-    usb_dwc_transfer_request_t* active_request;
+typedef struct dwc_usb_device {
+    mtx_t devmtx;
+    usb_speed_t speed;
+    uint32_t hub_address;
+    int port;
 
-    completion_t request_ready_completion;
-    completion_t transaction_finished_completion;
+    uint8_t bMaxPacketSize0;
+} dwc_usb_device_t;
 
-    thrd_t channel_thread;
-} dwc_channel_context_t;
+static dwc_usb_device_t usb_devices[MAX_DEVICE_COUNT]; 
 
 static mtx_t rh_status_mtx;
 static usb_dwc_transfer_request_t* rh_intr_req;
@@ -81,8 +91,6 @@ static usb_port_status_t root_port_status;
 static mtx_t pending_transfer_mtx;
 static completion_t pending_transfer_completion = COMPLETION_INIT;
 static list_node_t pending_transfer_list;
-
-static dwc_channel_context_t channel_context[NUM_HOST_CHANNELS];
 
 #define ALL_CHANNELS_FREE 0xff
 static mtx_t free_channel_mtx;
@@ -284,7 +292,18 @@ static void dwc_iotxn_queue_rh(usb_dwc_t* dwc,
 // Queue a transaction on external peripherals using the DWC host channels.
 static void dwc_iotxn_queue_hw(usb_dwc_t* dwc,
                                usb_dwc_transfer_request_t* req) {
-    
+    printf("Queue an iotxn on the hardware.\n");
+}
+
+void init_request_from_device(usb_dwc_transfer_request_t* req) {
+    iotxn_t *txn = req->txn;
+    usb_protocol_data_t* data = iotxn_pdata(txn, usb_protocol_data_t);
+
+    dwc_usb_device_t* device = &usb_devices[data->device_id];
+
+    mtx_lock(&device->devmtx);
+
+    mtx_unlock(&device->devmtx);
 }
 
 static void do_dwc_iotxn_queue(usb_dwc_t* dwc, iotxn_t* txn) {
@@ -298,9 +317,11 @@ static void do_dwc_iotxn_queue(usb_dwc_t* dwc, iotxn_t* txn) {
         return;
     }
 
+    // Fill in details about the reqeust.
+    init_request_from_device(req);
+
     // Initialize the request.
     req->txn = txn;
-    req->bMaxPacketSize0 = 8;
 
     if (is_roothub_request(req)) {
         dwc_iotxn_queue_rh(dwc, req);
@@ -368,7 +389,24 @@ mx_status_t dwc_config_hub(mx_device_t* hci_device, uint32_t device_id, usb_spee
 
 mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, int port,
                                   usb_speed_t speed) {
-    xprintf("usb dwc_hub_device_added not implemented\n");
+    // Since a new device was just added it has a device address of 0 on the
+    // bus until it is enumerated.
+    
+    dwc_usb_device_t* new_device = &usb_devices[0];
+
+    mtx_lock(&new_device->devmtx);
+
+    new_device->hub_address = hub_address;
+    new_device->port = port;
+    new_device->speed = speed;
+
+    // The control endpoint of the device must support packets that are at least
+    // 8 bytes long. They may be longer, but we can't know that until we 
+    // enumerate the device so we pick the most conservative value possible 
+    // for now.
+    new_device->bMaxPacketSize0 = 8;
+
+    mtx_unlock(&new_device->devmtx);
 
 
     return NO_ERROR;
@@ -649,26 +687,9 @@ static int dwc_root_hub_txn_worker(void* arg) {
     return -1;
 }
 
-static int dwc_channel_worker_thread(void* arg) {
-    dwc_channel_context_t* self = (dwc_channel_context_t*)arg;
-    while (1) {
-        completion_wait(&self->request_ready_completion, MX_TIME_INFINITE);
-        completion_reset(&self->request_ready_completion);
+static void dwc_start_transfer(uint channel, usb_dwc_transfer_request_t* req) {
 
-        if (!self->active_request) {
-            printf("WARNING - Channel Worker Thread %d woken with no work to"
-                   "do!\n", self->channel_id);
-            continue;
-        }
-
-
-
-        printf("Request ready on channel %u\n", self->channel_id);
-    }
-
-    return -1;
 }
-
 
 static int dwc_channel_scheduler_thread(void *arg) {
 
@@ -678,6 +699,7 @@ static int dwc_channel_scheduler_thread(void *arg) {
 
         // Wait for a channel to become available.
         uint channel = acquire_channel_blocking();
+        printf("%u\n", channel);
 
         mtx_lock(&pending_transfer_mtx);
         usb_dwc_transfer_request_t* req =
@@ -696,12 +718,7 @@ static int dwc_channel_scheduler_thread(void *arg) {
             continue;
         }
 
-        // Assign this request to a channel and signal the channel's thread to 
-        // execute the request.
-        dwc_channel_context_t* ch = &channel_context[channel];
-        
-        ch->active_request = req;
-        completion_signal(&ch->request_ready_completion);
+        // dwc_start_transfer(req);
     }
 
     return -1;
@@ -822,28 +839,11 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
                           usb_dwc, "dwc_root_hub_txn_worker");
     thrd_detach(root_hub_txn_worker);
 
-    for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
-        channel_context[i].channel_id = i;
-        channel_context[i].active_request = NULL;
-
-        channel_context[i].request_ready_completion = COMPLETION_INIT;
-        channel_context[i].transaction_finished_completion = COMPLETION_INIT;
-
-        thrd_create(
-            &channel_context[i].channel_thread,
-            dwc_channel_worker_thread,
-            &channel_context[i]
-        );
-
-        thrd_detach(channel_context[i].channel_thread);
-    }
-
     thrd_t irq_thread;
     thrd_create_with_name(&irq_thread, dwc_irq_thread, usb_dwc,
                           "dwc_irq_thread");
     thrd_detach(irq_thread);
 
-    completion_signal(&channel_context[0].request_ready_completion);
 
     xprintf("usb_dwc_bind success!\n"); 
     return NO_ERROR;
