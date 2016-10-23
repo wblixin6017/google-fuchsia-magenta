@@ -557,6 +557,12 @@ void xhci_handle_root_hub_change(xhci_t* xhci, bool initial_state) {
     }
 }
 
+static void xhci_rh_set_pls(volatile uint32_t* portsc, uint32_t pls) {
+    uint32_t temp = XHCI_READ32(portsc);
+    temp = (temp & PORTSC_CONTROL_BITS & ~PORTSC_PLS_MASK) | (pls << PORTSC_PLS_START) | PORTSC_LWS;
+    XHCI_WRITE32(portsc, temp);
+}
+
 mx_status_t xhci_rh_suspend(xhci_t* xhci) {
     volatile xhci_port_regs_t* port_regs = xhci->op_regs->port_regs;
 
@@ -570,10 +576,7 @@ printf("suspending\n");
 printf("before\n");
 print_portsc(i, temp);
             // Set U3 link state
-            temp = (temp & PORTSC_CONTROL_BITS & ~PORTSC_PLS_MASK) | (PORTSC_PLS_U3 << PORTSC_PLS_START) | PORTSC_LWS;
-printf("writing\n");
-print_portsc(i, temp);
-            XHCI_WRITE32(portsc, temp);
+            xhci_rh_set_pls(portsc, PORTSC_PLS_U3);
             xhci_wait_bits(portsc, PORTSC_PLS_MASK, PORTSC_PLS_U3 << PORTSC_PLS_START);
 printf("after wait\n");
 print_portsc(i, XHCI_READ32(portsc));
@@ -593,25 +596,33 @@ printf("resuming\n");
 
         // if enabled and in U3 state
         if ((temp & (PORTSC_PED | PORTSC_PLS_MASK)) == (PORTSC_PED | (PORTSC_PLS_U3 << PORTSC_PLS_START))) {
-            uint32_t new_pls;
-            int rh_index = xhci->rh_map[i];
-            if (xhci_rh_speeds[rh_index] == USB_SPEED_SUPER) {
-                new_pls = PORTSC_PLS_U0;
-            } else {
-                new_pls = PORTSC_PLS_RESUME;
-            }
-        
 printf("before\n");
 print_portsc(i, temp);
-            // Set U0 link state
-            temp = (temp & PORTSC_CONTROL_BITS & ~PORTSC_PLS_MASK) | (new_pls << PORTSC_PLS_START) | PORTSC_LWS;
-printf("writing\n");
-print_portsc(i, temp);
-            XHCI_WRITE32(portsc, temp);
-printf("after write\n");
+
+            int rh_index = xhci->rh_map[i];
+            if (xhci_rh_speeds[rh_index] != USB_SPEED_SUPER) {
+                // Set resume link state
+                xhci_rh_set_pls(portsc, PORTSC_PLS_RESUME);
+printf("after write resume\n");
 print_portsc(i, XHCI_READ32(portsc));
-            xhci_wait_bits(portsc, PORTSC_PLS_MASK, PORTSC_PLS_U0 << PORTSC_PLS_START);
-printf("after wait\n");
+
+                usleep(20 * 1000);
+            }
+printf("before U0\n");
+print_portsc(i, temp);
+            // Set U0 link state
+            xhci_rh_set_pls(portsc, PORTSC_PLS_U0);
+
+            usleep(20 * 1000);
+
+printf("after write U0\n");
+print_portsc(i, XHCI_READ32(portsc));
+            // wait for port link status change
+            xhci_wait_bits(portsc, PORTSC_PLC, PORTSC_PLC);
+            // acknowledge PLC
+            temp = XHCI_READ32(portsc);
+            XHCI_WRITE32(portsc, (temp & PORTSC_CONTROL_BITS) | PORTSC_PLC);
+printf("after PLC\n");
 print_portsc(i, XHCI_READ32(portsc));
         }
     }

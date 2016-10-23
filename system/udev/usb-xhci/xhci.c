@@ -302,7 +302,18 @@ mx_status_t xhci_suspend(xhci_t* xhci) {
 mx_status_t xhci_resume(xhci_t* xhci) {
     // do more stuff here
 
-    return xhci_rh_resume(xhci);
+    mx_status_t status = xhci_rh_resume(xhci);
+
+    for (uint32_t slot_id = 1; slot_id <= xhci->max_slots; slot_id++) {
+        xhci_slot_t* slot = &xhci->slots[slot_id];
+        if (slot->sc) {
+            for (int endpoint = 1; endpoint <= XHCI_NUM_EPS; endpoint++) {
+             XHCI_WRITE32(&xhci->doorbells[slot_id], endpoint);
+            }
+        }
+    }
+
+    return status;
 }
 
 void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t control_bits,
