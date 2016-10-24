@@ -156,6 +156,10 @@ static uint32_t DBG_reqid = 0x1;
 static union dwc_host_channel_interrupts channel_interrupts[NUM_HOST_CHANNELS];
 static completion_t channel_complete[NUM_HOST_CHANNELS];
 
+static mtx_t sofwatiers_mtx;
+static uint n_softwaiters = 0;
+static completion_t sof_waiters[NUM_HOST_CHANNELS];
+
 #define MANUFACTURER_STRING 1
 #define PRODUCT_STRING_2    2
 
@@ -719,6 +723,12 @@ static void dwc_handle_irq(void) {
         dwc_complete_root_port_status_txn();
     }
 
+    if (interrupts.sof_intr) {
+        for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
+            completion_signal(&sof_waiters[i]);
+        }
+    }
+
     if (interrupts.host_channel_intr) {
         uint32_t chintr = regs->host_channels_interrupt;
 
@@ -728,6 +738,7 @@ static void dwc_handle_irq(void) {
             }
         }
     }
+
 }
 
 // Thread to handle interrupts.
@@ -1135,7 +1146,7 @@ static void dwc_start_transfer(
     }
 
     if (dev->speed != USB_SPEED_HIGH) {
-        split_control.port_address = dev->port;
+        split_control.port_address = dev->port - 1;
         split_control.hub_address = dev->hub_address;
         split_control.split_enable = 1;
 
@@ -1169,6 +1180,48 @@ static void dwc_start_transfer(
     chanptr->transfer = transfer;
 
     dwc_start_transaction(chan, req);
+}
+
+static void await_sof_if_necessary(
+    uint channel,
+    dwc_usb_transfer_request_t* req,
+    dwc_usb_endpoint_t *ep
+) {
+    if (usb_ep_type(&ep->desc) == USB_ENDPOINT_INTERRUPT &&
+        !req->complete_split && ep->parent->speed != USB_SPEED_HIGH) {
+        mtx_lock(&sofwatiers_mtx);
+
+        if (n_softwaiters == 0) {
+            // If we're the first sof-waiter, enable the SOF interrupt.
+            union dwc_core_interrupts core_interrupt_mask =
+                regs->core_interrupt_mask;
+            core_interrupt_mask.sof_intr = 1;
+            regs->core_interrupt_mask = core_interrupt_mask;
+        }
+
+        n_softwaiters++;
+
+        mtx_unlock(&sofwatiers_mtx);
+        // Block until we get a sof interrupt.
+
+        completion_reset(&sof_waiters[channel]);
+        completion_wait(&sof_waiters[channel], MX_TIME_INFINITE);
+
+        mtx_lock(&sofwatiers_mtx);
+
+        n_softwaiters--;
+
+        if (n_softwaiters == 0) {
+            // If we're the last sof waiter, turn off the sof interrupt.
+            union dwc_core_interrupts core_interrupt_mask =
+                regs->core_interrupt_mask;
+            core_interrupt_mask.sof_intr = 0;
+            regs->core_interrupt_mask = core_interrupt_mask;
+        }
+
+        mtx_unlock(&sofwatiers_mtx);
+
+    }
 }
 
 static bool handle_normal_channel_halted(
@@ -1317,9 +1370,6 @@ static bool handle_channel_halted_interrupt(
 
         return true;
     } else if (interrupts.frame_overrun) {
-        printf("xfer completed with frame_overrun\n");
-        // dwc_start_transaction(channel, req);
-
         release_channel(channel);
         mtx_lock(&ep->pending_request_mtx);
         list_add_head(&ep->pending_requests, &req->node);
@@ -1327,13 +1377,9 @@ static bool handle_channel_halted_interrupt(
         completion_signal(&ep->request_pending_completion);
         return true;
     } else if (interrupts.nak_response_received) {
-        // Transfer needs to be deferred and retried after 
-        // printf("xfer completed with nak, Channel = %u\n", channel);
         // Wait a defined period of time
         uint8_t bInterval = ep->desc.bInterval;
         mx_time_t sleep_ns;
-
-        release_channel(channel);
 
         if (ep->parent->speed == USB_SPEED_HIGH) {
             sleep_ns = (1 << (bInterval - 1)) * 125000;
@@ -1342,6 +1388,10 @@ static bool handle_channel_halted_interrupt(
         }
 
         mx_nanosleep(sleep_ns);
+
+        await_sof_if_necessary(channel, req, ep);
+
+        release_channel(channel);
 
         // Requeue the transfer and signal the endpoint.
         mtx_lock(&ep->pending_request_mtx);
@@ -1355,6 +1405,7 @@ static bool handle_channel_halted_interrupt(
         }
 
         mx_nanosleep(MX_MSEC(1));
+        await_sof_if_necessary(channel, req, ep);
 
         dwc_start_transaction(channel, req);
         return false;
@@ -1565,6 +1616,7 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev) {
     // Initialize all the channel completions.
     for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
         channel_complete[i] = COMPLETION_INIT;
+        sof_waiters[i] = COMPLETION_INIT;
     }
 
     // We create a mock device at device_id = 0 for enumeration purposes.
