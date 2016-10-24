@@ -88,6 +88,8 @@ typedef struct dwc_usb_transfer_request {
 
     iotxn_t *txn;
 
+    uint32_t cspit_retries;
+
     // DEBUG
     uint32_t request_id;
 } dwc_usb_transfer_request_t;
@@ -249,7 +251,7 @@ static void complete_request(
     //     req->setuptxn->ops->release(req->setuptxn);
     // }
 
-    xprintf("Complete Request with Request ID = 0x%x\n", req->request_id);
+    xprintf("Complete Request with Request ID = 0x%x, status = %d\n", req->request_id, status);
 
     iotxn_t* txn = req->txn;
     txn->ops->complete(txn, status, length);
@@ -510,8 +512,6 @@ mx_status_t dwc_hub_device_added(mx_device_t* hci_device, uint32_t hub_address, 
     // bus until it is enumerated.
     printf("dwc usb device added hub_address = %u, port = %d, speed = %d\n",
             hub_address, port, speed);
-
-    assert(speed = USB_SPEED_HIGH);
 
     dwc_usb_t* dwc = dev_to_usb_dwc(hci_device);
 
@@ -1007,13 +1007,17 @@ static void dwc_start_transaction(
     union dwc_host_channel_interrupts interrupt_mask;
 
     chanptr->interrupt_mask.val = 0;
-    // chanptr->interrupts.val = 0xffffffff;
+    chanptr->interrupts.val = 0xffffffff;
 
     split_control = chanptr->split_control;
     split_control.complete_split = req->complete_split;
     chanptr->split_control = split_control;
 
     uint next_frame = (regs->host_frame_number & 0xffff) + 1;
+
+    if (!split_control.complete_split) {
+        req->cspit_retries = 0;
+    }
 
     characteristics = chanptr->characteristics;
     characteristics.odd_frame = next_frame & 1;
@@ -1137,6 +1141,7 @@ static void dwc_start_transfer(
 
         if (transfer.size > characteristics.max_packet_size) {
             transfer.size = characteristics.max_packet_size;
+            req->short_attempt = true;
         }
 
         if (dev->speed == USB_SPEED_LOW)
@@ -1145,9 +1150,6 @@ static void dwc_start_transfer(
 
     chanptr->dma_address = (uint32_t)(((uintptr_t)data) & 0xffffffff);
     assert(IS_WORD_ALIGNED(chanptr->dma_address));
-
-    if (dev->device_id == 3)
-        printf("dma_address = 0x%x\n", chanptr->dma_address);
 
     transfer.packet_count =
         DIV_ROUND_UP(transfer.size, characteristics.max_packet_size);
@@ -1169,7 +1171,7 @@ static void dwc_start_transfer(
     dwc_start_transaction(chan, req);
 }
 
-static void handle_normal_channel_halted(
+static bool handle_normal_channel_halted(
     uint channel,
     dwc_usb_transfer_request_t* req,
     dwc_usb_endpoint_t* ep,
@@ -1217,10 +1219,12 @@ static void handle_normal_channel_halted(
                 release_channel(channel);
 
                 complete_request(req, ERR_IO, 0);
+
+                return true;
             }
 
             if (req->short_attempt && req->bytes_queued == 0 &&
-                (usb_ep_type(&ep->desc) == USB_ENDPOINT_INTERRUPT)) {
+                (usb_ep_type(&ep->desc) != USB_ENDPOINT_INTERRUPT)) {
                 req->complete_split = false;
 
                 // TODO(gkalsi): If we move the transfer to a different channel
@@ -1234,12 +1238,16 @@ static void handle_normal_channel_halted(
                 mtx_unlock(&ep->pending_request_mtx);
                 completion_signal(&ep->request_pending_completion);
 
-                return;
+                return true;
             }
 
             if ((usb_ep_type(&ep->desc) == USB_ENDPOINT_CONTROL) &&
                 (req->ctrl_phase < CTRL_PHASE_STATUS)) {
                 req->complete_split = false;
+
+                if (req->ctrl_phase == CTRL_PHASE_SETUP) {
+                    req->bytes_transferred = 0;
+                }
 
                 req->ctrl_phase++;
 
@@ -1253,12 +1261,12 @@ static void handle_normal_channel_halted(
                 mtx_unlock(&ep->pending_request_mtx);
                 completion_signal(&ep->request_pending_completion);
 
-                return;
+                return true;
             }
 
             release_channel(channel); 
             complete_request(req, NO_ERROR, txn->length);
-            return;
+            return true;
         } else {
             if (chanptr->split_control.split_enable) {
                 req->complete_split = !req->complete_split;
@@ -1266,23 +1274,24 @@ static void handle_normal_channel_halted(
 
             // Restart the transaction.
             dwc_start_transaction(channel, req);
-            return;
+            return false;
         }
     } else {
         if (interrupts.ack_response_received &&
             chanptr->split_control.split_enable && !req->complete_split) {
-            // Restart the transaction.
+            req->complete_split = true;
             dwc_start_transaction(channel, req);
-            return;
+            return false;
         }
         else {
             release_channel(channel);
             complete_request(req, ERR_IO, 0);
+            return true;
         }
     }
 }
 
-static void handle_channel_halted_interrupt(
+static bool handle_channel_halted_interrupt(
     uint channel,
     dwc_usb_transfer_request_t* req,
     dwc_usb_endpoint_t* ep,
@@ -1306,7 +1315,7 @@ static void handle_channel_halted_interrupt(
         // Complete the request with a failure.
         complete_request(req, ERR_IO, 0);
 
-        return;
+        return true;
     } else if (interrupts.frame_overrun) {
         printf("xfer completed with frame_overrun\n");
         // dwc_start_transaction(channel, req);
@@ -1316,6 +1325,7 @@ static void handle_channel_halted_interrupt(
         list_add_head(&ep->pending_requests, &req->node);
         mtx_unlock(&ep->pending_request_mtx);
         completion_signal(&ep->request_pending_completion);
+        return true;
     } else if (interrupts.nak_response_received) {
         // Transfer needs to be deferred and retried after 
         // printf("xfer completed with nak, Channel = %u\n", channel);
@@ -1338,14 +1348,20 @@ static void handle_channel_halted_interrupt(
         list_add_head(&ep->pending_requests, &req->node);
         mtx_unlock(&ep->pending_request_mtx);
         completion_signal(&ep->request_pending_completion);
-
+        return true;
     } else if (interrupts.nyet_response_received) {
-        printf("xfer completed with nyet\n");
+        if (++req->cspit_retries >= 10) {
+            req->complete_split = false;
+        }
+
+        mx_nanosleep(MX_MSEC(1));
+
+        dwc_start_transaction(channel, req);
+        return false;
     } else {
         // Channel halted normally.
-        handle_normal_channel_halted(channel, req, ep, interrupts);
+        return handle_normal_channel_halted(channel, req, ep, interrupts);
     }
-
 }
 
 // There is one instance of this thread per Device Endpoint.
@@ -1407,7 +1423,6 @@ static int endpoint_request_scheduler_thread(void* arg) {
                 case CTRL_PHASE_DATA:
                     // The DATA phase doesn't care how many bytes the SETUP 
                     // phase transferred.
-                    req->bytes_transferred = 0;
                     dwc_start_transfer(channel, req, self);
                     break;
                 case CTRL_PHASE_STATUS:
@@ -1427,12 +1442,15 @@ static int endpoint_request_scheduler_thread(void* arg) {
         }
 
         // Wait for an interrupt on this channel.
-        union dwc_host_channel_interrupts interrupts = 
-            dwc_await_channel_complete(channel);
+        while (true) {
+            union dwc_host_channel_interrupts interrupts =
+                dwc_await_channel_complete(channel);
 
-        xprintf("Got interrupts = 0x%x, channel = %u\n", interrupts.val, channel);
+            xprintf("Got interrupts = 0x%x, channel = %u\n", interrupts.val, channel);
 
-        handle_channel_halted_interrupt(channel, req, self, interrupts);
+            if (handle_channel_halted_interrupt(channel, req, self, interrupts))
+                break;
+        }
     }
 
     return -1;
