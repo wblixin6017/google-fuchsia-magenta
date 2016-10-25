@@ -16,7 +16,7 @@
 #include "xhci-root-hub.h"
 #include "xhci-transfer.h"
 
-//#define TRACE 1
+#define TRACE 1
 #include "xhci-debug.h"
 
 uint8_t xhci_endpoint_index(uint8_t ep_address) {
@@ -290,6 +290,8 @@ void xhci_start(xhci_t* xhci) {
 void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t control_bits,
                        xhci_command_context_t* context) {
     // FIXME - check that command ring is not full?
+
+    xprintf("xhci_post_command %d\n", command);
 
     mtx_lock(&xhci->command_ring.mutex);
 

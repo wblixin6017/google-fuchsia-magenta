@@ -9,7 +9,7 @@
 #include "xhci-transfer.h"
 #include "xhci-util.h"
 
-//#define TRACE 1
+#define TRACE 1
 #include "xhci-debug.h"
 
 //#define TRACE_TRBS 1

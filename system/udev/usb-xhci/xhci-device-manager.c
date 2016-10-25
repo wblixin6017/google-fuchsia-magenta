@@ -14,7 +14,7 @@
 #include "xhci-root-hub.h"
 #include "xhci-util.h"
 
-//#define TRACE 1
+#define TRACE 1
 #include "xhci-debug.h"
 
 // list of devices pending result of enable slot command
@@ -140,10 +140,33 @@ static mx_status_t xhci_address_device(xhci_t* xhci, uint32_t slot_id, uint32_t 
     xhci_sync_command_t command;
     xhci_sync_command_init(&command);
     xhci_post_command(xhci, TRB_CMD_ADDRESS_DEVICE, xhci_virt_to_phys(xhci, (mx_vaddr_t)icc),
-                      (slot_id << TRB_SLOT_ID_START), &command.context);
+                      (slot_id << TRB_SLOT_ID_START) | TRB_BSR, &command.context);
     int cc = xhci_sync_command_wait(&command);
     if (cc == TRB_CC_SUCCESS) {
         transfer_ring->enabled = true;
+        return NO_ERROR;
+    } else {
+        printf("xhci_address_device failed cc: %d\n", cc);
+        return ERR_INTERNAL;
+    }
+}
+
+static mx_status_t xhci_address_device2(xhci_t* xhci, uint32_t slot_id) {
+    xprintf("xhci_address_device2 slot_id: %d \n", slot_id);
+
+    xhci_slot_t* slot = &xhci->slots[slot_id];
+    if (! slot->sc)
+        return ERR_BAD_STATE;
+
+    xhci_input_control_context_t* icc = (xhci_input_control_context_t*)&xhci->input_context[0 * xhci->context_size];
+
+    xhci_sync_command_t command;
+    xhci_sync_command_init(&command);
+    // TRB_BSR bit clear this time so we will execute a SET_ADDRESS transaction
+    xhci_post_command(xhci, TRB_CMD_ADDRESS_DEVICE, xhci_virt_to_phys(xhci, (mx_vaddr_t)icc),
+                      (slot_id << TRB_SLOT_ID_START), &command.context);
+    int cc = xhci_sync_command_wait(&command);
+    if (cc == TRB_CC_SUCCESS) {
         return NO_ERROR;
     } else {
         printf("xhci_address_device failed cc: %d\n", cc);
@@ -223,6 +246,7 @@ static mx_status_t xhci_handle_enumerate_device(xhci_t* xhci, uint32_t hub_addre
     memset(slot, 0, sizeof(*slot));
 
     result = xhci_address_device(xhci, slot_id, hub_address, port, speed);
+printf("xhci_address_device got %d\n", result);
     if (result != NO_ERROR) {
         goto disable_slot_exit;
     }
@@ -230,12 +254,13 @@ static mx_status_t xhci_handle_enumerate_device(xhci_t* xhci, uint32_t hub_addre
     // read first 8 bytes of device descriptor to fetch ep0 max packet size
     result = xhci_get_descriptor(xhci, slot_id, USB_TYPE_STANDARD, USB_DT_DEVICE << 8, 0,
                                  xhci->device_descriptor, 8);
+printf("xhci_get_descriptor got %d\n", result);
     if (result != 8) {
         printf("xhci_get_descriptor failed\n");
         goto disable_slot_exit;
     }
 
-    int mps = xhci->device_descriptor->bMaxPacketSize0;
+    uint8_t mps = xhci->device_descriptor->bMaxPacketSize0;
     // enforce correct max packet size for ep0
     switch (speed) {
         case USB_SPEED_LOW:
@@ -255,6 +280,14 @@ static mx_status_t xhci_handle_enumerate_device(xhci_t* xhci, uint32_t hub_addre
             break;
         default:
             break;
+    }
+
+    // Call address device again, this time with SET_ADDRESS enabled, and updated
+    // max packet size
+    result = xhci_address_device2(xhci, slot_id);
+printf("xhci_address_device2 got %d\n", result);
+    if (result != NO_ERROR) {
+        goto disable_slot_exit;
     }
 
     // update the max packet size in our device context
