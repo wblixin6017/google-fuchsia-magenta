@@ -255,7 +255,8 @@ static void complete_request(
     //     req->setuptxn->ops->release(req->setuptxn);
     // }
 
-    xprintf("Complete Request with Request ID = 0x%x, status = %d\n", req->request_id, status);
+    xprintf("Complete Request with Request ID = 0x%x, status = %d, length = %lu\n",
+            req->request_id, status, length);
 
     iotxn_t* txn = req->txn;
     txn->ops->complete(txn, status, length);
@@ -464,6 +465,8 @@ static size_t dwc_get_max_device_count(mx_device_t* device) {
 
 static mx_status_t dwc_enable_ep(mx_device_t* hci_device, uint32_t device_id,
                                   usb_endpoint_descriptor_t* ep_desc, bool enable) {
+    xprintf("dwc_enable_ep: device_id = %u, ep_addr = %u\n", device_id, ep_desc->bEndpointAddress);
+
     if (device_id == ROOT_HUB_DEVICE_ID) {
         // Nothing to be done for root hub.
         return NO_ERROR;
@@ -724,8 +727,10 @@ static void dwc_handle_irq(void) {
     }
 
     if (interrupts.sof_intr) {
-        for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
-            completion_signal(&sof_waiters[i]);
+        if ((regs->host_frame_number & 0x7) != 6) {
+            for (size_t i = 0; i < NUM_HOST_CHANNELS; i++) {
+                completion_signal(&sof_waiters[i]);
+            }
         }
     }
 
@@ -1036,7 +1041,6 @@ static void dwc_start_transaction(
     chanptr->characteristics = characteristics;
 
     interrupt_mask.val = 0;
-    
     interrupt_mask.channel_halted = 1;
     chanptr->interrupt_mask = interrupt_mask;
     regs->host_channels_interrupt_mask |= 1 << chan;
@@ -1070,7 +1074,7 @@ static void dwc_start_transfer(
     req->short_attempt = false;
 
     characteristics.max_packet_size = ep->desc.wMaxPacketSize;
-    characteristics.endpoint_number = ep->ep_address & 0xf;
+    characteristics.endpoint_number = ep->ep_address;
     characteristics.endpoint_type = usb_ep_type(&ep->desc);
     characteristics.device_address = dev->device_id;
     characteristics.packets_per_frame = 1;
@@ -1159,8 +1163,10 @@ static void dwc_start_transfer(
             characteristics.low_speed = 1;
     }
 
+    assert(IS_WORD_ALIGNED(data));
+    data = data ? data : (void*)0xffffff00;
     chanptr->dma_address = (uint32_t)(((uintptr_t)data) & 0xffffffff);
-    assert(IS_WORD_ALIGNED(chanptr->dma_address));
+    // assert(IS_WORD_ALIGNED(chanptr->dma_address));
 
     transfer.packet_count =
         DIV_ROUND_UP(transfer.size, characteristics.max_packet_size);
@@ -1242,7 +1248,7 @@ static bool handle_normal_channel_halted(
         union dwc_host_channel_characteristics characteristics =
                                             chanptr->characteristics;
         uint32_t max_packet_size = characteristics.max_packet_size;
-        bool is_dir_in = characteristics.endpoint_type == 1;
+        bool is_dir_in = characteristics.endpoint_direction == 1;
 
         if (is_dir_in) {
             bytes_transferred = req->bytes_queued - chanptr->transfer.size;
@@ -1276,15 +1282,15 @@ static bool handle_normal_channel_halted(
                 return true;
             }
 
+            // TODO(gkalsi): If we move the transfer to a different channel
+            // between reqeusts, then the chanptr no longer remembers the
+            // data pid. We may need to store it in the endpoint.
+            req->next_data_toggle = chanptr->transfer.packet_id;
+
             if (req->short_attempt && req->bytes_queued == 0 &&
                 (usb_ep_type(&ep->desc) != USB_ENDPOINT_INTERRUPT)) {
                 req->complete_split = false;
 
-                // TODO(gkalsi): If we move the transfer to a different channel
-                // between reqeusts, then the chanptr no longer remembers the
-                // data pid. We may need to store it in the endpoint.
-                req->next_data_toggle = chanptr->transfer.packet_id;
-                
                 // Requeue the request, don't release the channel.
                 mtx_lock(&ep->pending_request_mtx);
                 list_add_head(&ep->pending_requests, &req->node);
@@ -1318,7 +1324,7 @@ static bool handle_normal_channel_halted(
             }
 
             release_channel(channel); 
-            complete_request(req, NO_ERROR, txn->length);
+            complete_request(req, NO_ERROR, req->bytes_transferred);
             return true;
         } else {
             if (chanptr->split_control.split_enable) {
@@ -1360,7 +1366,10 @@ static bool handle_channel_halted_interrupt(
          chanptr->characteristics.endpoint_direction == 0)) {
         
         // There was an error on the bus.
-        printf("xfer failed with irq = 0x%x\n", interrupts.val);
+        if (!interrupts.stall_response_received) {
+            // It's totally okay for the EP to return stall so don't log it.
+            printf("xfer failed with irq = 0x%x\n", interrupts.val);
+        }
 
         // Release the channel used for this transaction.
         release_channel(channel);
@@ -1381,6 +1390,8 @@ static bool handle_channel_halted_interrupt(
         uint8_t bInterval = ep->desc.bInterval;
         mx_time_t sleep_ns;
 
+        release_channel(channel);
+
         if (ep->parent->speed == USB_SPEED_HIGH) {
             sleep_ns = (1 << (bInterval - 1)) * 125000;
         } else {
@@ -1391,8 +1402,6 @@ static bool handle_channel_halted_interrupt(
 
         await_sof_if_necessary(channel, req, ep);
 
-        release_channel(channel);
-
         // Requeue the transfer and signal the endpoint.
         mtx_lock(&ep->pending_request_mtx);
         list_add_head(&ep->pending_requests, &req->node);
@@ -1400,11 +1409,11 @@ static bool handle_channel_halted_interrupt(
         completion_signal(&ep->request_pending_completion);
         return true;
     } else if (interrupts.nyet_response_received) {
-        if (++req->cspit_retries >= 10) {
+        if (++req->cspit_retries >= 8) {
             req->complete_split = false;
         }
 
-        mx_nanosleep(MX_MSEC(1));
+        mx_nanosleep(125000);
         await_sof_if_necessary(channel, req, ep);
 
         dwc_start_transaction(channel, req);
@@ -1422,6 +1431,7 @@ static int endpoint_request_scheduler_thread(void* arg) {
 
     dwc_usb_endpoint_t* self = (dwc_usb_endpoint_t*)arg;
 
+    dwc_usb_data_toggle_t next_data_toggle = 0;
     uint channel = NUM_HOST_CHANNELS + 1;
     while (true) {
         mx_status_t res =
@@ -1477,7 +1487,6 @@ static int endpoint_request_scheduler_thread(void* arg) {
                     dwc_start_transfer(channel, req, self);
                     break;
                 case CTRL_PHASE_STATUS:
-                    req->bytes_transferred = 0;
                     dwc_start_transfer(channel, req, self);
                     break;
             }
@@ -1485,6 +1494,7 @@ static int endpoint_request_scheduler_thread(void* arg) {
             printf("Iscohronous endpoints are not implemented.\n");
             return -1;
         } else if (usb_ep_type(&self->desc) == USB_ENDPOINT_BULK) {
+            req->next_data_toggle = next_data_toggle;
             channel = acquire_channel_blocking();
             dwc_start_transfer(channel, req, self);
         } else if (usb_ep_type(&self->desc) == USB_ENDPOINT_INTERRUPT) {
@@ -1497,7 +1507,8 @@ static int endpoint_request_scheduler_thread(void* arg) {
             union dwc_host_channel_interrupts interrupts =
                 dwc_await_channel_complete(channel);
 
-            xprintf("Got interrupts = 0x%x, channel = %u\n", interrupts.val, channel);
+            volatile struct dwc_host_channel *chanptr = &regs->host_channels[channel];
+            next_data_toggle = chanptr->transfer.packet_id;
 
             if (handle_channel_halted_interrupt(channel, req, self, interrupts))
                 break;
