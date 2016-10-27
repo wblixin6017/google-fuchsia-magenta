@@ -29,7 +29,7 @@ mx_handle_t sys_vmo_create(uint64_t size) {
     LTRACEF("size %#" PRIx64 "\n", size);
 
     // create a vm object
-    mxtl::RefPtr<VmObject> vmo = VmObject::Create(0, size);
+    mxtl::RefPtr<VmObject> vmo = VmObject::Create(PMM_ALLOC_FLAG_ANY, size);
     if (!vmo)
         return ERR_NO_MEMORY;
 

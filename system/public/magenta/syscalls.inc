@@ -146,6 +146,7 @@ MAGENTA_SYSCALL_DEF(5, 5, 111, mx_status_t, mmap_device_memory, mx_handle_t hand
                     uint32_t len, mx_cache_policy_t cache_policy, USER_PTR(void *) out_vaddr)
 MAGENTA_SYSCALL_DEF(4, 4, 112, mx_status_t, alloc_device_memory, mx_handle_t handle, uint32_t len,
                     mx_paddr_t *out_paddr, void **out_vaddr)
+MAGENTA_SYSCALL_DEF(2, 2, 114, mx_status_t, alloc_contiguous_memory, mx_handle_t hrsrc, mx_size_t len, USER_PTR(mx_handle_t) out)
 
 MAGENTA_SYSCALL_DEF(2, 2, 160, mx_ssize_t, cprng_draw, USER_PTR(void) buffer, mx_size_t len);
 // TODO(security)

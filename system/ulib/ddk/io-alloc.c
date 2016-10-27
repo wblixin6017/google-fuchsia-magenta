@@ -20,6 +20,7 @@
 typedef struct io_block_header io_block_header_t;
 
 struct io_alloc {
+    mx_handle_t vmo_handle;
     mx_paddr_t phys;
     void* virt;
     size_t size;
@@ -43,21 +44,40 @@ io_alloc_t* io_alloc_init(size_t size) {
 
     mtx_init(&ioa->mutex, mtx_plain);
 
-    mx_paddr_t phys;
-    void* virt;
-    mx_status_t status = mx_alloc_device_memory(get_root_resource(), size, &phys, &virt);
-    if (status) {
-        printf("mx_alloc_device_memory failed %d\n", status);
+    mx_handle_t vmo_handle;
+    mx_status_t status = mx_alloc_contiguous_memory(get_root_resource(), size, &vmo_handle);
+    if (status != NO_ERROR) {
+        printf("mx_alloc_contiguous_memory failed %d\n", vmo_handle);
         free(ioa);
         return NULL;
     }
 
+    mx_vaddr_t virt;
+    status = mx_process_map_vm(mx_process_self(), vmo_handle, 0, size, &virt,
+                                           MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    if (status != NO_ERROR) {
+        printf("mx_process_map_vm failed %d\n", status);
+        mx_handle_close(vmo_handle);
+        free(ioa);
+        return NULL;
+    }
+
+    mx_paddr_t phys;
+    status = mx_vmo_op_range(vmo_handle, MX_VMO_OP_LOOKUP, 0, PAGE_SIZE, &phys, sizeof(phys));
+    if (status != NO_ERROR) {
+        printf("mx_vmo_op_range failed %d\n", status);
+        mx_handle_close(vmo_handle);
+        free(ioa);
+        return NULL;
+    }
+
+    ioa->vmo_handle = vmo_handle;
     ioa->phys = phys;
-    ioa->virt = virt;
+    ioa->virt = (void *)virt;
     ioa->size = size;
     ioa->virt_offset = (uintptr_t)virt - phys;
 
-    io_block_header_t* free_list = virt;
+    io_block_header_t* free_list = (void *)virt;
     free_list->size = size;
     free_list->ptr = NULL;
     ioa->free_list = free_list;
@@ -66,7 +86,7 @@ io_alloc_t* io_alloc_init(size_t size) {
 }
 
 void io_alloc_free(io_alloc_t* ioa) {
-    // FIXME (voydanoff) no way to release memory allocated via mx_alloc_device_memory
+    mx_handle_close(ioa->vmo_handle);
     free(ioa);
 }
 
