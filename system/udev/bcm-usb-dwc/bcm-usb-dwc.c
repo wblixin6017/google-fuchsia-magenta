@@ -251,18 +251,15 @@ static void complete_request(
     mx_status_t status,
     size_t length
 ) {
-    // if (req->setuptxn) {
-    //     req->setuptxn->ops->release(req->setuptxn);
-    // }
+    if (req->setuptxn) {
+        req->setuptxn->ops->release(req->setuptxn);
+    }
 
     xprintf("Complete Request with Request ID = 0x%x, status = %d, length = %lu\n",
             req->request_id, status, length);
 
     iotxn_t* txn = req->txn;
     txn->ops->complete(txn, status, length);
-
-    // TODO(gkalsi): Just for diagnostics.
-    memset(req, 0xC, sizeof(*req));
 
     free(req);
 }
@@ -370,7 +367,8 @@ static void dwc_iotxn_queue_hw(dwc_usb_t* dwc,
     uint8_t ep_address = protocol_data->ep_address;
 
     xprintf("Queue an iotxn on the hardware. device_id = %u, ep_address = %u "
-           "request id = 0x%x\n", device_id, ep_address, req->request_id);
+           "request id = 0x%x, length = 0x%lx\n", device_id, ep_address,
+           req->request_id, txn->length);
 
     assert(device_id < MAX_DEVICE_COUNT);
     dwc_usb_device_t* target_device = &usb_devices[device_id];
@@ -987,7 +985,6 @@ static uint acquire_channel_blocking(void) {
         mtx_unlock(&free_channel_mtx);
 
         if (next_channel >= 0) {
-            // printf("[A] Channel = %u\n", next_channel);
             return next_channel;
         }
 
@@ -1007,8 +1004,6 @@ static void release_channel(uint ch) {
     free_channels |= (1 << ch);
 
     mtx_unlock(&free_channel_mtx);
-
-    // printf("[R] Channel = %u\n", ch);
 
     completion_signal(&free_channel_completion);
 }
@@ -1165,8 +1160,9 @@ static void dwc_start_transfer(
 
     assert(IS_WORD_ALIGNED(data));
     data = data ? data : (void*)0xffffff00;
+    data += BCM_SDRAM_BUS_ADDR_BASE;
     chanptr->dma_address = (uint32_t)(((uintptr_t)data) & 0xffffffff);
-    // assert(IS_WORD_ALIGNED(chanptr->dma_address));
+    assert(IS_WORD_ALIGNED(chanptr->dma_address));
 
     transfer.packet_count =
         DIV_ROUND_UP(transfer.size, characteristics.max_packet_size);
@@ -1379,6 +1375,8 @@ static bool handle_channel_halted_interrupt(
 
         return true;
     } else if (interrupts.frame_overrun) {
+        printf("Requeue Frame Overrun on ep = %u, devid = %u\n",
+                ep->ep_address, ep->parent->device_id);
         release_channel(channel);
         mtx_lock(&ep->pending_request_mtx);
         list_add_head(&ep->pending_requests, &req->node);
@@ -1399,7 +1397,6 @@ static bool handle_channel_halted_interrupt(
         }
 
         mx_nanosleep(sleep_ns);
-
         await_sof_if_necessary(channel, req, ep);
 
         // Requeue the transfer and signal the endpoint.
@@ -1415,6 +1412,8 @@ static bool handle_channel_halted_interrupt(
 
         mx_nanosleep(125000);
         await_sof_if_necessary(channel, req, ep);
+        xprintf("Requeue NYET on ep = %u, devid = %u\n",
+                ep->ep_address, ep->parent->device_id);
 
         dwc_start_transaction(channel, req);
         return false;
