@@ -18,6 +18,7 @@ __BEGIN_CDECLS
 
 typedef struct {
     mx_handle_t pipe;
+    mx_handle_t notify; // event notification packets
     mtx_t lock;
     uint32_t next_req_id;
 } acpi_handle_t;
@@ -84,5 +85,8 @@ mx_status_t acpi_bst(acpi_handle_t* h, acpi_rsp_bst_t** response);
 //
 // NOTE: this is a temporary interface that will be removed soon.
 mx_status_t acpi_bif(acpi_handle_t* h, acpi_rsp_bif_t** response);
+
+// Opens a channel to an ACPI node for notifications.
+mx_status_t acpi_enable_event(acpi_handle_t* h, acpi_event_type_t mask);
 
 __END_CDECLS
