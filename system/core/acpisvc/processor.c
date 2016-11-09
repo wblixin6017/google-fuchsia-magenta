@@ -8,9 +8,11 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <threads.h>
 
 #include <acpica/acpi.h>
 #include <acpisvc/protocol.h>
+#include <magenta/listnode.h>
 #include <magenta/syscalls.h>
 #include <mxio/dispatcher.h>
 
@@ -24,7 +26,12 @@ typedef struct {
     // the namespace tree.
     ACPI_HANDLE ns_node;
     bool root_node;
+    mx_handle_t notify;    // send event packets on this handle
+    uint32_t event_mask;
+    struct list_node node; // all acpi_handle_ctx_t pointing to the same ACPI_HANDLE
 } acpi_handle_ctx_t;
+
+static mtx_t lock = MTX_INIT;
 
 // Command functions.  These should return an error only if the connection
 // should be aborted.  Otherwise they should send their own replies.
@@ -35,6 +42,8 @@ static mx_status_t cmd_s_state_transition(mx_handle_t h, acpi_handle_ctx_t* ctx,
 static mx_status_t cmd_ps0(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_bst(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_bif(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
+static mx_status_t cmd_set_event_handle(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
+static mx_status_t cmd_enable_event(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_new_connection(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 
 typedef mx_status_t (*cmd_handler_t)(mx_handle_t, acpi_handle_ctx_t*, void*);
@@ -46,6 +55,8 @@ static const cmd_handler_t cmd_table[] = {
         [ACPI_CMD_PS0] = cmd_ps0,
         [ACPI_CMD_BST] = cmd_bst,
         [ACPI_CMD_BIF] = cmd_bif,
+        [ACPI_CMD_SET_EVENT_HANDLE] = cmd_set_event_handle,
+        [ACPI_CMD_ENABLE_EVENT] = cmd_enable_event,
         [ACPI_CMD_NEW_CONNECTION] = cmd_new_connection,
 };
 
@@ -103,26 +114,41 @@ static mx_status_t dispatch(mx_handle_t h, void* _ctx, void* cookie) {
         goto cleanup;
     }
     if (num_handles > 0) {
-        if (hdr->cmd != ACPI_CMD_NEW_CONNECTION) {
+        if (hdr->cmd == ACPI_CMD_NEW_CONNECTION) {
+            acpi_handle_ctx_t* context = calloc(1, sizeof(acpi_handle_ctx_t));
+            if (context == NULL) {
+                status = ERR_NO_MEMORY;
+                goto cleanup;
+            }
+            context->root_node = ctx->root_node;
+            context->ns_node = ctx->ns_node;
+            mtx_lock(&lock);
+            list_add_after(&ctx->node, &context->node);
+            mtx_unlock(&lock);
+            if ((status = mxio_dispatcher_add(dispatcher, cmd_handle, context, NULL)) < 0) {
+                free(context);
+                goto cleanup;
+            }
+            acpi_rsp_hdr_t rsp;
+            rsp.status = NO_ERROR;
+            rsp.len = sizeof(rsp);
+            rsp.request_id = hdr->request_id;
+            return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
+        } else if (hdr->cmd == ACPI_CMD_SET_EVENT_HANDLE) {
+            if (ctx->notify != MX_HANDLE_INVALID) {
+                status = ERR_ALREADY_EXISTS;
+                goto cleanup;
+            }
+            ctx->notify = cmd_handle;
+            acpi_rsp_hdr_t rsp;
+            rsp.status = NO_ERROR;
+            rsp.len = sizeof(rsp);
+            rsp.request_id = hdr->request_id;
+            return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
+        } else {
             status = ERR_INVALID_ARGS;
             goto cleanup;
         }
-        acpi_handle_ctx_t* context = calloc(1, sizeof(acpi_handle_ctx_t));
-        if (context == NULL) {
-            status = ERR_NO_MEMORY;
-            goto cleanup;
-        }
-        context->root_node = ctx->root_node;
-        context->ns_node = ctx->ns_node;
-        if ((status = mxio_dispatcher_add(dispatcher, cmd_handle, context, NULL)) < 0) {
-            free(context);
-            goto cleanup;
-        }
-        acpi_rsp_hdr_t rsp;
-        rsp.status = NO_ERROR;
-        rsp.len = sizeof(rsp);
-        rsp.request_id = hdr->request_id;
-        return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
     }
     status = cmd_table[hdr->cmd](h, ctx, buf);
 
@@ -139,6 +165,7 @@ mx_status_t begin_processing(mx_handle_t acpi_root) {
     if (!root_context) {
         return ERR_NO_MEMORY;
     }
+    list_initialize(&root_context->node);
 
     mx_status_t status = ERR_BAD_STATE;
     ACPI_STATUS acpi_status = AcpiGetHandle(NULL,
@@ -346,6 +373,9 @@ static mx_status_t cmd_get_child_handle(mx_handle_t h, acpi_handle_ctx_t* ctx, v
     if (!child_ctx) {
         return send_error(h, cmd->hdr.request_id, ERR_NO_MEMORY);
     }
+    // TODO(yky, teisenbe): If multiple handles to the same device is created with
+    // get_child_handle, notify events will not work properly.
+    list_initialize(&child_ctx->node);
     child_ctx->ns_node = child_ns_node;
     child_ctx->root_node = false;
 
@@ -600,6 +630,86 @@ static mx_status_t cmd_bif(mx_handle_t h, acpi_handle_ctx_t* ctx, void* _cmd) {
     rsp.oem[sizeof(rsp.oem)-1] = '\0';
     ACPI_FREE(obj);
 
+    return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
+}
+
+static mx_status_t cmd_set_event_handle(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd) {
+    // if a handle was passed with this, as it should be
+    // this command would have been handled without calling this function
+    return ERR_INVALID_ARGS;
+}
+
+static void notify_handler(ACPI_HANDLE node, uint32_t value, void* _ctx) {
+    acpi_handle_ctx_t* ctx = _ctx;
+    if (ctx->ns_node != node) {
+        return;
+    }
+    acpi_event_type_t type;
+    if (value <= 0x7f) {
+        type = ACPI_EVENT_SYSTEM_NOTIFY;
+    } else if (value <= 0xff) {
+        type = ACPI_EVENT_DEVICE_NOTIFY;
+    } else {
+        return;
+    }
+    acpi_event_t evt = {
+        .version = 0,
+        .type = type,
+        .arg = value,
+    };
+    // notify every node pointing to the same device
+    struct list_node* self = &ctx->node;
+    mtx_lock(&lock);
+    for (;;) {
+        if (ctx->notify != MX_HANDLE_INVALID && (ctx->event_mask & type)) {
+            mx_channel_write(ctx->notify, 0, &evt, sizeof(evt), NULL, 0);
+        }
+        if (ctx->node.next != self) {
+            ctx = containerof(ctx->node.next, acpi_handle_ctx_t, node);
+        } else {
+            break;
+        }
+    }
+    mtx_unlock(&lock);
+}
+
+static mx_status_t cmd_enable_event(mx_handle_t h, acpi_handle_ctx_t* ctx, void* _cmd) {
+    acpi_cmd_enable_event_t* cmd = _cmd;
+    if (cmd->hdr.len != sizeof(*cmd)) {
+        return send_error(h, cmd->hdr.request_id, ERR_INVALID_ARGS);
+    }
+
+    if (ctx->notify == MX_HANDLE_INVALID) {
+        return send_error(h, cmd->hdr.request_id, ERR_BAD_STATE);
+    }
+
+    uint32_t type;
+    if ((cmd->type & ACPI_EVENT_SYSTEM_NOTIFY) && (cmd->type & ACPI_EVENT_DEVICE_NOTIFY)) {
+        type = ACPI_ALL_NOTIFY;
+    } else if (cmd->type & ACPI_EVENT_SYSTEM_NOTIFY) {
+        type = ACPI_SYSTEM_NOTIFY;
+    } else if (cmd->type & ACPI_EVENT_DEVICE_NOTIFY) {
+        type = ACPI_DEVICE_NOTIFY;
+    } else {
+        // FIXME(yky): other ACPI event types
+        return send_error(h, cmd->hdr.request_id, ERR_NOT_SUPPORTED);
+    }
+    ACPI_STATUS acpi_status = AcpiInstallNotifyHandler(ctx->ns_node, type, notify_handler, ctx);
+    if (acpi_status != AE_OK) {
+        return send_error(h, cmd->hdr.request_id, ERR_BAD_STATE);
+    }
+
+    mtx_lock(&lock);
+    ctx->event_mask |= type;
+    mtx_unlock(&lock);
+
+    acpi_rsp_enable_event_t rsp = {
+        .hdr = {
+            .status = NO_ERROR,
+            .len = sizeof(rsp),
+            .request_id = cmd->hdr.request_id,
+        },
+    };
     return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
 }
 
