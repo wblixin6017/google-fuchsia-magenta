@@ -6,6 +6,7 @@
 
 #include <magenta/compiler.h>
 #include <magenta/syscalls/pci.h>
+#include <magenta/syscalls/port.h>
 
 #define ACPI_MAX_REQUEST_SIZE 2048
 #define ACPI_MAX_RESPONSE_SIZE 2048
@@ -19,6 +20,8 @@ enum {
     ACPI_CMD_PS0 = 5,
     ACPI_CMD_BST = 6,
     ACPI_CMD_BIF = 7,
+    ACPI_CMD_SET_EVENT_HANDLE = 8,
+    ACPI_CMD_ENABLE_EVENT = 9,
 };
 
 typedef struct {
@@ -34,6 +37,18 @@ typedef struct {
     uint32_t len;
     uint32_t request_id; // ID value that was sent in cmd
 } __PACKED acpi_rsp_hdr_t;
+
+#define ACPI_EVENT_SYSTEM_NOTIFY (1 << 0)
+#define ACPI_EVENT_DEVICE_NOTIFY (1 << 1)
+// more: GPE, exception, SCI, Fixed
+
+typedef struct {
+    mx_packet_header_t hdr;
+    uint8_t version; // Protocol version, currently only 0 defined.
+    uint8_t reserved;
+    uint16_t type;   // event type
+    uint32_t arg;    // event argument
+} __PACKED acpi_event_packet_t;
 
 // List all children of the node associated with the handle used to issue the
 // request.
@@ -134,3 +149,11 @@ typedef struct {
     char type[32];
     char oem[32];
 } __PACKED acpi_rsp_bif_t;
+
+typedef struct {
+    acpi_cmd_hdr_t hdr;
+    uint16_t type;
+} __PACKED acpi_cmd_enable_event_t;
+typedef struct {
+    acpi_rsp_hdr_t hdr;
+} __PACKED acpi_rsp_enable_event_t;
