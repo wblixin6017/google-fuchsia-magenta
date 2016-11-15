@@ -87,8 +87,9 @@ public:
         return mx_object_get_info(get(), topic, topic_size, buffer, buffer_size, return_size);
     }
 
+    template <typename C>
     mx_status_t get_child(uint64_t koid, mx_rights_t rights,
-                          handle<T>* result) const {
+                          handle<C>* result) const {
         mx_handle_t h = MX_HANDLE_INVALID;
         mx_status_t status = mx_object_get_child(value_, koid, rights, &h);
         result->reset(h);
