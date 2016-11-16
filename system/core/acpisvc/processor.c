@@ -44,6 +44,7 @@ static mx_status_t cmd_bst(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_bif(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_set_event_handle(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_enable_event(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
+static mx_status_t cmd_lid(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_new_connection(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 
 typedef mx_status_t (*cmd_handler_t)(mx_handle_t, acpi_handle_ctx_t*, void*);
@@ -57,6 +58,7 @@ static const cmd_handler_t cmd_table[] = {
         [ACPI_CMD_BIF] = cmd_bif,
         [ACPI_CMD_SET_EVENT_HANDLE] = cmd_set_event_handle,
         [ACPI_CMD_ENABLE_EVENT] = cmd_enable_event,
+        [ACPI_CMD_LID] = cmd_lid,
         [ACPI_CMD_NEW_CONNECTION] = cmd_new_connection,
 };
 
@@ -709,6 +711,35 @@ static mx_status_t cmd_enable_event(mx_handle_t h, acpi_handle_ctx_t* ctx, void*
             .len = sizeof(rsp),
             .request_id = cmd->hdr.request_id,
         },
+    };
+    return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
+}
+
+static mx_status_t cmd_lid(mx_handle_t h, acpi_handle_ctx_t* ctx, void* _cmd) {
+    acpi_cmd_lid_t* cmd = _cmd;
+    if (cmd->hdr.len != sizeof(*cmd)) {\
+        return send_error(h, cmd->hdr.request_id, ERR_INVALID_ARGS);
+    }
+
+    ACPI_OBJECT obj = {
+        .Type = ACPI_TYPE_INTEGER,
+    };
+    ACPI_BUFFER buffer = {
+        .Length = sizeof(obj),
+        .Pointer = &obj,
+    };
+    ACPI_STATUS acpi_status = AcpiEvaluateObject(ctx->ns_node, (char*)"_LID", NULL, &buffer);
+    if (acpi_status != AE_OK) {
+        return send_error(h, cmd->hdr.request_id, ERR_NOT_FOUND);
+    }
+
+    acpi_rsp_lid_t rsp = {
+        .hdr = {
+            .status = NO_ERROR,
+            .len = sizeof(rsp),
+            .request_id = cmd->hdr.request_id,
+        },
+        .open = (obj.Integer.Value != 0),
     };
     return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
 }

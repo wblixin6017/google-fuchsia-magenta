@@ -21,6 +21,7 @@ enum {
     ACPI_CMD_BIF = 7,
     ACPI_CMD_SET_EVENT_HANDLE = 8,
     ACPI_CMD_ENABLE_EVENT = 9,
+    ACPI_CMD_LID = 10,
 };
 
 typedef struct {
@@ -156,3 +157,11 @@ typedef struct {
 typedef struct {
     acpi_rsp_hdr_t hdr;
 } __PACKED acpi_rsp_enable_event_t;
+
+typedef struct {
+    acpi_cmd_hdr_t hdr;
+} __PACKED acpi_cmd_lid_t;
+typedef struct {
+    acpi_rsp_hdr_t hdr;
+    uint32_t open;
+} __PACKED acpi_rsp_lid_t;

@@ -89,4 +89,9 @@ mx_status_t acpi_bif(acpi_handle_t* h, acpi_rsp_bif_t** response);
 // Opens a channel to an ACPI node for notifications.
 mx_status_t acpi_enable_event(acpi_handle_t* h, acpi_event_type_t mask);
 
+// Execute LID for an ACPI node
+//
+// NOTE: this is a temporary interface that will be removed soon.
+mx_status_t acpi_lid(acpi_handle_t* h, acpi_rsp_lid_t** response);
+
 __END_CDECLS

@@ -373,6 +373,28 @@ mx_status_t acpi_enable_event(acpi_handle_t* _h, acpi_event_type_t type) {
     return NO_ERROR;
 }
 
+mx_status_t acpi_lid(acpi_handle_t* h, acpi_rsp_lid_t** response) {
+    acpi_cmd_lid_t cmd = {
+        .hdr = {
+            .version = 0,
+            .cmd = ACPI_CMD_LID,
+            .len = sizeof(cmd),
+        },
+    };
+
+    acpi_rsp_lid_t* rsp;
+    size_t rsp_len;
+
+    mx_status_t status =
+        run_txn(h, &cmd, sizeof(cmd), (void**)&rsp, &rsp_len, 0, NULL, 0);
+    if (status != NO_ERROR) {
+        return status;
+    }
+
+    *response = rsp;
+    return NO_ERROR;
+}
+
 mx_handle_t acpi_clone_handle(acpi_handle_t* _h) {
     acpi_cmd_hdr_t cmd = {
         .version = 0,
