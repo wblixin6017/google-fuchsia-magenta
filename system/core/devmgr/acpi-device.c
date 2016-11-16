@@ -65,53 +65,69 @@ static mx_status_t acpi_get_child_handle_by_hid(acpi_handle_t* h, const char* hi
     return acpi_get_child_handle(h, name, child);
 }
 
+static mx_status_t acpi_init_child_device(mx_device_t* parent, mx_driver_t* drv, acpi_handle_t* h, const char* hid) {
+    acpi_device_t* dev = calloc(1, sizeof(acpi_device_t));
+
+    char name[4];
+    mx_status_t status = acpi_get_child_handle_by_hid(h, hid, &dev->handle, name);
+    if (status != NO_ERROR) {
+        printf("error getting battery handle %d\n", status);
+        free(dev);
+        return status;
+    }
+
+    memcpy(dev->hid, hid, 7);
+    device_init(&dev->device, drv, name, &acpi_device_proto);
+
+    dev->device.protocol_id = MX_PROTOCOL_ACPI;
+    dev->device.protocol_ops = &acpi_device_acpi_proto;
+
+    dev->device.props = calloc(2, sizeof(mx_device_prop_t));
+    dev->device.props[0].id = BIND_ACPI_HID_0_3;
+    dev->device.props[0].value = htobe32(*((uint32_t *)(hid)));
+    dev->device.props[1].id = BIND_ACPI_HID_4_7;
+    dev->device.props[1].value = htobe32(*((uint32_t *)(hid + 4)));
+    dev->device.prop_count = 2;
+
+    if ((status = device_add(&dev->device, parent)) != NO_ERROR) {
+        free(dev->device.props);
+        free(dev);
+    }
+    return status;
+}
+
+#define ACPI_HID_LID     "PNP0C0D"
 #define ACPI_HID_BATTERY "PNP0C0A"
 
 extern mx_handle_t devhost_get_hacpi(void);
 
 static mx_status_t acpi_bind(mx_driver_t* drv, mx_device_t* dev) {
-    // Find the battery device.
-    // TODO(yky,teisenbe) The battery device is in _SB.PCI0 on the acer. To be replaced by real
-    // acpi device publishing code.
+    // TODO(yky,teisenbe) Find the battery device and the lid device. To be replaced by
+    // acpi discovery.
     mx_handle_t hacpi = devhost_get_hacpi();
     if (hacpi <= 0) {
-        printf("no acpi root handle\n");
+        printf("acpi-bus: no acpi root handle\n");
         return ERR_NOT_SUPPORTED;
     }
 
     acpi_handle_t acpi_root, pcie_handle;
     acpi_handle_init(&acpi_root, hacpi);
 
+    if (acpi_init_child_device(dev, drv, &acpi_root, ACPI_HID_LID) == NO_ERROR) {
+        printf("acpi-bus: added lid device\n");
+    }
+
+    // TODO(yky,teisenbe) The battery device is in _SB.PCI0 on the acer.
     mx_status_t status = acpi_get_child_handle_by_hid(&acpi_root, "PNP0A08", &pcie_handle, NULL);
     if (status != NO_ERROR) {
-        printf("no pcie handle\n");
+        printf("acpi-bus: pcie device not found\n");
         acpi_handle_close(&acpi_root);
         return ERR_NOT_SUPPORTED;
     }
     acpi_handle_close(&acpi_root);
 
-    acpi_device_t* batt_dev = calloc(1, sizeof(acpi_device_t));
-    const char* hid = ACPI_HID_BATTERY;
-    char name[4];
-    status = acpi_get_child_handle_by_hid(&pcie_handle, hid, &batt_dev->handle, name);
-    if (status != NO_ERROR) {
-        printf("error getting battery handle %d\n", status);
-        free(batt_dev);
-    } else {
-        memcpy(batt_dev->hid, hid, 7);
-        device_init(&batt_dev->device, drv, name, &acpi_device_proto);
-
-        batt_dev->device.protocol_id = MX_PROTOCOL_ACPI;
-        batt_dev->device.protocol_ops = &acpi_device_acpi_proto;
-
-        batt_dev->device.props = calloc(2, sizeof(mx_device_prop_t));
-        batt_dev->device.props[0].id = BIND_ACPI_HID_0_3;
-        batt_dev->device.props[0].value = htobe32(*((uint32_t *)(hid)));
-        batt_dev->device.props[1].id = BIND_ACPI_HID_4_7;
-        batt_dev->device.props[1].value = htobe32(*((uint32_t *)(hid + 4)));
-        batt_dev->device.prop_count = 2;
-
-        device_add(&batt_dev->device, dev);
+    if (acpi_init_child_device(dev, drv, &pcie_handle, ACPI_HID_BATTERY) == NO_ERROR) {
+        printf("acpi-bus: added battery device\n");
     }
 
     acpi_handle_close(&pcie_handle);

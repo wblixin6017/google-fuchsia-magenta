@@ -42,6 +42,7 @@ static mx_status_t cmd_s_state_transition(mx_handle_t h, acpi_handle_ctx_t* ctx,
 static mx_status_t cmd_ps0(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_bst(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_bif(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
+static mx_status_t cmd_lid(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_set_event_handle(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_enable_event(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
 static mx_status_t cmd_new_connection(mx_handle_t h, acpi_handle_ctx_t* ctx, void* cmd);
@@ -55,6 +56,7 @@ static const cmd_handler_t cmd_table[] = {
         [ACPI_CMD_PS0] = cmd_ps0,
         [ACPI_CMD_BST] = cmd_bst,
         [ACPI_CMD_BIF] = cmd_bif,
+        [ACPI_CMD_LID] = cmd_lid,
         [ACPI_CMD_SET_EVENT_HANDLE] = cmd_set_event_handle,
         [ACPI_CMD_ENABLE_EVENT] = cmd_enable_event,
         [ACPI_CMD_NEW_CONNECTION] = cmd_new_connection,
@@ -630,6 +632,37 @@ static mx_status_t cmd_bif(mx_handle_t h, acpi_handle_ctx_t* ctx, void* _cmd) {
     rsp.oem[sizeof(rsp.oem)-1] = '\0';
     ACPI_FREE(obj);
 
+    return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
+}
+
+static mx_status_t cmd_lid(mx_handle_t h, acpi_handle_ctx_t* ctx, void* _cmd) {
+    acpi_cmd_lid_t* cmd = _cmd;
+    if (cmd->hdr.len != sizeof(*cmd)) {
+        return send_error(h, cmd->hdr.request_id, ERR_INVALID_ARGS);
+    }
+
+    ACPI_OBJECT object = {0};
+    ACPI_BUFFER buffer = {
+        .Length = sizeof(object),
+        .Pointer = &object,
+    };
+    ACPI_STATUS status = AcpiEvaluateObject(ctx->ns_node, (char*)"_LID", NULL, &buffer);
+    if (status != AE_OK) {
+        printf("Failed to find object's LID method\n");
+        return send_error(h, cmd->hdr.request_id, ERR_NOT_FOUND);
+    }
+    if (buffer.Length != sizeof(object) || object.Type != ACPI_TYPE_INTEGER) {
+        return send_error(h, cmd->hdr.request_id, ERR_INTERNAL);
+    }
+
+    acpi_rsp_lid_t rsp = {
+        .hdr = {
+            .status = NO_ERROR,
+            .len = sizeof(rsp),
+            .request_id = cmd->hdr.request_id,
+        },
+        .open = (object.Integer.Value != 0),
+    };
     return mx_channel_write(h, 0, &rsp, sizeof(rsp), NULL, 0);
 }
 
