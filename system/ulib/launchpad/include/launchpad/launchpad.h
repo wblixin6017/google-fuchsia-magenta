@@ -30,9 +30,11 @@ mx_status_t launchpad_create_with_jobs(mx_handle_t creation_job,
                                        const char* name,
                                        launchpad_t** result);
 
-// Create a new launchpad for a given existing process handle.
+// Create a new launchpad for a given existing process handle and a
+// VMAR in it.
 // On success, the launchpad takes ownership of the process handle.
 mx_status_t launchpad_create_with_process(mx_handle_t proc,
+                                          mx_handle_t vmar,
                                           launchpad_t** result);
 
 // Clean up a launchpad_t, freeing all resources stored therein.
