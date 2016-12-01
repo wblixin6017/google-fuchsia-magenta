@@ -144,12 +144,12 @@ mx_status_t sys_mmap_device_memory(mx_handle_t hrsrc, uintptr_t paddr, uint32_t 
     // Force the entries into the page tables
     status = mapping->MapRange(0, len, false);
     if (status < 0) {
-        mapping->Unmap();
+        mapping->Destroy();
         return status;
     }
 
     if (out_vaddr.copy_to_user(reinterpret_cast<void*>(mapping->base())) != NO_ERROR) {
-        mapping->Unmap();
+        mapping->Destroy();
         return ERR_INVALID_ARGS;
     }
 
