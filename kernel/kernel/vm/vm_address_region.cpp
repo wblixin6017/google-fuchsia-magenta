@@ -480,7 +480,7 @@ void VmAddressRegion::Activate() {
 status_t VmAddressRegion::Unmap(vaddr_t base, size_t size) {
     DEBUG_ASSERT(magic_ == kMagic);
 
-    if (!IS_PAGE_ALIGNED(base) || !IS_PAGE_ALIGNED(size)) {
+    if (size == 0 || !IS_PAGE_ALIGNED(base) || !IS_PAGE_ALIGNED(size)) {
         return ERR_INVALID_ARGS;
     }
 
