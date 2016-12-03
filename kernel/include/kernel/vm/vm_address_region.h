@@ -38,11 +38,14 @@
 // with execute permissions.  When on a VmMapping, controls whether or not the
 // mapping can gain this permission.
 #define VMAR_FLAG_CAN_MAP_EXECUTE (1 << 5)
+// Like VMAR_FLAG_SPECIFIC, but permits overwriting existing mappings.  This
+// flag will not overwrite through a subregion.
+#define VMAR_FLAG_SPECIFIC_OVERWRITE (1 << 6)
 
 // TODO(teisenbe): Remove this flag once DDK uses VMAR interface
 // This flag is a hint to try to create the mapping high up in the address
 // space.
-#define VMAR_FLAG_MAP_HIGH (1 << 6)
+#define VMAR_FLAG_MAP_HIGH (1 << 7)
 
 #define VMAR_CAN_RWX_FLAGS (VMAR_FLAG_CAN_MAP_READ | \
                             VMAR_FLAG_CAN_MAP_WRITE | \
@@ -247,6 +250,18 @@ private:
                                    mxtl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
                                    uint arch_mmu_flags, const char* name,
                                    mxtl::RefPtr<VmAddressRegionOrMapping>* out);
+
+    // Create a new VmMapping within this region, overwriting any existing
+    // mappings that are in the way.  If the range crosses a subregion, the call
+    // fails.
+    status_t OverwriteVmMapping(vaddr_t base, size_t size, uint32_t vmar_flags,
+                                mxtl::RefPtr<VmObject> vmo, uint64_t vmo_offset,
+                                uint arch_mmu_flags, const char* name,
+                                mxtl::RefPtr<VmAddressRegionOrMapping>* out);
+
+    // Implementation for Unmap() and OverwriteVmMapping() that does not hold
+    // the aspace lock.
+    status_t UnmapInternalLocked(vaddr_t base, size_t size, bool can_destroy_regions);
 
     // internal utilities for interacting with the children list
 
