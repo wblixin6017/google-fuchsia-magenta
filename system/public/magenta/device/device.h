@@ -58,6 +58,18 @@
 #define IOCTL_DEVICE_SYNC \
     IOCTL(IOCTL_KIND_DEFAULT, IOCTL_FAMILY_DEVICE, 7)
 
+// Create a transaction ring for scheduling transactions with the device
+//   in: index of txring to create (uint32_t)
+//   in: shared buffer size (uint32_t)
+//   in: entry count for transaction ring (uint32_t)
+//   out: shared buffer VMO handle
+//   out: transaction ring VMO handle
+#define IOCTL_DEVICE_TXRING_CREATE \
+    IOCTL(IOCTL_KIND_GET_TWO_HANDLES, IOCTL_FAMILY_DEVICE, 7)
+
+#define IOCTL_DEVICE_TXRING_RELEASE \
+    IOCTL(IOCTL_KIND_DEFAULT, IOCTL_FAMILY_DEVICE, 8)
+
 // Indicates if there's data available to read,
 // or room to write, or an error condition.
 #define DEVICE_SIGNAL_READABLE MX_USER_SIGNAL_0
@@ -87,3 +99,36 @@ IOCTL_WRAPPER(ioctl_device_debug_resume, IOCTL_DEVICE_DEBUG_RESUME);
 
 // ssize_t ioctl_device_sync(int fd);
 IOCTL_WRAPPER(ioctl_device_sync, IOCTL_DEVICE_SYNC);
+
+typedef struct {
+    uint32_t index;
+    uint32_t buf_size;
+    uint32_t txring_count;
+} mx_txring_create_in_args_t;
+
+typedef struct {
+    mx_handle_t buf_vmo;
+    mx_handle_t txring_vmo;
+} mx_txring_create_out_args_t;
+
+static inline mx_status_t ioctl_device_txring_create(int fd, uint32_t index, uint32_t buf_size,
+                                                     uint32_t txring_count,
+                                                     mx_handle_t* out_buf_vmo,
+                                                     mx_handle_t* out_txring_vmo) {
+    mx_txring_create_in_args_t in_args;
+    mx_txring_create_out_args_t out_args;
+    in_args.index = index;
+    in_args.buf_size = buf_size;
+    in_args.txring_count = txring_count;
+
+    ssize_t result = mxio_ioctl(fd, IOCTL_DEVICE_TXRING_CREATE, &in_args, sizeof(in_args),
+                                &out_args, sizeof(out_args));
+
+    if (result < 0) return result;
+    *out_buf_vmo = out_args.buf_vmo;
+    *out_txring_vmo = out_args.txring_vmo;
+    return 0;
+}
+
+// ssize_t ioctl_device_txring_release(int fd, uint32_t index);
+IOCTL_WRAPPER_IN(ioctl_device_txring_release, IOCTL_DEVICE_TXRING_RELEASE, uint32_t);
