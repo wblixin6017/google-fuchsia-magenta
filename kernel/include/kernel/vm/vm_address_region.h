@@ -203,6 +203,11 @@ public:
     // the range, Unmap() will fail.
     status_t Unmap(vaddr_t base, size_t size);
 
+    // Change protections on a subset of the region of memory in the containing
+    // address space.  If the requested range overlaps with a subregion,
+    // Protect() will fail.
+    status_t Protect(vaddr_t base, size_t size, uint arch_mmu_flags);
+
     bool is_mapping() const override { return false; }
 
     void Dump(uint depth) const override;
@@ -304,8 +309,9 @@ public:
 
     // Change access permissions for this mapping.  It is an error to specify a
     // caching mode in the flags.  This will persist the caching mode the
-    // mapping was created with.
-    status_t Protect(uint arch_mmu_flags);
+    // mapping was created with.  If a subrange of the mapping is specified, the
+    // mapping may be split.
+    status_t Protect(vaddr_t base, size_t size, uint arch_mmu_flags);
 
     bool is_mapping() const override { return true; }
 
@@ -342,6 +348,9 @@ private:
     // Implementation for Unmap().  This does not acquire the aspace lock, and
     // supports partial unmapping.
     status_t UnmapLocked(vaddr_t base, size_t size);
+
+    // Implementation for Protect().  This does not acquire the aspace lock.
+    status_t ProtectLocked(vaddr_t base, size_t size, uint arch_mmu_flags);
 
     // Version of AllocatedPages() that does not acquire the aspace lock
     size_t AllocatedPagesLocked() const override;

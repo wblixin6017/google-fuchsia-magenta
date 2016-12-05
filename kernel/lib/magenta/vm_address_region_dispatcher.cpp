@@ -202,29 +202,26 @@ mx_status_t VmAddressRegionDispatcher::Protect(vaddr_t base, size_t len, uint32_
     if (vmar_flags)
         return ERR_INVALID_ARGS;
 
-    mxtl::RefPtr<VmMapping> mapping(nullptr);
-    {
-        mxtl::RefPtr<VmAddressRegionOrMapping> child = vmar_->FindRegion(base);
-        if (!child) {
+    // TODO(teisenbe): Remove this when len=0 compatibility is no longer
+    // necessary
+    if (len == 0) {
+        mxtl::RefPtr<VmMapping> mapping(nullptr);
+        {
+            mxtl::RefPtr<VmAddressRegionOrMapping> child = vmar_->FindRegion(base);
+            if (!child) {
+                return ERR_NOT_FOUND;
+            }
+            mapping = child->as_vm_mapping();
+        }
+
+        if (!mapping) {
             return ERR_NOT_FOUND;
         }
-        mapping = child->as_vm_mapping();
+
+        return mapping->Protect(mapping->base(), mapping->size(), arch_mmu_flags);
     }
 
-    if (!mapping) {
-        return ERR_NOT_FOUND;
-    }
-
-    // For now, require that the request be for an entire VmMapping.
-    // Additionally, special case len=0 to mean the whole region.
-    // TODO(teisenbe): Remove this
-    if (len != 0) {
-        if (mapping->base() != base || mapping->size() != len) {
-            return ERR_INVALID_ARGS;
-        }
-    }
-
-    return mapping->Protect(arch_mmu_flags);
+    return vmar_->Protect(base, len, arch_mmu_flags);
 }
 
 mx_status_t VmAddressRegionDispatcher::Unmap(vaddr_t base, size_t len) {
