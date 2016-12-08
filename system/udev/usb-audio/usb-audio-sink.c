@@ -4,6 +4,7 @@
 
 #include <ddk/completion.h>
 #include <ddk/device.h>
+#include <ddk/txring.h>
 #include <ddk/common/usb.h>
 #include <magenta/device/audio.h>
 #include <magenta/device/usb.h>
@@ -63,6 +64,7 @@ typedef struct {
     // the last signals we reported
     mx_signals_t signals;
 
+    txring_t txring;
 } usb_audio_sink_t;
 #define get_usb_audio_sink(dev) containerof(dev, usb_audio_sink_t, device)
 
@@ -278,11 +280,89 @@ out:
     return status;
 }
 
+static int usb_audio_sink_txring_thread(void* arg) {
+    usb_audio_sink_t* sink = (usb_audio_sink_t *)arg;
+    txring_t* txring = &sink->txring;
+    mx_handle_t txring_vmo = txring->txring_vmo;
+    uint8_t* buffer = txring->buffer;
+    mx_txring_entry_t* ring = txring->ring;
+    int index = 0;
+    int count = txring->txring_count;
+
+    while (1) {
+        mx_txring_entry_t* entry = &ring[index];
+        if (entry->flags & MX_TXRING_QUEUED) {
+            // TODO (voydanoff) sanity check offset and length
+            // write the data
+            entry->status = usb_audio_sink_write(&sink->device, &buffer[entry->data_offset], entry->data_size, 0);
+            entry->flags &= ~MX_TXRING_QUEUED;
+            mx_object_signal(txring_vmo, 0, MX_TXRING_SIGNAL_COMPLETE);
+
+            index++;
+            if (index == count) index = 0;
+        } else {
+            // wait for next buffer to be queued
+            mx_handle_wait_one(txring_vmo, MX_TXRING_SIGNAL_QUEUE, MX_TIME_INFINITE, NULL);
+            // clear the signal
+            mx_object_signal(txring_vmo, MX_TXRING_SIGNAL_QUEUE, 0);
+        }
+    }
+
+    return 0;
+}
+
+static mx_status_t usb_audio_sink_txring_create(mx_device_t* dev, uint32_t index,
+                                                uint32_t buf_size, uint32_t txring_count,
+                                                mx_handle_t* out_buf_vmo,
+                                                mx_handle_t* out_txring_vmo) {
+    usb_audio_sink_t* sink = get_usb_audio_sink(dev);
+    if (index != 0) return ERR_INVALID_ARGS;
+
+    mx_status_t status = txring_init(&sink->txring, buf_size, txring_count, false);
+    if (status < 0) return status;
+
+    // returning handles via ioctl consumes them, so make copies
+    mx_handle_t buf_copy, txring_copy;
+    status = mx_handle_duplicate(sink->txring.buffer_vmo, MX_RIGHT_SAME_RIGHTS, &buf_copy);
+    if (status < 0) {
+        txring_release(&sink->txring);
+        return status;
+    }
+    status = mx_handle_duplicate(sink->txring.txring_vmo, MX_RIGHT_SAME_RIGHTS, &txring_copy);
+    if (status < 0) {
+        mx_handle_close(buf_copy);
+        txring_release(&sink->txring);
+        return status;
+    }
+
+    *out_buf_vmo = buf_copy;
+    *out_txring_vmo = txring_copy;
+
+    // start txring thread
+    thrd_t thread;
+    thrd_create_with_name(&thread, usb_audio_sink_txring_thread, sink,
+                          "usb_audio_sink_txring_thread");
+    thrd_detach(thread);
+
+    return NO_ERROR;
+}
+
+static mx_status_t usb_audio_sink_txring_release(mx_device_t* dev, uint32_t index) {
+    usb_audio_sink_t* sink = get_usb_audio_sink(dev);
+
+    if (index != 0) return ERR_INVALID_ARGS;
+    txring_release(&sink->txring);
+    return NO_ERROR;
+}
+
 static ssize_t usb_audio_sink_ioctl(mx_device_t* dev, uint32_t op, const void* in_buf,
                                     size_t in_len, void* out_buf, size_t out_len) {
     usb_audio_sink_t* sink = get_usb_audio_sink(dev);
 
     switch (op) {
+    // glue for ioctl_txring_create and ioctl_txring_release
+    IOCTL_TXRING_GLUE(dev, usb_audio_sink_txring_create, usb_audio_sink_txring_release)
+
     case IOCTL_AUDIO_GET_DEVICE_TYPE: {
         int* reply = out_buf;
         if (out_len < sizeof(*reply)) return ERR_BUFFER_TOO_SMALL;

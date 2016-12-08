@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include <magenta/device/audio.h>
+#include <magenta/device/device.h>
+#include <magenta/device/txring.h>
 #include <mxio/io.h>
 #include <dirent.h>
 #include <fcntl.h>
@@ -18,149 +20,103 @@
 
 #include "wav.h"
 
-
 #define DEV_AUDIO   "/dev/class/audio"
 
 #define BUFFER_COUNT 2
 #define BUFFER_SIZE 16384
 
-#define BUFFER_EMPTY 0
-#define BUFFER_BUSY 1
-#define BUFFER_FULL 2
 
-static mtx_t mutex = MTX_INIT;
-static cnd_t empty_cond = CND_INIT;
-static cnd_t full_cond = CND_INIT;
-
-static uint8_t buffers[BUFFER_SIZE * BUFFER_COUNT];
-static int buffer_states[BUFFER_COUNT];
-static int buffer_sizes[BUFFER_COUNT];
-static int empty_index = 0;
-static int full_index = -1;
-static volatile bool file_done;
-
-static int get_empty(void) {
-    int index, other;
-
-    mtx_lock(&mutex);
-
-    while (empty_index == -1)
-        cnd_wait(&empty_cond, &mutex);
-
-    index = empty_index;
-    other = (index + 1) % BUFFER_COUNT;
-    buffer_states[index] = BUFFER_BUSY;
-    if (buffer_states[other] == BUFFER_EMPTY)
-        empty_index = other;
-    else
-        empty_index = -1;
-
-    mtx_unlock(&mutex);
-    return index;
-}
-
-static void put_empty(int index) {
-    mtx_lock(&mutex);
-
-    buffer_states[index] = BUFFER_EMPTY;
-    if (empty_index == -1) {
-        empty_index = index;
-        cnd_signal(&empty_cond);
-    }
-
-    mtx_unlock(&mutex);
-}
-
-static int get_full(void) {
-    int index, other;
-
-    mtx_lock(&mutex);
-
-    if (file_done) {
-        mtx_unlock(&mutex);
-        return -1;
-    }
-
-    while (full_index == -1)
-        cnd_wait(&full_cond, &mutex);
-
-    index = full_index;
-    other = (index == 0 ? 1 : 0);
-    buffer_states[index] = BUFFER_BUSY;
-    if (buffer_states[other] == BUFFER_FULL)
-        full_index = other;
-    else
-        full_index = -1;
-
-    mtx_unlock(&mutex);
-    return index;
-}
-
-static void put_full(int index) {
-    mtx_lock(&mutex);
-
-    buffer_states[index] = BUFFER_FULL;
-    if (full_index == -1) {
-        full_index = index;
-        cnd_signal(&full_cond);
-    }
-
-    mtx_unlock(&mutex);
-}
-
-static void set_done(void) {
-    mtx_lock(&mutex);
-
-    file_done = true;
-    cnd_signal(&full_cond);
-    mtx_unlock(&mutex);
-}
-
-static int file_read_thread(void* arg) {
-    int fd = (int)(uintptr_t)arg;
-
-    while (!file_done) {
-        int index = get_empty();
-        uint8_t* buffer = &buffers[index * BUFFER_SIZE];
-        int count = read(fd, buffer, BUFFER_SIZE);
-        if (count <= 0) {
-            set_done();
-            break;
-        }
-        buffer_sizes[index] = count;
-        put_full(index);
-    }
-
-    return 0;
-}
 static int do_play(int src_fd, int dest_fd, uint32_t sample_rate)
 {
-    int ret = ioctl_audio_set_sample_rate(dest_fd, &sample_rate);
-    if (ret != NO_ERROR) {
+    mx_status_t status = ioctl_audio_set_sample_rate(dest_fd, &sample_rate);
+    if (status != NO_ERROR) {
         printf("sample rate %d not supported\n", sample_rate);
-        return ret;
+        return status;
     }
+
+    mx_handle_t buffer_vmo = MX_HANDLE_INVALID;
+    mx_handle_t txring_vmo = MX_HANDLE_INVALID;
+    status = ioctl_device_txring_create(dest_fd, 0, BUFFER_SIZE * BUFFER_COUNT, BUFFER_COUNT,
+                                        &buffer_vmo, &txring_vmo);
+    if (status != NO_ERROR) {
+        printf("ioctl_device_txring_create failed: %d\n", status);
+        return status;
+    }
+
+    uint8_t* buffer = NULL;
+    mx_txring_entry_t* ring = NULL;
+    status = mx_process_map_vm(mx_process_self(), buffer_vmo, 0, BUFFER_SIZE * BUFFER_COUNT,
+                               (uintptr_t *)&buffer, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    if (status < 0) {
+        printf("failed to map buffer VMO: %d\n", status);
+        goto out;
+    }
+    status = mx_process_map_vm(mx_process_self(), txring_vmo, 0, sizeof(*ring) * BUFFER_COUNT,
+                               (uintptr_t *)&ring, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    if (status < 0) {
+        printf("failed to txring VMO: %d\n", status);
+        goto out;
+    }
+
     ioctl_audio_start(dest_fd);
 
-    thrd_t thread;
-    thrd_create_with_name(&thread, file_read_thread, (void *)(uintptr_t)src_fd, "file_read_thread");
-    thrd_detach(thread);
+    int index = 0;
+    while (1) {
+        mx_txring_entry_t* entry = &ring[index];
 
-    while (ret == 0) {
-        int index = get_full();
-        if (index < 0) break;
-        uint8_t* buffer = &buffers[index * BUFFER_SIZE];
-        int buffer_size = buffer_sizes[index];
+        if ((entry->flags & MX_TXRING_QUEUED) == 0) {
+            // check status from previous transaction
+            // if this entry has never been used, status should be zero
+            status = entry->status;
+            if (status < 0) {
+                printf("driver returned status %d\n", status);
+                break;
+            }
 
-        if (write(dest_fd, buffer, buffer_size) != buffer_size) {
-            ret = -1;
+            // fill and queue a buffer
+            uint32_t offset = BUFFER_SIZE * index;
+            int count = read(src_fd, &buffer[offset], BUFFER_SIZE);
+            if (count <= 0) {
+                break;
+            }
+
+            entry->data_size = count;
+            entry->data_offset = offset;
+            entry->flags |= MX_TXRING_QUEUED;
+            mx_object_signal(txring_vmo, 0, MX_TXRING_SIGNAL_QUEUE);
+
+            index++;
+            if (index == BUFFER_COUNT) index = 0;
+        } else {
+            // buffers are all full - block for one to complete
+            mx_handle_wait_one(txring_vmo, MX_TXRING_SIGNAL_COMPLETE, MX_TIME_INFINITE, NULL);
+            // clear the signal
+            mx_object_signal(txring_vmo, MX_TXRING_SIGNAL_COMPLETE, 0);            
         }
-
-        put_empty(index);
     }
+
     ioctl_audio_stop(dest_fd);
 
-    return ret;
+    // wait for all pending transactions to complete before calling ioctl_device_txring_release
+    for (index = 0; index < BUFFER_COUNT; index++) {
+         mx_txring_entry_t* entry = &ring[index];
+
+        while (entry->flags & MX_TXRING_QUEUED) {
+            mx_handle_wait_one(txring_vmo, MX_TXRING_SIGNAL_COMPLETE, MX_TIME_INFINITE, NULL);
+            mx_object_signal(txring_vmo, MX_TXRING_SIGNAL_COMPLETE, 0); 
+        }           
+    }
+
+out:
+    if (buffer) {
+        mx_process_unmap_vm(buffer_vmo, (uintptr_t)buffer, BUFFER_SIZE * BUFFER_COUNT);
+    }
+    if (ring) {
+        mx_process_unmap_vm(txring_vmo, (uintptr_t)ring, sizeof(*ring) * BUFFER_COUNT);
+    }
+    uint32_t txring_index = 0;
+    ioctl_device_txring_release(dest_fd, &txring_index);
+    return status;
 }
 
 static int open_sink(void) {
@@ -222,11 +178,6 @@ static int play_file(const char* path, int dest_fd) {
         fprintf(stderr, "Error: '%s' is not a riff/wave file\n", path);
         return -1;
     }
-
-   for (int i = 0; i < BUFFER_COUNT; i++) {
-        buffer_states[i] = BUFFER_EMPTY;
-    }
-    file_done = false;
 
     do {
         read(src_fd, &chunk_header, sizeof(chunk_header));
