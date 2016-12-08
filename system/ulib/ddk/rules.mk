@@ -17,6 +17,7 @@ MODULE_SRCS += \
     $(LOCAL_DIR)/io-alloc.c \
     $(LOCAL_DIR)/io-buffer.c \
     $(LOCAL_DIR)/iotxn.c \
+    $(LOCAL_DIR)/txring.c \
 
 MODULE_STATIC_LIBS := ulib/hexdump
 
