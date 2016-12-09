@@ -8,6 +8,7 @@
 
 #include <arch/mmu.h>
 #include <assert.h>
+#include <lib/crypto/prng.h>
 #include <kernel/mutex.h>
 #include <kernel/vm.h>
 #include <kernel/vm/vm_address_region.h>
@@ -89,6 +90,8 @@ protected:
     friend class VmMapping;
     mutex_t& lock() { return lock_; }
 
+    void AslrDrawLocked(uint8_t* buf, int len);
+
 private:
     // can only be constructed via factory
     VmAspace(vaddr_t base, size_t size, uint32_t flags, const char* name);
@@ -120,6 +123,14 @@ private:
     // root of virtual address space
     // TODO(teisenbe): maybe embed this
     mxtl::RefPtr<VmAddressRegion> root_vmar_;
+
+    // PRNG used by VMARs for address choices.  We record the seed to enable
+    // reproducible debugging.
+    crypto::PRNG aslr_prng_;
+    // TODO(teisenbe): Reduce the size of this to 16 after updating crypto::PRNG
+    // to allow it
+    uint8_t aslr_seed_[32];
+    bool aslr_seeded_ = false;
 
     // architecturally specific part of the aspace
     arch_aspace_t arch_aspace_ = {};
