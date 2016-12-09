@@ -161,6 +161,7 @@ protected:
     // pointer back to our parent region (nullptr if root or destroyed)
     VmAddressRegion* parent_;
 
+    // utility so WAVL tree can find the intrusive node for the child list
     struct WAVLTreeTraits {
         static mxtl::WAVLTreeNodeState<mxtl::RefPtr<VmAddressRegionOrMapping>, bool>& node_state(VmAddressRegionOrMapping& obj) {
             return obj.subregion_list_node_;
@@ -210,7 +211,6 @@ public:
     size_t AllocatedPages() const override;
     void Dump(uint depth) const override;
     status_t PageFault(vaddr_t va, uint pf_flags) override;
-
 protected:
     static const uint32_t kMagic = 0x564d4152; // VMAR
 
@@ -226,7 +226,6 @@ protected:
     ~VmAddressRegion() override;
 
 private:
-    // utility so WAVL tree can find the intrusive node for the child list
     using ChildList = mxtl::WAVLTree<vaddr_t, mxtl::RefPtr<VmAddressRegionOrMapping>,
                                      mxtl::DefaultKeyedObjectTraits<vaddr_t, VmAddressRegionOrMapping>,
                                      WAVLTreeTraits>;
@@ -278,8 +277,10 @@ private:
                         size_t region_size, size_t min_gap, uint arch_mmu_flags);
 
     // search for a spot to allocate for a region of a given size
-    vaddr_t AllocSpotLocked(vaddr_t base, size_t size, uint8_t align_pow2,
-                            size_t min_alloc_gap, uint arch_mmu_flags);
+    vaddr_t AllocSpotLocked(size_t size, uint8_t align_pow2, uint arch_mmu_flags);
+
+    // Allocators
+    vaddr_t LinearRegionAllocatorLocked(size_t size, uint8_t align_pow2, uint arch_mmu_flags);
 
     // list of subregions, indexed by base address
     ChildList subregions_;
