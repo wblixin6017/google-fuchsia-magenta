@@ -282,6 +282,8 @@ private:
     vaddr_t LinearRegionAllocatorLocked(size_t size, uint8_t align_pow2, uint arch_mmu_flags);
     vaddr_t NonCompactRandomizedRegionAllocatorLocked(size_t size, uint8_t align_pow2,
                                                       uint arch_mmu_flags);
+    vaddr_t CompactRandomizedRegionAllocatorLocked(size_t size, uint8_t align_pow2,
+                                                   uint arch_mmu_flags);
 
     // list of subregions, indexed by base address
     ChildList subregions_;
