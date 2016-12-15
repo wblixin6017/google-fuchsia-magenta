@@ -544,6 +544,16 @@ static int arm64_mmu_protect_pt(vaddr_t vaddr_in, vaddr_t vaddr_rel_in,
                 goto err;
             }
         } else if (pte) {
+            if ((pte & MMU_PTE_DESCRIPTOR_MASK) == MMU_PTE_L012_DESCRIPTOR_BLOCK) {
+                LTRACEF("found block pte, vaddr_rem %#" PRIxPTR " chunk_size %#zx\n", vaddr_rem, chunk_size);
+                if ((vaddr_rem != 0) || chunk_size != block_size) {
+                    // TODO: split page here
+                    //panic("arm64 mmu protect asked to split large page (shift %u) that maps %#" PRIxPTR "\n",
+                    //        index_shift, vaddr);
+                }
+            }
+
+            LTRACEF("found pte, chunk_size %#zx\n", chunk_size);
             pte = (pte & ~MMU_PTE_PERMISSION_MASK) | attrs;
             LTRACEF("pte %p[%#" PRIxPTR "] = %#" PRIx64 "\n",
                     page_table, index, pte);
