@@ -148,7 +148,7 @@ mx_status_t VmObjectDispatcher::Map(mxtl::RefPtr<VmAspace> aspace, uint32_t vmo_
         arch_mmu_flags |= ARCH_MMU_FLAG_PERM_EXECUTE;
     }
     if (flags & MX_VM_FLAG_DMA) {
-#if ARCH_X86_64
+#if ARCH_X86_64 || ARCH_ARM64
         arch_mmu_flags |= ARCH_MMU_FLAG_CACHED;
 #else
 // for now assume other architectures require uncached device memory
