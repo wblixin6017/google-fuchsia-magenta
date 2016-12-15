@@ -151,6 +151,10 @@ void vm_init_postheap(uint level) {
 
     for (uint i = 0; i < countof(regions); ++i) {
         temp_region* region = &regions[i];
+
+        LTRACEF("creating region '%s' base %#" PRIxPTR " size %#" PRIxPTR "\n",
+                region->name, region->base, region->size);
+
         ASSERT(IS_PAGE_ALIGNED(region->base));
         status_t status = vmm_reserve_space(aspace, region->name, region->size, region->base);
         ASSERT(status == NO_ERROR);

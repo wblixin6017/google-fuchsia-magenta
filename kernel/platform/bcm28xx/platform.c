@@ -35,10 +35,19 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
  /* 1GB of sdram space */
  {
      .phys = SDRAM_BASE,
-     .virt = KERNEL_BASE,
+     .virt = KERNEL_ASPACE_BASE,
      .size = MEMORY_APERTURE_SIZE,
      .flags = 0,
      .name = "memory"
+ },
+
+ /* -2GB kernel address */
+ {
+    .phys = SDRAM_BASE,
+    .virt = KERNEL_BASE,
+    .size = 256*1024*1024UL, // 256MB
+    .flags = MMU_INITIAL_MAPPING_FLAG_KERNEL | MMU_INITIAL_MAPPING_TEMPORARY,
+    .name = "kernel"
  },
 
  /* peripherals */

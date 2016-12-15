@@ -260,25 +260,6 @@ void arm_mmu_early_init(void)
 
 void arm_mmu_init(void)
 {
-    /* unmap the initial mapings that are marked temporary */
-    struct mmu_initial_mapping *map = mmu_initial_mappings;
-    while (map->size > 0) {
-        if (map->flags & MMU_INITIAL_MAPPING_TEMPORARY) {
-            vaddr_t va = map->virt;
-            size_t size = map->size;
-
-            DEBUG_ASSERT(IS_SECTION_ALIGNED(size));
-
-            while (size > 0) {
-                arm_mmu_unmap_l1_entry(arm_kernel_translation_table, va / SECTION_SIZE);
-                va += MB;
-                size -= MB;
-            }
-        }
-        map++;
-    }
-    arm_after_invalidate_tlb_barrier();
-
     arm_mmu_init_percpu();
 }
 

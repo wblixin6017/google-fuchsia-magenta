@@ -23,10 +23,11 @@
 #endif
 
 /* flags for initial mapping struct */
-#define MMU_INITIAL_MAPPING_TEMPORARY (0x1)
-#define MMU_INITIAL_MAPPING_FLAG_UNCACHED (0x2)
-#define MMU_INITIAL_MAPPING_FLAG_DEVICE (0x4)
-#define MMU_INITIAL_MAPPING_FLAG_DYNAMIC (0x8) /* entry has to be patched up by platform_reset */
+#define MMU_INITIAL_MAPPING_TEMPORARY     (1<<0)
+#define MMU_INITIAL_MAPPING_FLAG_UNCACHED (1<<1)
+#define MMU_INITIAL_MAPPING_FLAG_DEVICE   (1<<2)
+#define MMU_INITIAL_MAPPING_FLAG_DYNAMIC  (1<<3) /* entry has to be patched up by platform_reset */
+#define MMU_INITIAL_MAPPING_FLAG_KERNEL   (1<<4) /* entry is where the kernel text/data lives */
 
 #ifndef ASSEMBLY
 

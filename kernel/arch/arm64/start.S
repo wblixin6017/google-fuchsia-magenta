@@ -34,6 +34,7 @@ paddr                   .req x24
 mapping_size            .req x25
 size                    .req x26
 attr                    .req x27
+flags                   .req x28
 
 .section .text.boot
 FUNCTION(_start)
@@ -87,7 +88,7 @@ arm_reset:
 .Linitial_mapping_loop:
 /* Read entry of mmu_initial_mappings (likely defined in platform.c) */
     ldp     paddr, vaddr, [mmu_initial_mapping, #__MMU_INITIAL_MAPPING_PHYS_OFFSET]
-    ldp     size, tmp, [mmu_initial_mapping, #__MMU_INITIAL_MAPPING_SIZE_OFFSET]
+    ldp     size, flags, [mmu_initial_mapping, #__MMU_INITIAL_MAPPING_SIZE_OFFSET]
 
     tbzmask tmp, MMU_INITIAL_MAPPING_FLAG_DYNAMIC, .Lnot_dynamic
     adr     paddr, _start
@@ -128,7 +129,12 @@ arm_reset:
  *         extended with additional flag types
  */
 .Lmapping_size_loop:
+    /* load generic data mapping page attributes */
     ldr     attr, =MMU_PTE_KERNEL_DATA_FLAGS
+
+    /* skip doing any fancy split if this mapping entry isn't marked KERNEL */
+    tbzmask flags, MMU_INITIAL_MAPPING_FLAG_KERNEL, .Lmem_type_done
+
     ldr     tmp, =__code_start
     subs    size, tmp, vaddr
     /* If page is below  the entry point (_start) mark as kernel data */
