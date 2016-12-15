@@ -247,7 +247,7 @@ arm_reset:
 
 .L__do_bss:
     /* clear out the bss */
-    ldr     r4, =__bss_start
+    ldr     r4, =__post_prebss_bss_start
     ldr     r5, =_end
     mov     r6, #0
 .L__bss_loop:

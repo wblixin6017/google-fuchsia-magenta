@@ -56,7 +56,7 @@ SECTIONS
     __exidx_end = .;
 
     .dummy_post_text : {
-	    __code_end = .;
+        __code_end = .;
     }
 
     .rodata : ALIGN(4096) {
@@ -111,7 +111,7 @@ SECTIONS
         __bss_start = .;
         KEEP(*(.bss.prebss.*))
         . = ALIGN(8);
-	__post_prebss_bss_start = .;
+        __post_prebss_bss_start = .;
         *(.bss .bss.*)
         *(.gnu.linkonce.b.*)
         *(COMMON)
