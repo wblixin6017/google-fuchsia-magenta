@@ -72,6 +72,20 @@ public:
         return ERR_NOT_SUPPORTED;
     }
 
+    // cache maintainence operations.
+    virtual status_t InvalidateCache(const uint64_t offset, const uint64_t len) {
+        return ERR_NOT_SUPPORTED;
+    }
+    virtual status_t CleanCache(const uint64_t offset, const uint64_t len) {
+        return ERR_NOT_SUPPORTED;
+    }
+    virtual status_t CleanInvalidateCache(const uint64_t offset, const uint64_t len) {
+        return ERR_NOT_SUPPORTED;
+    }
+    virtual status_t SyncCache(const uint64_t offset, const uint64_t len) {
+        return ERR_NOT_SUPPORTED;
+    }
+
     virtual void Dump(uint depth = 0, bool page_dump = false) {}
 
 protected:
@@ -153,6 +167,11 @@ public:
 
     status_t Lookup(uint64_t offset, uint64_t len, user_ptr<paddr_t>, size_t) override;
 
+    status_t InvalidateCache(const uint64_t offset, const uint64_t len) override;
+    status_t CleanCache(const uint64_t offset, const uint64_t len) override;
+    status_t CleanInvalidateCache(const uint64_t offset, const uint64_t len) override;
+    status_t SyncCache(const uint64_t offset, const uint64_t len) override;
+
     void Dump(uint depth = 0, bool page_dump = false) override;
 
     vm_page_t* GetPageLocked(uint64_t offset) override;
@@ -166,6 +185,10 @@ private:
     ~VmObjectPaged() override;
 
     DISALLOW_COPY_ASSIGN_AND_MOVE(VmObjectPaged);
+
+    // perform a cache maintenance operation against the vmo.
+    enum class CacheOpType { Invalidate, Clean, CleanInvalidate, Sync };
+    status_t CacheOp(const uint64_t offset, const uint64_t len, const CacheOpType type);
 
     // add a page to the object
     status_t AddPage(vm_page_t* p, uint64_t offset);

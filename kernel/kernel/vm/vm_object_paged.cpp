@@ -8,6 +8,7 @@
 
 #include "vm_priv.h"
 
+#include <arch/ops.h>
 #include <assert.h>
 #include <err.h>
 #include <inttypes.h>
@@ -588,6 +589,84 @@ status_t VmObjectPaged::Lookup(uint64_t offset, uint64_t len, user_ptr<paddr_t> 
         auto status = buffer.element_offset(index).copy_to_user(pa);
         if (unlikely(status < 0))
             return status;
+    }
+
+    return NO_ERROR;
+}
+
+status_t VmObjectPaged::InvalidateCache(const uint64_t offset, const uint64_t len) {
+    return CacheOp(offset, len, CacheOpType::Invalidate);
+}
+
+status_t VmObjectPaged::CleanCache(const uint64_t offset, const uint64_t len) {
+    return CacheOp(offset, len, CacheOpType::Clean);
+}
+
+status_t VmObjectPaged::CleanInvalidateCache(const uint64_t offset, const uint64_t len) {
+    return CacheOp(offset, len, CacheOpType::CleanInvalidate);
+}
+
+status_t VmObjectPaged::SyncCache(const uint64_t offset, const uint64_t len) {
+    return CacheOp(offset, len, CacheOpType::Sync);
+}
+
+status_t VmObjectPaged::CacheOp(const uint64_t offset, const uint64_t len, const CacheOpType type) {
+    DEBUG_ASSERT(magic_ == MAGIC);
+
+    if (unlikely(len == 0))
+        return ERR_INVALID_ARGS;
+
+    AutoLock a(lock_);
+
+    if (unlikely(!InRange(offset, len, size_)))
+        return ERR_OUT_OF_RANGE;
+
+    uint64_t start_page_offset = ROUNDDOWN(offset, PAGE_SIZE);
+    uint64_t end = offset + len;
+    uint64_t end_page_offset = ROUNDUP(end, PAGE_SIZE);
+    uint64_t len_remaining = len;
+
+    for (uint64_t off = start_page_offset; off != end_page_offset; off += PAGE_SIZE) {
+        // Find the offset into the page that we want to flush. This can only be
+        // non-zero for the first page.
+        size_t page_offset = offset % PAGE_SIZE;
+
+        // If we're flushing partway into the page, we should not attempt to
+        // flush past the page boundary. page_remaining is the max number of
+        // bytes we should attempt to flush.
+        size_t page_remaining = PAGE_SIZE - page_offset;
+        const size_t cache_op_len = static_cast<size_t>(MIN(page_remaining, len_remaining));
+        len_remaining -= cache_op_len;
+
+        // Grab a pointer to the page. If it doesn't exist there's no need to
+        // flush the cache so skip it.
+        vm_page_t* p = GetPageLocked(off);
+        if (unlikely(!p))
+            continue;
+
+        // Find the physical address.
+        paddr_t pa = vm_page_to_paddr(p);
+
+        // Convert the physical address to a kernel virtual address.
+        void* ptr = paddr_to_kvaddr(pa);
+
+        const addr_t cache_op_addr = reinterpret_cast<addr_t>(ptr) + page_offset;
+
+        // Perform the necessary cache op against this page.
+        switch(type) {
+        case CacheOpType::Invalidate:
+            arch_invalidate_cache_range(cache_op_addr, cache_op_len);
+            break;
+        case CacheOpType::Clean:
+            arch_clean_cache_range(cache_op_addr, cache_op_len);
+            break;
+        case CacheOpType::CleanInvalidate:
+            arch_clean_invalidate_cache_range(cache_op_addr, cache_op_len);
+            break;
+        case CacheOpType::Sync:
+            arch_sync_cache_range(cache_op_addr, cache_op_len);
+            break;
+        }
     }
 
     return NO_ERROR;
