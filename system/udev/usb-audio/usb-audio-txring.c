@@ -88,7 +88,6 @@ mx_status_t usb_audio_txring_ioctl(usb_audio_txring_t* txring, uint32_t op, cons
 static mx_status_t usb_audio_txring_wait(usb_audio_txring_t* txring, void** out_buffer, uint32_t* out_len) {
 
     while (txring->fifo_state.head == txring->fifo_state.tail) {
-
         mx_wait_item_t items[2];
         items[0].waitfor = MX_FIFO_NOT_EMPTY;
         items[0].handle = txring->fifo_handle;
@@ -97,6 +96,7 @@ static mx_status_t usb_audio_txring_wait(usb_audio_txring_t* txring, void** out_
         
 printf("usb_audio_txring_wait mx_handle_wait_many\n");
         mx_status_t status = mx_handle_wait_many(items, countof(items), MX_TIME_INFINITE);
+printf("mx_handle_wait_many returned\n");
         if (status < 0) {
             printf("mx_handle_wait_many failed: %d\n", status);
             return status;
@@ -139,9 +139,9 @@ static int usb_audio_txring_thread(void* arg) {
             return status;
         }
 
-        ssize_t ret = txring->callback(data, length, txring->cookie);
+        mx_status_t ret = txring->callback(data, length, txring->cookie);
          if (ret < 0) {
-            printf("usb_audio_sink_do_write failed: %ld\n", ret);
+            printf("txring->callback failed: %d\n", ret);
             return status;
         }
 

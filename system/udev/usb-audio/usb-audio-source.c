@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ddk/completion.h>
 #include <ddk/device.h>
 #include <ddk/common/usb.h>
 #include <magenta/device/audio.h>
@@ -27,6 +28,7 @@ typedef struct {
     // list of received packets not yet read by upper layer
     list_node_t completed_reads;
     int completed_read_count;
+    completion_t completed_read_completion;
     // mutex for synchronizing access to free_read_reqs, completed_reads, open and started
     mtx_t mutex;
     // mutex used to synchronize ioctl_audio_start() and ioctl_audio_stop()
@@ -79,12 +81,15 @@ static void usb_audio_source_read_complete(iotxn_t* txn, void* cookie) {
     } else if (txn->status == NO_ERROR && txn->actual > 0) {
         list_add_tail(&source->completed_reads, &txn->node);
         source->completed_read_count++;
+        completion_signal(&source->completed_read_completion);
 
         // no client reading? requeue oldest completed read so we can keep reading new data
         if (list_is_empty(&source->free_read_reqs) &&
                           source->completed_read_count == READ_REQ_COUNT) {
             txn = list_remove_head_type(&source->completed_reads, iotxn_t, node);
-            source->completed_read_count--;
+            if (--source->completed_read_count == 0) {
+                completion_reset(&source->completed_read_completion);
+            }
             iotxn_queue(source->usb_device, txn);
         }
     } else {
@@ -124,6 +129,8 @@ static mx_status_t usb_audio_source_txring_cb(void* data, size_t length, void* c
 static mx_status_t usb_audio_source_start(usb_audio_source_t* source) {
     mx_status_t status = NO_ERROR;
 
+printf("usb_audio_source_start\n");
+
     mtx_lock(&source->start_stop_mutex);
     if (source->dead) {
         status = ERR_REMOTE_CLOSED;
@@ -144,6 +151,7 @@ static mx_status_t usb_audio_source_start(usb_audio_source_t* source) {
         iotxn_queue(source->usb_device, txn);
     }
     source->completed_read_count = 0;
+    completion_reset(&source->completed_read_completion);
     while ((txn = list_remove_head_type(&source->free_read_reqs, iotxn_t, node)) != NULL) {
         iotxn_queue(source->usb_device, txn);
     }
@@ -158,6 +166,8 @@ out:
 
 static mx_status_t usb_audio_source_stop(usb_audio_source_t* source) {
     mx_status_t status = NO_ERROR;
+
+printf("usb_audio_source_stop\n");
 
     mtx_lock(&source->start_stop_mutex);
     if (source->dead) {
@@ -218,11 +228,13 @@ static ssize_t usb_audio_source_do_read(usb_audio_source_t* source, void* data, 
 
     mtx_lock(&source->mutex);
 
-    iotxn_t* txn = list_peek_head_type(&source->completed_reads, iotxn_t, node);
-    if (!txn) {
-        status = ERR_SHOULD_WAIT;
-        goto out;
+    iotxn_t* txn;
+    while ((txn = list_peek_head_type(&source->completed_reads, iotxn_t, node)) == NULL) {
+        mtx_unlock(&source->mutex);
+        completion_wait(&source->completed_read_completion, MX_TIME_INFINITE);
+        mtx_lock(&source->mutex);
     }
+
     // FIXME - for now we assume client reads with a buffer large enough for packet received
     size_t needed_bytes = (source->channels == 2) ? txn->actual : (txn->actual << 1);
     if (needed_bytes > length) {
@@ -231,7 +243,9 @@ static ssize_t usb_audio_source_do_read(usb_audio_source_t* source, void* data, 
     }
 
     list_remove_head(&source->completed_reads);
-    source->completed_read_count--;
+    if (--source->completed_read_count == 0) {
+        completion_reset(&source->completed_read_completion);
+    }
 
     txn->ops->copyfrom(txn, data, txn->actual, 0);
     if (source->channels == 1) {

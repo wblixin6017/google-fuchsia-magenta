@@ -131,12 +131,12 @@ static int do_play(int src_fd, int dest_fd, uint32_t sample_rate)
         }
     }
 
+out:
+    // wait for all pending transactions to complete
+    mx_handle_wait_one(fifo, MX_FIFO_NOT_FULL, MX_TIME_INFINITE, NULL);
+
     ioctl_audio_stop(dest_fd);
 
-    // wait for all pending transactions to complete
-    mx_handle_wait_one(txring_vmo, MX_FIFO_NOT_FULL, MX_TIME_INFINITE, NULL);
-
-out:
     if (buffer) {
         mx_process_unmap_vm(buffer_vmo, (uintptr_t)buffer, BUFFER_SIZE * BUFFER_COUNT);
     }
