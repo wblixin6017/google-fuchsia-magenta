@@ -26,15 +26,15 @@ mx_status_t usb_audio_txring_ioctl(usb_audio_txring_t* txring, uint32_t op, cons
         }
         // clean up existing buffer
         if (txring->buffer_vmo != MX_HANDLE_INVALID) {
-            mx_process_unmap_vm(txring->buffer_vmo, (uintptr_t)txring->buffer, txring->buffer_size);
+            mx_vmar_unmap(txring->buffer_vmo, (uintptr_t)txring->buffer, txring->buffer_size);
 
             mx_handle_close(txring->buffer_vmo);
             txring->buffer_vmo = MX_HANDLE_INVALID;
             txring->buffer = NULL;
         }
-        status = mx_process_map_vm(mx_process_self(), handle, 0, txring->buffer_size,
-                                   (uintptr_t *)&txring->buffer,
-                                   MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+        status = mx_vmar_map(mx_process_self(), 0, handle, 0, txring->buffer_size,
+                             MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE,
+                             (uintptr_t *)&txring->buffer);
         if (status != NO_ERROR) {
             mx_handle_close(handle);
             return status;
@@ -47,7 +47,7 @@ mx_status_t usb_audio_txring_ioctl(usb_audio_txring_t* txring, uint32_t op, cons
         mx_audio_set_txring_args_t* args = (mx_audio_set_txring_args_t *)in_buf;
         // clean up existing buffer
         if (txring->txring_vmo != MX_HANDLE_INVALID) {
-            mx_process_unmap_vm(txring->txring_vmo, (uintptr_t)txring->ring,
+            mx_vmar_unmap(txring->txring_vmo, (uintptr_t)txring->ring,
                             sizeof(mx_audio_txring_entry_t) * txring->txring_count);
             mx_handle_close(txring->txring_vmo);
             txring->txring_vmo = MX_HANDLE_INVALID;
@@ -58,10 +58,10 @@ mx_status_t usb_audio_txring_ioctl(usb_audio_txring_t* txring, uint32_t op, cons
             mx_handle_close(args->txring);
             return ERR_INVALID_ARGS;
         }
-        mx_status_t status = mx_process_map_vm(mx_process_self(), args->txring, 0,
-                                   sizeof(*txring->ring) * args->count,
-                                   (uintptr_t *)&txring->ring,
-                                   MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+        mx_status_t status = mx_vmar_map(mx_process_self(), 0, args->txring, 0,
+                                         sizeof(*txring->ring) * args->count,
+                                         MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE,
+                                         (uintptr_t *)&txring->ring);
         if (status != NO_ERROR) {
             mx_handle_close(args->txring);
             return status;
@@ -94,9 +94,7 @@ static mx_status_t usb_audio_txring_wait(usb_audio_txring_t* txring, void** out_
         items[1].waitfor = MX_EVENT_SIGNALED;
         items[1].handle = txring->stop_event;
         
-printf("usb_audio_txring_wait mx_handle_wait_many\n");
         mx_status_t status = mx_handle_wait_many(items, countof(items), MX_TIME_INFINITE);
-printf("mx_handle_wait_many returned\n");
         if (status < 0) {
             printf("mx_handle_wait_many failed: %d\n", status);
             return status;
@@ -117,7 +115,6 @@ printf("mx_handle_wait_many returned\n");
 }
 
 static mx_status_t usb_audio_txring_complete(usb_audio_txring_t* txring, mx_status_t status) {
-printf("usb_audio_txring_complete\n");
     mx_audio_txring_entry_t* entry = &txring->ring[txring->txring_index];
     txring->txring_index++;
     if (txring->txring_index == txring->txring_count) txring->txring_index = 0;
@@ -183,10 +180,10 @@ printf("usb_audio_txring_stop done\n");
 void usb_audio_txring_release(usb_audio_txring_t* txring) {
 printf("usb_audio_txring_release\n");
     if (txring->buffer) {
-        mx_process_unmap_vm(txring->buffer_vmo, (uintptr_t)txring->buffer, txring->buffer_size);
+        mx_vmar_unmap(txring->buffer_vmo, (uintptr_t)txring->buffer, txring->buffer_size);
     }
     if (txring->ring) {
-        mx_process_unmap_vm(txring->txring_vmo, (uintptr_t)txring->ring,
+        mx_vmar_unmap(txring->txring_vmo, (uintptr_t)txring->ring,
                             sizeof(mx_audio_txring_entry_t) * txring->txring_count);
     }
 

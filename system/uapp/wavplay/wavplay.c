@@ -47,14 +47,14 @@ static int do_play(int src_fd, int dest_fd, uint32_t sample_rate)
     }
     uint8_t* buffer = NULL;
     mx_audio_txring_entry_t* ring = NULL;
-    status = mx_process_map_vm(mx_process_self(), buffer_vmo, 0, BUFFER_SIZE * BUFFER_COUNT,
-                               (uintptr_t *)&buffer, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    status = mx_vmar_map(mx_process_self(), 0, buffer_vmo, 0, BUFFER_SIZE * BUFFER_COUNT,
+                         MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, (uintptr_t *)&buffer);
     if (status < 0) {
         printf("failed to map buffer VMO: %d\n", status);
         goto out;
     }
-    status = mx_process_map_vm(mx_process_self(), txring_vmo, 0, sizeof(*ring) * BUFFER_COUNT,
-                               (uintptr_t *)&ring, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    status = mx_vmar_map(mx_process_self(), 0, txring_vmo, 0, sizeof(*ring) * BUFFER_COUNT,
+                         MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, (uintptr_t *)&ring);
     if (status < 0) {
         printf("failed to txring VMO: %d\n", status);
         goto out;
@@ -138,10 +138,10 @@ out:
     ioctl_audio_stop(dest_fd);
 
     if (buffer) {
-        mx_process_unmap_vm(buffer_vmo, (uintptr_t)buffer, BUFFER_SIZE * BUFFER_COUNT);
+        mx_vmar_unmap(buffer_vmo, (uintptr_t)buffer, BUFFER_SIZE * BUFFER_COUNT);
     }
     if (ring) {
-        mx_process_unmap_vm(txring_vmo, (uintptr_t)ring, sizeof(*ring) * BUFFER_COUNT);
+        mx_vmar_unmap(txring_vmo, (uintptr_t)ring, sizeof(*ring) * BUFFER_COUNT);
     }
     mx_handle_close(buffer_vmo);
     mx_handle_close(txring_vmo);
