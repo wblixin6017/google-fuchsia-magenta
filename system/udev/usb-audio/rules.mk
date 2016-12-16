@@ -14,6 +14,7 @@ MODULE_SRCS := \
     $(LOCAL_DIR)/usb-audio.c \
     $(LOCAL_DIR)/usb-audio-sink.c \
     $(LOCAL_DIR)/usb-audio-source.c \
+    $(LOCAL_DIR)/usb-audio-txring.c \
     $(LOCAL_DIR)/usb-midi-sink.c \
     $(LOCAL_DIR)/usb-midi-source.c \
 

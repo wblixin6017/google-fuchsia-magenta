@@ -26,7 +26,6 @@ mx_status_t usb_midi_source_create(mx_driver_t* driver, mx_device_t* device, int
                                    usb_interface_descriptor_t* intf,
                                    usb_endpoint_descriptor_t* ep);
 
-
 uint32_t* usb_audio_parse_sample_rates(usb_audio_ac_format_type_i_desc* format_desc, int* out_count);
 
 mx_status_t usb_audio_set_sample_rate(mx_device_t* usb_device, uint8_t ep_addr,

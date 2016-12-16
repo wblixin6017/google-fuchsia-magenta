@@ -18,149 +18,135 @@
 
 #include "wav.h"
 
-
 #define DEV_AUDIO   "/dev/class/audio"
 
 #define BUFFER_COUNT 2
 #define BUFFER_SIZE 16384
 
-#define BUFFER_EMPTY 0
-#define BUFFER_BUSY 1
-#define BUFFER_FULL 2
-
-static mtx_t mutex = MTX_INIT;
-static cnd_t empty_cond = CND_INIT;
-static cnd_t full_cond = CND_INIT;
-
-static uint8_t buffers[BUFFER_SIZE * BUFFER_COUNT];
-static int buffer_states[BUFFER_COUNT];
-static int buffer_sizes[BUFFER_COUNT];
-static int empty_index = 0;
-static int full_index = -1;
-static volatile bool file_done;
-
-static int get_empty(void) {
-    int index, other;
-
-    mtx_lock(&mutex);
-
-    while (empty_index == -1)
-        cnd_wait(&empty_cond, &mutex);
-
-    index = empty_index;
-    other = (index + 1) % BUFFER_COUNT;
-    buffer_states[index] = BUFFER_BUSY;
-    if (buffer_states[other] == BUFFER_EMPTY)
-        empty_index = other;
-    else
-        empty_index = -1;
-
-    mtx_unlock(&mutex);
-    return index;
-}
-
-static void put_empty(int index) {
-    mtx_lock(&mutex);
-
-    buffer_states[index] = BUFFER_EMPTY;
-    if (empty_index == -1) {
-        empty_index = index;
-        cnd_signal(&empty_cond);
-    }
-
-    mtx_unlock(&mutex);
-}
-
-static int get_full(void) {
-    int index, other;
-
-    mtx_lock(&mutex);
-
-    if (file_done) {
-        mtx_unlock(&mutex);
-        return -1;
-    }
-
-    while (full_index == -1)
-        cnd_wait(&full_cond, &mutex);
-
-    index = full_index;
-    other = (index == 0 ? 1 : 0);
-    buffer_states[index] = BUFFER_BUSY;
-    if (buffer_states[other] == BUFFER_FULL)
-        full_index = other;
-    else
-        full_index = -1;
-
-    mtx_unlock(&mutex);
-    return index;
-}
-
-static void put_full(int index) {
-    mtx_lock(&mutex);
-
-    buffer_states[index] = BUFFER_FULL;
-    if (full_index == -1) {
-        full_index = index;
-        cnd_signal(&full_cond);
-    }
-
-    mtx_unlock(&mutex);
-}
-
-static void set_done(void) {
-    mtx_lock(&mutex);
-
-    file_done = true;
-    cnd_signal(&full_cond);
-    mtx_unlock(&mutex);
-}
-
-static int file_read_thread(void* arg) {
-    int fd = (int)(uintptr_t)arg;
-
-    while (!file_done) {
-        int index = get_empty();
-        uint8_t* buffer = &buffers[index * BUFFER_SIZE];
-        int count = read(fd, buffer, BUFFER_SIZE);
-        if (count <= 0) {
-            set_done();
-            break;
-        }
-        buffer_sizes[index] = count;
-        put_full(index);
-    }
-
-    return 0;
-}
 static int do_play(int src_fd, int dest_fd, uint32_t sample_rate)
 {
-    int ret = ioctl_audio_set_sample_rate(dest_fd, &sample_rate);
-    if (ret != NO_ERROR) {
+    mx_status_t status = ioctl_audio_set_sample_rate(dest_fd, &sample_rate);
+    if (status != NO_ERROR) {
         printf("sample rate %d not supported\n", sample_rate);
-        return ret;
+        return status;
     }
+
+    mx_handle_t buffer_vmo = MX_HANDLE_INVALID;
+    mx_handle_t txring_vmo = MX_HANDLE_INVALID;
+    mx_handle_t fifo = MX_HANDLE_INVALID;
+    
+    status = mx_vmo_create(BUFFER_SIZE * BUFFER_COUNT, 0, &buffer_vmo);
+    if (status < 0) {
+        printf("failed to create buffer_vmo: %d\n", status);
+        goto out;
+    }
+    status = mx_vmo_create(BUFFER_COUNT * sizeof(mx_audio_txring_entry_t), 0, &txring_vmo);
+    if (status < 0) {
+        printf("failed to create buffer_vmo: %d\n", status);
+        goto out;
+    }
+    uint8_t* buffer = NULL;
+    mx_audio_txring_entry_t* ring = NULL;
+    status = mx_process_map_vm(mx_process_self(), buffer_vmo, 0, BUFFER_SIZE * BUFFER_COUNT,
+                               (uintptr_t *)&buffer, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    if (status < 0) {
+        printf("failed to map buffer VMO: %d\n", status);
+        goto out;
+    }
+    status = mx_process_map_vm(mx_process_self(), txring_vmo, 0, sizeof(*ring) * BUFFER_COUNT,
+                               (uintptr_t *)&ring, MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE);
+    if (status < 0) {
+        printf("failed to txring VMO: %d\n", status);
+        goto out;
+    }
+
+    status = ioctl_audio_set_buffer(dest_fd, &buffer_vmo);
+    if (status < 0) {
+        printf("ioctl_audio_set_buffer failed: %d\n", status);
+        goto out;
+    }
+    mx_audio_set_txring_args_t args;
+    args.txring = txring_vmo;
+    args.count = BUFFER_COUNT;
+    status = ioctl_audio_set_txring(dest_fd, &args);
+    if (status < 0) {
+        printf("ioctl_audio_set_txring failed: %d\n", status);
+        goto out;
+    }
+    status = ioctl_audio_get_fifo(dest_fd, &fifo);
+    if (status < 0) {
+        printf("ioctl_audio_get_fifo failed: %d\n", status);
+        goto out;
+    }
+
+    int index = 0;
+
+    mx_fifo_state_t fifo_state;
+    status = mx_fifo_op(fifo, MX_FIFO_OP_READ_STATE, 0, &fifo_state);
+    if (status < 0) {
+        printf("mx_fifo_op failed to read state: %d\n", status);
+        goto out;
+    }
+
     ioctl_audio_start(dest_fd);
 
-    thrd_t thread;
-    thrd_create_with_name(&thread, file_read_thread, (void *)(uintptr_t)src_fd, "file_read_thread");
-    thrd_detach(thread);
+    while (1) {
+        if (fifo_state.head - fifo_state.tail < BUFFER_COUNT) {
+            mx_audio_txring_entry_t* entry = &ring[index];
 
-    while (ret == 0) {
-        int index = get_full();
-        if (index < 0) break;
-        uint8_t* buffer = &buffers[index * BUFFER_SIZE];
-        int buffer_size = buffer_sizes[index];
+            // check status from previous transaction
+            // if this entry has never been used, status should be zero
+            status = entry->status;
+            if (status < 0) {
+                printf("driver returned status %d\n", status);
+                break;
+            }
 
-        if (write(dest_fd, buffer, buffer_size) != buffer_size) {
-            ret = -1;
+            // fill and queue a buffer
+            uint32_t offset = BUFFER_SIZE * index;
+            int count = read(src_fd, &buffer[offset], BUFFER_SIZE);
+            if (count <= 0) {
+                break;
+            }
+
+            entry->data_size = count;
+            entry->data_offset = offset;
+
+            status = mx_fifo_op(fifo, MX_FIFO_OP_ADVANCE_HEAD, 1, &fifo_state);
+            if (status < 0) {
+                printf("mx_fifo_op failed to advance head: %d\n", status);
+                goto out;
+            }
+
+            index++;
+            if (index == BUFFER_COUNT) index = 0;
+        } else {
+            // buffers are all full - block for one to complete
+            mx_handle_wait_one(fifo, MX_FIFO_NOT_FULL, MX_TIME_INFINITE, NULL);
+            status = mx_fifo_op(fifo, MX_FIFO_OP_READ_STATE, 0, &fifo_state);
+            if (status < 0) {
+                printf("mx_fifo_op failed to read state: %d\n", status);
+                goto out;
+            }
         }
-
-        put_empty(index);
     }
+
     ioctl_audio_stop(dest_fd);
 
-    return ret;
+    // wait for all pending transactions to complete
+    mx_handle_wait_one(txring_vmo, MX_FIFO_NOT_FULL, MX_TIME_INFINITE, NULL);
+
+out:
+    if (buffer) {
+        mx_process_unmap_vm(buffer_vmo, (uintptr_t)buffer, BUFFER_SIZE * BUFFER_COUNT);
+    }
+    if (ring) {
+        mx_process_unmap_vm(txring_vmo, (uintptr_t)ring, sizeof(*ring) * BUFFER_COUNT);
+    }
+    mx_handle_close(buffer_vmo);
+    mx_handle_close(txring_vmo);
+    mx_handle_close(fifo);
+    return status;
 }
 
 static int open_sink(void) {
@@ -222,11 +208,6 @@ static int play_file(const char* path, int dest_fd) {
         fprintf(stderr, "Error: '%s' is not a riff/wave file\n", path);
         return -1;
     }
-
-   for (int i = 0; i < BUFFER_COUNT; i++) {
-        buffer_states[i] = BUFFER_EMPTY;
-    }
-    file_done = false;
 
     do {
         read(src_fd, &chunk_header, sizeof(chunk_header));
