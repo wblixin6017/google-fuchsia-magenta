@@ -20,21 +20,23 @@
 #define X86_CR4_PGE                     0x00000080 /* page global enable */
 #define X86_CR4_OSFXSR                  0x00000200 /* os supports fxsave */
 #define X86_CR4_OSXMMEXPT               0x00000400 /* os supports xmm exception */
+#define X86_CR4_VMXE                    0x00002000 /* enable vmx */
 #define X86_CR4_OSXSAVE                 0x00040000 /* os supports xsave */
 #define X86_CR4_SMEP                    0x00100000 /* SMEP protection enabling */
 #define X86_CR4_SMAP                    0x00200000 /* SMAP protection enabling */
+
+#define X86_MSR_EFER                    0xc0000080 /* EFER Model Specific Register id */
 #define X86_EFER_SCE                    0x00000001 /* enable SYSCALL */
 #define X86_EFER_LME                    0x00000100 /* long mode enable */
 #define X86_EFER_LMA                    0x00000400 /* long mode active */
 #define X86_EFER_NXE                    0x00000800 /* to enable execute disable bit */
-#define X86_MSR_EFER                    0xc0000080 /* EFER Model Specific Register id */
+
 #define X86_MSR_IA32_STAR               0xc0000081 /* system call address */
 #define X86_MSR_IA32_LSTAR              0xc0000082 /* long mode call address */
 #define X86_MSR_IA32_FMASK              0xc0000084 /* system call flag mask */
 #define X86_MSR_IA32_FS_BASE            0xc0000100 /* fs base address */
 #define X86_MSR_IA32_GS_BASE            0xc0000101 /* gs base address */
 #define X86_MSR_IA32_KERNEL_GS_BASE     0xc0000102 /* kernel gs base */
-#define X86_CR4_PSE 0xffffffef /* Disabling PSE bit in the CR4 */
 
 /* EFLAGS/RFLAGS */
 #define X86_FLAGS_CF                    (1<<0)

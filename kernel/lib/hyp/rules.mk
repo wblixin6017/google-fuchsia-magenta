@@ -5,12 +5,14 @@
 # license that can be found in the LICENSE file or at
 # https://opensource.org/licenses/MIT
 
-# top level project rules for the pc-x86-64-test project
-#
-SUBARCH := x86-64
-MODULES += \
-    lib/hyp
+LOCAL_DIR := $(GET_LOCAL_DIR)
 
-include project/virtual/nouser.mk
-include project/virtual/test.mk
-include project/target/pc-x86.mk
+MODULE := $(LOCAL_DIR)
+
+MODULE_DEPS := \
+
+MODULE_SRCS += \
+   $(LOCAL_DIR)/hyp.c \
+   $(LOCAL_DIR)/vmx.c \
+
+include make/module.mk
