@@ -244,7 +244,7 @@ __EXPORT int devhost_cmdline(int argc, char** argv) {
             return -1;
         }
         dev->protocol_id = MX_PROTOCOL_SOC;
-        dev->props = calloc(2, sizeof(mx_device_prop_t));
+        dev->props = calloc(3, sizeof(mx_device_prop_t));
         dev->props[0].id = BIND_SOC_VID;
         dev->props[0].value = strtoul(argv[2],NULL,10);
         dev->props[1].id = BIND_SOC_PID;

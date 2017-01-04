@@ -50,6 +50,7 @@
 #define IOCTL_FAMILY_GPU            0x1E
 #define IOCTL_FAMILY_RTC            0x1F  // ioctls for RTC
 #define IOCTL_FAMILY_ETH            0x20
+#define IOCTL_FAMILY_SDMMC          0x21
 
 // IOCTL constructor
 // --K-FFNN
