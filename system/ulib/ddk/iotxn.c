@@ -71,7 +71,11 @@ static void iotxn_copyto(iotxn_t* txn, const void* data, size_t length, size_t o
 
 static void iotxn_physmap(iotxn_t* txn, mx_paddr_t* addr) {
     iotxn_priv_t* priv = get_priv(txn);
-    *addr = priv->buffer.phys;
+    if (priv->data_size == 0) {
+        *addr = 0;
+    } else {
+        *addr = io_buffer_phys(&priv->buffer, 0);
+    }
 }
 
 static void iotxn_mmap(iotxn_t* txn, void** data) {
@@ -204,7 +208,7 @@ mx_status_t iotxn_alloc(iotxn_t** out, uint32_t flags, size_t data_size, size_t 
     priv = calloc(1, sizeof(iotxn_priv_t) + extra_size);
     if (!priv) return ERR_NO_MEMORY;
     if (data_size > 0) {
-        mx_status_t status = io_buffer_init(&priv->buffer, data_size, IO_BUFFER_RW);
+        mx_status_t status = io_buffer_init(&priv->buffer, data_size, IO_BUFFER_RW | IO_BUFFER_CONTIG);
         if (status != NO_ERROR) {
             free(priv);
             return status;

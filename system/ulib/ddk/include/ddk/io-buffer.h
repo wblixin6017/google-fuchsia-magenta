@@ -17,12 +17,15 @@ typedef struct {
     size_t size;
     mx_off_t offset;
     void* virt;
-    mx_paddr_t phys;
+    mx_paddr_t* phys_addrs;
 } io_buffer_t;
 
+// flags for io_buffer_init
 enum {
-    IO_BUFFER_RO = MX_VM_FLAG_PERM_READ,
-    IO_BUFFER_RW = MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE,
+    IO_BUFFER_RO = (1 << 0),
+    IO_BUFFER_WO = (1 << 1),
+    IO_BUFFER_RW = IO_BUFFER_RO | IO_BUFFER_WO,
+    IO_BUFFER_CONTIG = (1 << 2),
 };
 
 // Initializes a new io_buffer
@@ -49,8 +52,6 @@ static inline void* io_buffer_virt(io_buffer_t* buffer) {
     return buffer->virt + buffer->offset;
 }
 
-static inline mx_paddr_t io_buffer_phys(io_buffer_t* buffer) {
-    return buffer->phys + buffer->offset;
-}
+mx_paddr_t io_buffer_phys(io_buffer_t* buffer, mx_off_t offset);
 
 __END_CDECLS;

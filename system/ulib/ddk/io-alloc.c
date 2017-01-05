@@ -42,14 +42,14 @@ io_alloc_t* io_alloc_init(size_t size) {
 
     mtx_init(&ioa->mutex, mtx_plain);
 
-    mx_status_t status = io_buffer_init(&ioa->buffer, size, IO_BUFFER_RW);
+    mx_status_t status = io_buffer_init(&ioa->buffer, size, IO_BUFFER_RW | IO_BUFFER_CONTIG);
     if (status != NO_ERROR) {
         printf("io_buffer_init failed %d\n", status);
         free(ioa);
         return NULL;
     }
 
-    ioa->virt_offset = (uintptr_t)io_buffer_virt(&ioa->buffer) - io_buffer_phys(&ioa->buffer);
+    ioa->virt_offset = (uintptr_t)io_buffer_virt(&ioa->buffer) - io_buffer_phys(&ioa->buffer, 0);
 
     io_block_header_t* free_list = io_buffer_virt(&ioa->buffer);
     free_list->size = size;
@@ -189,7 +189,8 @@ void io_free(io_alloc_t* ioa, void* ptr) {
 
 mx_paddr_t io_virt_to_phys(io_alloc_t* ioa, mx_vaddr_t virt_addr) {
     mx_paddr_t result = virt_addr - ioa->virt_offset;
-    if (result <ioa->buffer.phys || result >=ioa->buffer.phys +ioa->buffer.size) {
+    if (result < io_buffer_phys(&ioa->buffer, 0) ||
+        result >= io_buffer_phys(&ioa->buffer, 0) + ioa->buffer.size) {
         printf("ERROR: bad address %p in io_virt_to_phys\n", (void *)virt_addr);
         abort();
     }
@@ -197,7 +198,8 @@ mx_paddr_t io_virt_to_phys(io_alloc_t* ioa, mx_vaddr_t virt_addr) {
 }
 
 mx_vaddr_t io_phys_to_virt(io_alloc_t* ioa, mx_paddr_t phys_addr) {
-    if (phys_addr <ioa->buffer.phys || phys_addr >=ioa->buffer.phys +ioa->buffer.size) {
+    if (phys_addr < io_buffer_phys(&ioa->buffer, 0) || 
+        phys_addr >= io_buffer_phys(&ioa->buffer, 0) + ioa->buffer.size) {
         printf("ERROR: bad address %p in io_phys_to_virt\n", (void *)phys_addr);
         abort();
     }

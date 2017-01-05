@@ -203,13 +203,13 @@ static mx_status_t eth_bind(mx_driver_t* drv, mx_device_t* dev) {
         goto fail;
     }
 
-    r = io_buffer_init(&edev->buffer, ETH_ALLOC, IO_BUFFER_RW);
+    r = io_buffer_init(&edev->buffer, ETH_ALLOC, IO_BUFFER_RW | IO_BUFFER_CONTIG);
     if (r < 0) {
         printf("eth: cannot alloc io-buffer %d\n", r);
         goto fail;
     }
 
-    eth_setup_buffers(&edev->eth, io_buffer_virt(&edev->buffer), io_buffer_phys(&edev->buffer));
+    eth_setup_buffers(&edev->eth, io_buffer_virt(&edev->buffer), io_buffer_phys(&edev->buffer, 0));
     eth_init_hw(&edev->eth);
 
     device_init(&edev->dev, drv, "intel-ethernet", &device_ops);
