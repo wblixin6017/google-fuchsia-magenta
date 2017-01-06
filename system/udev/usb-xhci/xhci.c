@@ -5,6 +5,7 @@
 #include <hw/reg.h>
 #include <magenta/types.h>
 #include <magenta/syscalls.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,6 +19,8 @@
 
 //#define TRACE 1
 #include "xhci-debug.h"
+
+#define PAGE_ROUNDUP(x) ((x + PAGE_SIZE - 1) & ~PAGE_SIZE)
 
 uint8_t xhci_endpoint_index(uint8_t ep_address) {
     if (ep_address == 0) return 0;
@@ -160,6 +163,10 @@ mx_status_t xhci_init(xhci_t* xhci, void* mmio) {
 
     uint32_t scratch_pad_bufs = XHCI_GET_BITS32(hcsparams2, HCSPARAMS2_MAX_SBBUF_HI_START,
                                                 HCSPARAMS2_MAX_SBBUF_HI_BITS);
+    scratch_pad_bufs <<= HCSPARAMS2_MAX_SBBUF_LO_BITS;
+    scratch_pad_bufs |= XHCI_GET_BITS32(hcsparams2, HCSPARAMS2_MAX_SBBUF_LO_START,
+                                        HCSPARAMS2_MAX_SBBUF_LO_BITS);
+    xhci->page_size = XHCI_READ32(&xhci->op_regs->pagesize) << 12;
 
     // allocate array to hold our slots
     // add 1 to allow 1-based indexing of slots
@@ -189,35 +196,78 @@ mx_status_t xhci_init(xhci_t* xhci, void* mmio) {
         goto fail;
     }
 
-    // Allocate DMA memory for various things
-    xhci->dcbaa = xhci_memalign(xhci, 64, (xhci->max_slots + 1) * sizeof(uint64_t));
-    if (!xhci->dcbaa) {
-        result = ERR_NO_MEMORY;
-        goto fail;
+    // Use contig_buffer if scratch pad index is larger than one page
+    // or XCHI page size is greater than PAGE_SIZE
+    size_t contig_buffer_size = 0;
+    size_t scratch_pad_size = scratch_pad_bufs * sizeof(uint64_t);
+    if (scratch_pad_size > PAGE_SIZE) {
+        contig_buffer_size = PAGE_ROUNDUP(scratch_pad_size);
+    }
+    if (xhci->page_size > PAGE_SIZE) {
+        contig_buffer_size += scratch_pad_size * xhci->page_size;
+    }
+    if (contig_buffer_size > 0) {
+        result = io_buffer_init(&xhci->contig_buffer, contig_buffer_size,
+                                IO_BUFFER_RW | IO_BUFFER_CONTIG);
+        if (result != NO_ERROR) {
+            printf("io_buffer_init failed for xhci->contig_buffer: %d\n", result);
+            goto fail; 
+        }
+    }
+    
+    // Allocate DMA memory for various things:
+    size_t buffer_pages =  2;   // one page for DCBAA and one for command and event rings
+    if (xhci->page_size <= PAGE_SIZE) {
+        // allocate scratch pad buffers from non-contiguous buffer
+        buffer_pages += scratch_pad_bufs;
+    }
+    if (scratch_pad_size > 0 && scratch_pad_size <= PAGE_SIZE) {
+        // allocate scratch pad buffer index from non-contiguous buffer
+        buffer_pages++;
+    }
+    
+    result = io_buffer_init(&xhci->buffer, buffer_pages * PAGE_SIZE, IO_BUFFER_RW);
+    if (result != NO_ERROR) {
+        printf("io_buffer_init failed for xhci->buffer: %d\n", result);
+        goto fail; 
     }
 
-    scratch_pad_bufs <<= HCSPARAMS2_MAX_SBBUF_LO_BITS;
-    scratch_pad_bufs |= XHCI_GET_BITS32(hcsparams2, HCSPARAMS2_MAX_SBBUF_LO_START,
-                                        HCSPARAMS2_MAX_SBBUF_LO_BITS);
+    // offset for allocating from xhci->buffer
+    mx_off_t buffer_offset = 0;
+    mx_off_t contig_buffer_offset = 0;
+
+    // allocate one page for DCBAA
+    xhci->dcbaa = io_buffer_virt(&xhci->buffer) + buffer_offset;
+    xhci->dcbaa_phys = io_buffer_phys(&xhci->buffer, buffer_offset);
+    buffer_offset += PAGE_SIZE;
 
     if (scratch_pad_bufs > 0) {
-        xhci->scratch_pad = xhci_memalign(xhci, 64, scratch_pad_bufs * sizeof(uint64_t));
-        if (!xhci->scratch_pad) {
-            result = ERR_NO_MEMORY;
-            goto fail;
+        uint64_t* scratch_pad;
+        mx_paddr_t scratch_pad_phys;
+        if (scratch_pad_size > PAGE_SIZE) {
+            // allocate scratch pad from contiguous buffer
+            scratch_pad = io_buffer_virt(&xhci->contig_buffer) + contig_buffer_offset;
+            scratch_pad_phys = io_buffer_phys(&xhci->contig_buffer, contig_buffer_offset);
+            contig_buffer_offset += PAGE_ROUNDUP(scratch_pad_size);
+        } else {
+            // allocate scratch pad from non-contiguous buffer
+            scratch_pad = io_buffer_virt(&xhci->buffer) + buffer_offset;
+            scratch_pad_phys = io_buffer_phys(&xhci->buffer, buffer_offset);
+            buffer_offset += PAGE_SIZE;
         }
-        uint32_t page_size = XHCI_READ32(&xhci->op_regs->pagesize) << 12;
-        xhci->page_size = page_size;
 
         for (uint32_t i = 0; i < scratch_pad_bufs; i++) {
-            void* page = xhci_memalign(xhci, page_size, page_size);
-            if (!page) {
-                result = ERR_NO_MEMORY;
-                goto fail;
+            if (xhci->page_size > PAGE_SIZE) {
+                scratch_pad[i] = io_buffer_phys(&xhci->contig_buffer, contig_buffer_offset);
+                contig_buffer_offset += xhci->page_size;
+            } else {
+                scratch_pad[i] = io_buffer_phys(&xhci->buffer, buffer_offset);
+                buffer_offset += PAGE_SIZE;
             }
-            xhci->scratch_pad[i] = xhci_virt_to_phys(xhci, (mx_vaddr_t)page);
         }
-        xhci->dcbaa[0] = xhci_virt_to_phys(xhci, (mx_vaddr_t)xhci->scratch_pad);
+        xhci->dcbaa[0] = scratch_pad_phys;
+    } else {
+        xhci->dcbaa[0] = 0;
     }
 
     result = xhci_transfer_ring_init(xhci, &xhci->command_ring, COMMAND_RING_SIZE);
@@ -247,15 +297,8 @@ fail:
     free(xhci->rh_port_map);
     xhci_event_ring_free(xhci, 0);
     xhci_transfer_ring_free(xhci, &xhci->command_ring);
-    if (xhci->scratch_pad) {
-        for (size_t i = 0; i < scratch_pad_bufs; i++) {
-            if (xhci->scratch_pad[i]) {
-                xhci_free(xhci, (void *)xhci_phys_to_virt(xhci, (mx_paddr_t)xhci->scratch_pad[i]));
-            }
-        }
-        xhci_free(xhci, xhci->scratch_pad);
-    }
-    xhci_free(xhci, xhci->dcbaa);
+    io_buffer_release(&xhci->buffer);
+    io_buffer_release(&xhci->contig_buffer);
     free(xhci->slots);
     return result;
 }
@@ -310,7 +353,7 @@ void xhci_start(xhci_t* xhci) {
     crcr |= CRCR_RCS;
     XHCI_WRITE64(&op_regs->crcr, crcr);
 
-    XHCI_WRITE64(&op_regs->dcbaap, xhci_virt_to_phys(xhci, (mx_vaddr_t)xhci->dcbaa));
+    XHCI_WRITE64(&op_regs->dcbaap, xhci->dcbaa_phys);
     XHCI_SET_BITS32(&op_regs->config, CONFIG_MAX_SLOTS_ENABLED_START,
                     CONFIG_MAX_SLOTS_ENABLED_BITS, xhci->max_slots);
 

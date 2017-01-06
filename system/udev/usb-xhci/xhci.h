@@ -5,6 +5,7 @@
 #pragma once
 
 #include <ddk/completion.h>
+#include <ddk/io-buffer.h>
 #include <magenta/hw/usb.h>
 #include <magenta/hw/usb-hub.h>
 #include <magenta/types.h>
@@ -55,7 +56,7 @@ struct xhci {
 
     // DMA data structures
     uint64_t* dcbaa;
-    uint64_t* scratch_pad;
+    mx_paddr_t dcbaa_phys;
 
     xhci_transfer_ring_t command_ring;
     xhci_command_context_t* command_contexts[COMMAND_RING_SIZE];
@@ -105,6 +106,11 @@ struct xhci {
     uint64_t mfindex_wrap_count;
    // time of last mfindex wrap
     mx_time_t last_mfindex_wrap;
+
+    // DMA memory for for command and event rings, DCBAA and scratch pad
+    io_buffer_t buffer;
+    // contiguous buffer, only used if required for scratch pad
+    io_buffer_t contig_buffer;
 };
 
 mx_status_t xhci_init(xhci_t* xhci, void* mmio);
