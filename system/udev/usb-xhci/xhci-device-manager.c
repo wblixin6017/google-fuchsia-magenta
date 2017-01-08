@@ -79,7 +79,7 @@ static mx_status_t xhci_address_device(xhci_t* xhci, uint32_t slot_id, uint32_t 
     }
 
     xhci_transfer_ring_t* transfer_ring = &slot->transfer_rings[0];
-    mx_status_t status = xhci_transfer_ring_init(xhci, transfer_ring, TRANSFER_RING_SIZE);
+    mx_status_t status = xhci_transfer_ring_init(transfer_ring, TRANSFER_RING_SIZE);
     if (status < 0)
         return status;
 
@@ -327,7 +327,7 @@ static bool xhci_stop_endpoint(xhci_t* xhci, uint32_t slot_id, int ep_index) {
     }
     // and any deferred requests
     xhci_process_deferred_txns(xhci, transfer_ring, true);
-    xhci_transfer_ring_free(xhci, transfer_ring);
+    xhci_transfer_ring_free(transfer_ring);
 
     return true;
 }
@@ -528,7 +528,7 @@ mx_status_t xhci_enable_endpoint(xhci_t* xhci, uint32_t slot_id, usb_endpoint_de
         xhci_endpoint_context_t* epc = (xhci_endpoint_context_t*)&xhci->input_context[(index + 2) * xhci->context_size];
         memset((void*)epc, 0, xhci->context_size);
         // allocate a transfer ring for the endpoint
-        mx_status_t status = xhci_transfer_ring_init(xhci, transfer_ring, TRANSFER_RING_SIZE);
+        mx_status_t status = xhci_transfer_ring_init(transfer_ring, TRANSFER_RING_SIZE);
         if (status < 0)
             return status;
 

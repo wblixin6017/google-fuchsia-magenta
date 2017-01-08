@@ -7,31 +7,27 @@
 //#define TRACE 1
 #include "xhci-debug.h"
 
-inline void trb_set_link(xhci_t* xhci, xhci_trb_t* trb, xhci_trb_t* next, bool toggle_cycle) {
-    trb_set_ptr(trb, (void *)xhci_virt_to_phys(xhci, (mx_vaddr_t)next));
-    trb_set_control(trb, TRB_LINK, (toggle_cycle ? TRB_TC : 0));
-}
+mx_status_t xhci_transfer_ring_init(xhci_transfer_ring_t* ring, int count) {
+    mx_status_t status = io_buffer_init(&ring->buffer, count * sizeof(xhci_trb_t), IO_BUFFER_RW);
+    if (status != NO_ERROR) return status;
 
-mx_status_t xhci_transfer_ring_init(xhci_t* xhci, xhci_transfer_ring_t* ring, int count) {
     list_initialize(&ring->pending_requests);
     list_initialize(&ring->deferred_txns);
 
-    ring->start = xhci_memalign(xhci, 64, count * sizeof(xhci_trb_t));
-    if (!ring->start)
-        return ERR_NO_MEMORY;
+    ring->start = io_buffer_virt(&ring->buffer);
     ring->current = ring->start;
     ring->dequeue_ptr = ring->start;
     ring->size = count - 1;    // subtract 1 for LINK TRB at the end
     ring->pcs = TRB_C;
-    trb_set_link(xhci, &ring->start[count - 1], ring->start, true);
+
+    // set link TRB at end to point back to the beginning
+    trb_set_ptr(&ring->start[count - 1], (void *)io_buffer_phys(&ring->buffer, 0));
+    trb_set_control(&ring->start[count - 1], TRB_LINK, TRB_TC);
     return NO_ERROR;
 }
 
-void xhci_transfer_ring_free(xhci_t* xhci, xhci_transfer_ring_t* ring) {
-    if (ring->start) {
-        xhci_free(xhci, (void*)ring->start);
-        ring->start = NULL;
-    }
+void xhci_transfer_ring_free(xhci_transfer_ring_t* ring) {
+    io_buffer_release(&ring->buffer);
 }
 
 // return the number of free TRBs in the ring
@@ -50,16 +46,20 @@ size_t xhci_transfer_ring_free_trbs(xhci_transfer_ring_t* ring) {
 
 mx_status_t xhci_event_ring_init(xhci_t* xhci, int interruptor, int count) {
     xhci_event_ring_t* ring = &xhci->event_rings[interruptor];
+    // allocate TRBs and erst_array from a single buffer
+    mx_status_t status = io_buffer_init(&ring->buffer, count * sizeof(xhci_trb_t)
+                                        + ERST_ARRAY_SIZE * sizeof(erst_entry_t), IO_BUFFER_RW);
+    if (status != NO_ERROR) return status;
 
-    ring->start = xhci_memalign(xhci, 64, count * sizeof(xhci_trb_t));
-    if (!ring->start)
-        return ERR_NO_MEMORY;
-    ring->erst_array = xhci_memalign(xhci, 64, ERST_ARRAY_SIZE * sizeof(erst_entry_t));
-    if (!ring->erst_array) {
-        xhci_free(xhci, (void*)ring->start);
-        return ERR_NO_MEMORY;
-    }
-    XHCI_WRITE64(&ring->erst_array[0].ptr, xhci_virt_to_phys(xhci, (mx_vaddr_t)ring->start));
+    void* virt = io_buffer_virt(&ring->buffer);
+    mx_paddr_t phys = io_buffer_phys(&ring->buffer, 0);
+    int erst_offset = count * sizeof(xhci_trb_t);
+    
+    ring->start = virt;
+    ring->erst_array = virt + erst_offset;
+    ring->erst_array_phys = phys + erst_offset;
+
+    XHCI_WRITE64(&ring->erst_array[0].ptr, phys);
     XHCI_WRITE32(&ring->erst_array[0].size, count);
 
     ring->current = ring->start;
@@ -70,7 +70,7 @@ mx_status_t xhci_event_ring_init(xhci_t* xhci, int interruptor, int count) {
 
 void xhci_event_ring_free(xhci_t* xhci, int interruptor) {
     xhci_event_ring_t* ring = &xhci->event_rings[interruptor];
-    xhci_free(xhci, (void *)ring->start);
+    io_buffer_release(&ring->buffer);
 }
 
 void xhci_clear_trb(xhci_trb_t* trb) {

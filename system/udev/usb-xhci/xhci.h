@@ -10,6 +10,7 @@
 #include <magenta/hw/usb-hub.h>
 #include <magenta/types.h>
 #include <magenta/listnode.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <threads.h>
 
@@ -17,10 +18,11 @@
 #include "xhci-root-hub.h"
 #include "xhci-trb.h"
 
-#define COMMAND_RING_SIZE 8
-#define EVENT_RING_SIZE 64
-#define TRANSFER_RING_SIZE 64
+// choose ring sizes to allow each ring to fit in a single page
+#define COMMAND_RING_SIZE (PAGE_SIZE / sizeof(xhci_trb_t))
+#define TRANSFER_RING_SIZE (PAGE_SIZE / sizeof(xhci_trb_t))
 #define ERST_ARRAY_SIZE 1
+#define EVENT_RING_SIZE ((PAGE_SIZE - ERST_ARRAY_SIZE * sizeof(erst_entry_t)) / sizeof(xhci_trb_t))
 
 #define XHCI_RH_USB_2 0 // index of USB 2.0 virtual root hub device
 #define XHCI_RH_USB_3 1 // index of USB 2.0 virtual root hub device

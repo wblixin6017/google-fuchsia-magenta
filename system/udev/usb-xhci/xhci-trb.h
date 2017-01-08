@@ -4,12 +4,14 @@
 
 #pragma once
 
+#include <ddk/io-buffer.h>
 #include <magenta/listnode.h>
 
 #include "xhci-hw.h"
 
 // used for both command ring and transfer rings
 typedef struct xhci_transfer_ring {
+    io_buffer_t buffer;
     xhci_trb_t* start;
     xhci_trb_t* current;        // next to be filled by producer
     uint8_t pcs;                // producer cycle status
@@ -24,17 +26,19 @@ typedef struct xhci_transfer_ring {
 } xhci_transfer_ring_t;
 
 typedef struct xhci_event_ring {
+    io_buffer_t buffer;
     xhci_trb_t* start;
     xhci_trb_t* current;
     xhci_trb_t* end;
     erst_entry_t* erst_array;
+    mx_paddr_t erst_array_phys;
     uint8_t ccs; // consumer cycle status
 } xhci_event_ring_t;
 
 typedef struct xhci xhci_t;
 
-mx_status_t xhci_transfer_ring_init(xhci_t* xhci, xhci_transfer_ring_t* tr, int count);
-void xhci_transfer_ring_free(xhci_t* xhci, xhci_transfer_ring_t* ring);
+mx_status_t xhci_transfer_ring_init(xhci_transfer_ring_t* tr, int count);
+void xhci_transfer_ring_free(xhci_transfer_ring_t* ring);
 size_t xhci_transfer_ring_free_trbs(xhci_transfer_ring_t* ring);
 mx_status_t xhci_event_ring_init(xhci_t* xhci, int interruptor, int count);
 void xhci_event_ring_free(xhci_t* xhci, int interruptor);

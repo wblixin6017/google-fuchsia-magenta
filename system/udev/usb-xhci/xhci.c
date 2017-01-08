@@ -216,7 +216,7 @@ mx_status_t xhci_init(xhci_t* xhci, void* mmio) {
     }
     
     // Allocate DMA memory for various things:
-    size_t buffer_pages =  2;   // one page for DCBAA and one for command and event rings
+    size_t buffer_pages =  1;   // one page for DCBAA
     if (xhci->page_size <= PAGE_SIZE) {
         // allocate scratch pad buffers from non-contiguous buffer
         buffer_pages += scratch_pad_bufs;
@@ -270,7 +270,7 @@ mx_status_t xhci_init(xhci_t* xhci, void* mmio) {
         xhci->dcbaa[0] = 0;
     }
 
-    result = xhci_transfer_ring_init(xhci, &xhci->command_ring, COMMAND_RING_SIZE);
+    result = xhci_transfer_ring_init(&xhci->command_ring, COMMAND_RING_SIZE);
     if (result != NO_ERROR) {
         printf("xhci_command_ring_init failed\n");
         goto fail;
@@ -296,7 +296,7 @@ fail:
     free(xhci->rh_map);
     free(xhci->rh_port_map);
     xhci_event_ring_free(xhci, 0);
-    xhci_transfer_ring_free(xhci, &xhci->command_ring);
+    xhci_transfer_ring_free(&xhci->command_ring);
     io_buffer_release(&xhci->buffer);
     io_buffer_release(&xhci->contig_buffer);
     free(xhci->slots);
