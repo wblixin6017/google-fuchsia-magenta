@@ -307,7 +307,7 @@ static void xhci_update_erdp(xhci_t* xhci, int interruptor) {
     xhci_event_ring_t* er = &xhci->event_rings[interruptor];
     xhci_intr_regs_t* intr_regs = &xhci->runtime_regs->intr_regs[interruptor];
 
-    uint64_t erdp = xhci_virt_to_phys(xhci, (mx_vaddr_t)er->current);
+    uint64_t erdp = xhci_event_ring_current_phys(er);
     erdp |= ERDP_EHB; // clear event handler busy
     XHCI_WRITE64(&intr_regs->erdp, erdp);
 }
@@ -319,8 +319,7 @@ static void xhci_interruptor_init(xhci_t* xhci, int interruptor) {
 
     XHCI_SET32(&intr_regs->iman, IMAN_IE, IMAN_IE);
     XHCI_SET32(&intr_regs->erstsz, ERSTSZ_MASK, ERST_ARRAY_SIZE);
-    XHCI_WRITE64(&intr_regs->erstba, xhci_virt_to_phys(xhci,
-                                                       (mx_vaddr_t)xhci->event_rings[interruptor].erst_array));
+    XHCI_WRITE64(&intr_regs->erstba, xhci->event_rings[interruptor].erst_array_phys);
 }
 
 void xhci_wait_bits(volatile uint32_t* ptr, uint32_t bits, uint32_t expected) {
@@ -349,7 +348,7 @@ void xhci_start(xhci_t* xhci) {
     // setup operational registers
     xhci_op_regs_t* op_regs = xhci->op_regs;
     // initialize command ring
-    uint64_t crcr = xhci_virt_to_phys(xhci, (mx_vaddr_t)xhci->command_ring.start);
+    uint64_t crcr = xhci_transfer_ring_start_phys(&xhci->command_ring);
     crcr |= CRCR_RCS;
     XHCI_WRITE64(&op_regs->crcr, crcr);
 
@@ -391,7 +390,7 @@ void xhci_post_command(xhci_t* xhci, uint32_t command, uint64_t ptr, uint32_t co
 }
 
 static void xhci_handle_command_complete_event(xhci_t* xhci, xhci_trb_t* event_trb) {
-    xhci_trb_t* command_trb = xhci_read_trb_ptr(xhci, event_trb);
+    xhci_trb_t* command_trb = xhci_read_trb_ptr(&xhci->command_ring, event_trb);
     uint32_t cc = XHCI_GET_BITS32(&event_trb->status, EVT_TRB_CC_START, EVT_TRB_CC_BITS);
     xprintf("xhci_handle_command_complete_event slot_id: %d command: %d cc: %d\n",
             (event_trb->control >> TRB_SLOT_ID_START), trb_get_type(command_trb), cc);

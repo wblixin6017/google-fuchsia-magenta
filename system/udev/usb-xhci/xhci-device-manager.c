@@ -123,8 +123,7 @@ static mx_status_t xhci_address_device(xhci_t* xhci, uint32_t slot_id, uint32_t 
     XHCI_SET_BITS32(&sc->sc2, SLOT_CTX_TT_PORT_NUM_START, SLOT_CTX_TT_PORT_NUM_BITS, tt_port_number);
 
     // Setup endpoint context for ep0
-    void* tr = (void*)transfer_ring->start;
-    uint64_t tr_dequeue = xhci_virt_to_phys(xhci, (mx_vaddr_t)tr);
+    mx_paddr_t tr_dequeue = xhci_transfer_ring_start_phys(transfer_ring);
 
     XHCI_SET_BITS32(&ep0c->epc1, EP_CTX_CERR_START, EP_CTX_CERR_BITS, 3); // ???
     XHCI_SET_BITS32(&ep0c->epc1, EP_CTX_EP_TYPE_START, EP_CTX_EP_TYPE_BITS, EP_CTX_EP_TYPE_CONTROL);

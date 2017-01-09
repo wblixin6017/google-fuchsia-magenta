@@ -5,7 +5,9 @@
 #include <ddk/binding.h>
 #include <ddk/device.h>
 #include <ddk/driver.h>
+#if 1
 #include <ddk/io-alloc.h>
+#endif
 #include <ddk/protocol/pci.h>
 #include <ddk/protocol/usb.h>
 #include <ddk/protocol/usb-bus.h>
@@ -36,7 +38,9 @@ typedef struct usb_xhci {
     mx_device_t* bus_device;
     usb_bus_protocol_t* bus_protocol;
 
+#if 1
     io_alloc_t* io_alloc;
+#endif
     pci_protocol_t* pci_proto;
     bool legacy_irq_mode;
     mx_handle_t irq_handle;
@@ -74,6 +78,7 @@ void xhci_remove_device(xhci_t* xhci, int slot_id) {
     uxhci->bus_protocol->remove_device(uxhci->bus_device, slot_id);
 }
 
+#if 1
 void* xhci_malloc(xhci_t* xhci, size_t size) {
     usb_xhci_t* uxhci = xhci_to_usb_xhci(xhci);
     return io_malloc(uxhci->io_alloc, size);
@@ -107,6 +112,7 @@ mx_vaddr_t xhci_phys_to_virt(xhci_t* xhci, mx_paddr_t addr) {
     usb_xhci_t* uxhci = xhci_to_usb_xhci(xhci);
     return io_phys_to_virt(uxhci->io_alloc, addr);
 }
+#endif
 
 static int xhci_irq_thread(void* arg) {
     usb_xhci_t* uxhci = (usb_xhci_t*)arg;
@@ -313,7 +319,9 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     mx_handle_t irq_handle = MX_HANDLE_INVALID;
     mx_handle_t mmio_handle = MX_HANDLE_INVALID;
     mx_handle_t cfg_handle = MX_HANDLE_INVALID;
+#if 1
     io_alloc_t* io_alloc = NULL;
+#endif
     usb_xhci_t* uxhci = NULL;
     mx_status_t status;
 
@@ -343,10 +351,10 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
         goto error_return;
     }
 
+#if 1
     // create an IO memory allocator
     io_alloc = io_alloc_init(10 * 1024 * 1024);
-
-    //printf("VID %04X %04X\n", pci_config->vendor_id, pci_config->device_id);
+#endif
 
     // find our bar
     int bar = -1;
@@ -401,7 +409,9 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
     }
     irq_handle = status;
 
+#if 1
     uxhci->io_alloc = io_alloc;
+#endif
     uxhci->irq_handle = irq_handle;
     uxhci->mmio_handle = mmio_handle;
     uxhci->cfg_handle = cfg_handle;
@@ -428,8 +438,10 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev) {
 error_return:
     if (uxhci)
         free(uxhci);
+#if 1
     if (io_alloc)
         io_alloc_free(io_alloc);
+#endif
     if (irq_handle != MX_HANDLE_INVALID)
         mx_handle_close(irq_handle);
     if (mmio_handle != MX_HANDLE_INVALID)

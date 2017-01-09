@@ -79,15 +79,18 @@ void xhci_clear_trb(xhci_trb_t* trb) {
     XHCI_WRITE32(&trb->control, 0);
 }
 
-void* xhci_read_trb_ptr(xhci_t* xhci, xhci_trb_t* trb) {
-    return (void*)xhci_phys_to_virt(xhci, (mx_paddr_t)trb_get_ptr(trb));
+void* xhci_read_trb_ptr(xhci_transfer_ring_t* ring, xhci_trb_t* trb) {
+    // convert physical address to virtual
+    uint8_t* ptr = trb_get_ptr(trb);
+    ptr += ((uint8_t *)io_buffer_virt(&ring->buffer) - (uint8_t *)io_buffer_phys(&ring->buffer, 0));
+    return ptr;
 }
 
-xhci_trb_t* xhci_get_next_trb(xhci_t* xhci, xhci_trb_t* trb) {
+xhci_trb_t* xhci_get_next_trb(xhci_transfer_ring_t* ring, xhci_trb_t* trb) {
     trb++;
     uint32_t control = XHCI_READ32(&trb->control);
     if ((control & TRB_TYPE_MASK) == (TRB_LINK << TRB_TYPE_START)) {
-        trb = xhci_read_trb_ptr(xhci, trb);
+        trb = xhci_read_trb_ptr(ring, trb);
     }
     return trb;
 }
@@ -111,6 +114,6 @@ void xhci_increment_ring(xhci_t* xhci, xhci_transfer_ring_t* ring) {
         if (control & TRB_TC) {
             ring->pcs ^= TRB_C;
         }
-        ring->current = xhci_read_trb_ptr(xhci, trb);
+        ring->current = xhci_read_trb_ptr(ring, trb);
     }
 }

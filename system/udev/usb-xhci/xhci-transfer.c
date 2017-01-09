@@ -51,7 +51,7 @@ static mx_status_t xhci_reset_endpoint(xhci_t* xhci, uint32_t slot_id, uint32_t 
 
     // then move transfer ring's dequeue pointer passed the failed transaction
     xhci_sync_command_init(&command);
-    uint64_t ptr = xhci_virt_to_phys(xhci, (mx_vaddr_t)transfer_ring->current);
+    uint64_t ptr = xhci_transfer_ring_current_phys(transfer_ring);
     ptr |= transfer_ring->pcs;
     // command expects device context index, so increment endpoint by 1
     control = (slot_id << TRB_SLOT_ID_START) | ((endpoint + 1) << TRB_ENDPOINT_ID_START);
@@ -313,13 +313,13 @@ void xhci_handle_transfer_event(xhci_t* xhci, xhci_trb_t* trb) {
         if (control & EVT_TRB_ED) {
             context = (xhci_transfer_context_t*)trb_get_ptr(trb);
         } else {
-            trb = xhci_read_trb_ptr(xhci, trb);
+            trb = xhci_read_trb_ptr(ring, trb);
             for (int i = 0; i < 5 && trb; i++) {
                 if (trb_get_type(trb) == TRB_TRANSFER_EVENT_DATA) {
                     context = (xhci_transfer_context_t*)trb_get_ptr(trb);
                     break;
                 }
-                trb = xhci_get_next_trb(xhci, trb);
+                trb = xhci_get_next_trb(ring, trb);
             }
         }
     }

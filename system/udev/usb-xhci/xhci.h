@@ -135,12 +135,14 @@ inline bool xhci_is_root_hub(xhci_t* xhci, uint32_t device_id) {
 }
 
 // upper layer routines in usb-xhci.c
+#if 1
 void* xhci_malloc(xhci_t* xhci, size_t size);
 void* xhci_memalign(xhci_t* xhci, size_t alignment, size_t size);
 void xhci_free(xhci_t* xhci, void* addr);
 void xhci_free_phys(xhci_t* xhci, mx_paddr_t addr);
 mx_paddr_t xhci_virt_to_phys(xhci_t* xhci, mx_vaddr_t addr);
 mx_vaddr_t xhci_phys_to_virt(xhci_t* xhci, mx_paddr_t addr);
+#endif
 
 mx_status_t xhci_add_device(xhci_t* xhci, int slot_id, int hub_address, int speed);
 void xhci_remove_device(xhci_t* xhci, int slot_id);
