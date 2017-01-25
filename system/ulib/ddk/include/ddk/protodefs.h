@@ -26,5 +26,6 @@ DDK_PROTOCOL_DEF(MIDI,           'pMID', "midi")
 DDK_PROTOCOL_DEF(SOC,            'pSOC', "soc")
 DDK_PROTOCOL_DEF(ACPI_BUS,       'pABS', "acpi-bus")
 DDK_PROTOCOL_DEF(ACPI,           'pACP', "acpi")
+DDK_PROTOCOL_DEF(DEVICETREE,     'pDVT', "devicetree")
 #undef DDK_PROTOCOL_DEF
 #endif
