@@ -21,7 +21,8 @@
 
 #include <platform.h>
 #include <dev/interrupt.h>
-#include <dev/interrupt/arm_gic.h>
+//#include <dev/interrupt/arm_gic.h>
+#include <dev/interrupt/arm_gicv3.h>
 #include <platform/msm8998.h>
 #include <platform/atag.h>
 
@@ -122,7 +123,8 @@ void platform_early_init(void)
     uart_init_early();
 
     /* initialize the interrupt controller and timers */
-    arm_gic_init();
+    //arm_gic_init();
+    arm_gicv3_init();
     arm_generic_timer_init(ARM_GENERIC_TIMER_PHYSICAL_INT, 0);
 
     /* add the main memory arena */
