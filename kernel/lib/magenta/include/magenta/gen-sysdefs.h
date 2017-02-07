@@ -14,7 +14,7 @@ uint64_t sys_ticks_per_second();
 uint32_t sys_num_cpus();
 
 mx_status_t sys_version_get(
-    char version[],
+    char* version,
     uint32_t version_len);
 
 mx_status_t sys_cache_flush(
@@ -28,21 +28,21 @@ mx_status_t sys_handle_close(
 mx_status_t sys_handle_duplicate(
     mx_handle_t handle,
     mx_rights_t rights,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_handle_replace(
     mx_handle_t handle,
     mx_rights_t rights,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_handle_wait_one(
     mx_handle_t handle,
     mx_signals_t waitfor,
     mx_time_t timeout,
-    mx_signals_t observed[1]);
+    mx_signals_t* observed);
 
 mx_status_t sys_handle_wait_many(
-    mx_wait_item_t items[],
+    mx_wait_item_t* items,
     uint32_t count,
     mx_time_t timeout);
 
@@ -73,14 +73,14 @@ mx_status_t sys_object_get_info(
     uint32_t topic,
     void* buffer,
     size_t buffer_size,
-    size_t actual_count[1],
-    size_t avail_count[1]);
+    size_t* actual_count,
+    size_t* avail_count);
 
 mx_status_t sys_object_get_child(
     mx_handle_t handle,
     uint64_t koid,
     mx_rights_t rights,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_object_bind_exception_port(
     mx_handle_t object,
@@ -90,63 +90,63 @@ mx_status_t sys_object_bind_exception_port(
 
 mx_status_t sys_channel_create(
     uint32_t options,
-    mx_handle_t out0[1],
-    mx_handle_t out1[1]);
+    mx_handle_t* out0,
+    mx_handle_t* out1);
 
 mx_status_t sys_channel_read(
     mx_handle_t handle,
     uint32_t options,
     void* bytes,
     uint32_t num_bytes,
-    uint32_t actual_bytes[1],
-    mx_handle_t handles[],
+    uint32_t* actual_bytes,
+    mx_handle_t* handles,
     uint32_t num_handles,
-    uint32_t actual_handles[1]);
+    uint32_t* actual_handles);
 
 mx_status_t sys_channel_write(
     mx_handle_t handle,
     uint32_t options,
     const void* bytes,
     uint32_t num_bytes,
-    const mx_handle_t handles[],
+    const mx_handle_t* handles,
     uint32_t num_handles);
 
 mx_status_t sys_channel_call(
     mx_handle_t handle,
     uint32_t options,
     mx_time_t timeout,
-    const mx_channel_call_args_t args[1],
-    uint32_t actual_bytes[1],
-    uint32_t actual_handles[1],
-    mx_status_t read_status[1]);
+    const mx_channel_call_args_t* args,
+    uint32_t* actual_bytes,
+    uint32_t* actual_handles,
+    mx_status_t* read_status);
 
 mx_status_t sys_socket_create(
     uint32_t options,
-    mx_handle_t out0[1],
-    mx_handle_t out1[1]);
+    mx_handle_t* out0,
+    mx_handle_t* out1);
 
 mx_status_t sys_socket_write(
     mx_handle_t handle,
     uint32_t options,
     const void* buffer,
     size_t size,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_socket_read(
     mx_handle_t handle,
     uint32_t options,
     void* buffer,
     size_t size,
-    size_t actual[1]);
+    size_t* actual);
 
 void sys_thread_exit();
 
 mx_status_t sys_thread_create(
     mx_handle_t process,
-    const char name[],
+    const char* name,
     uint32_t name_len,
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_thread_start(
     mx_handle_t handle,
@@ -160,7 +160,7 @@ mx_status_t sys_thread_read_state(
     uint32_t kind,
     void* buffer,
     uint32_t len,
-    uint32_t actual[1]);
+    uint32_t* actual);
 
 mx_status_t sys_thread_write_state(
     mx_handle_t handle,
@@ -173,11 +173,11 @@ void sys_process_exit(
 
 mx_status_t sys_process_create(
     mx_handle_t job,
-    const char name[],
+    const char* name,
     uint32_t name_len,
     uint32_t options,
-    mx_handle_t proc_handle[1],
-    mx_handle_t vmar_handle[1]);
+    mx_handle_t* proc_handle,
+    mx_handle_t* vmar_handle);
 
 mx_status_t sys_process_start(
     mx_handle_t process_handle,
@@ -192,19 +192,19 @@ mx_status_t sys_process_read_memory(
     uintptr_t vaddr,
     void* buffer,
     size_t len,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_process_write_memory(
     mx_handle_t proc,
     uintptr_t vaddr,
     const void* buffer,
     size_t len,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_job_create(
     mx_handle_t parent_job,
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_task_resume(
     mx_handle_t task_handle,
@@ -215,32 +215,32 @@ mx_status_t sys_task_kill(
 
 mx_status_t sys_event_create(
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_eventpair_create(
     uint32_t options,
-    mx_handle_t out0[1],
-    mx_handle_t out1[1]);
+    mx_handle_t* out0,
+    mx_handle_t* out1);
 
 mx_status_t sys_futex_wait(
-    mx_futex_t value_ptr[1],
+    mx_futex_t* value_ptr,
     int current_value,
     mx_time_t timeout);
 
 mx_status_t sys_futex_wake(
-    mx_futex_t value_ptr[1],
+    mx_futex_t* value_ptr,
     uint32_t count);
 
 mx_status_t sys_futex_requeue(
-    mx_futex_t wake_ptr[1],
+    mx_futex_t* wake_ptr,
     uint32_t wake_count,
     int current_value,
-    mx_futex_t requeue_ptr[1],
+    mx_futex_t* requeue_ptr,
     uint32_t requeue_count);
 
 mx_status_t sys_waitset_create(
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_waitset_add(
     mx_handle_t waitset_handle,
@@ -255,12 +255,12 @@ mx_status_t sys_waitset_remove(
 mx_status_t sys_waitset_wait(
     mx_handle_t waitset_handle,
     mx_time_t timeout,
-    mx_waitset_result_t results[],
-    uint32_t count[1]);
+    mx_waitset_result_t* results,
+    uint32_t* count);
 
 mx_status_t sys_port_create(
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_port_queue(
     mx_handle_t handle,
@@ -282,25 +282,25 @@ mx_status_t sys_port_bind(
 mx_status_t sys_vmo_create(
     uint64_t size,
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_vmo_read(
     mx_handle_t handle,
     void* data,
     uint64_t offset,
     size_t len,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_vmo_write(
     mx_handle_t handle,
     const void* data,
     uint64_t offset,
     size_t len,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_vmo_get_size(
     mx_handle_t handle,
-    uint64_t size[1]);
+    uint64_t* size);
 
 mx_status_t sys_vmo_set_size(
     mx_handle_t handle,
@@ -317,7 +317,7 @@ mx_status_t sys_vmo_op_range(
 mx_status_t sys_cprng_draw(
     void* buffer,
     size_t len,
-    size_t actual[1]);
+    size_t* actual);
 
 mx_status_t sys_cprng_add_entropy(
     const void* buffer,
@@ -325,17 +325,17 @@ mx_status_t sys_cprng_add_entropy(
 
 mx_status_t sys_fifo0_create(
     uint64_t count,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_fifo0_op(
     mx_handle_t handle,
     uint32_t op,
     uint64_t val,
-    mx_fifo_state_t out[1]);
+    mx_fifo_state_t* out);
 
 mx_status_t sys_log_create(
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_log_write(
     mx_handle_t handle,
@@ -354,7 +354,7 @@ mx_status_t sys_ktrace_read(
     void* data,
     uint32_t offset,
     uint32_t len,
-    uint32_t actual[1]);
+    uint32_t* actual);
 
 mx_status_t sys_ktrace_control(
     mx_handle_t handle,
@@ -415,26 +415,26 @@ mx_status_t sys_mmap_device_memory(
     mx_paddr_t paddr,
     uint32_t len,
     mx_cache_policy_t cache_policy,
-    uintptr_t out_vaddr[1]);
+    uintptr_t* out_vaddr);
 
 mx_status_t sys_io_mapping_get_info(
     mx_handle_t handle,
-    uintptr_t out_vaddr[1],
-    uint64_t out_size[1]);
+    uintptr_t* out_vaddr,
+    uint64_t* out_size);
 
 mx_status_t sys_vmo_create_contiguous(
     mx_handle_t rsrc_handle,
     size_t size,
     uint32_t alignment_log2,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_vmar_allocate(
     mx_handle_t parent_vmar_handle,
     size_t offset,
     size_t size,
     uint32_t flags,
-    mx_handle_t child_vmar[1],
-    uintptr_t child_addr[1]);
+    mx_handle_t* child_vmar,
+    uintptr_t* child_addr);
 
 mx_status_t sys_vmar_destroy(
     mx_handle_t vmar_handle);
@@ -446,7 +446,7 @@ mx_status_t sys_vmar_map(
     uint64_t vmo_offset,
     size_t len,
     uint32_t flags,
-    uintptr_t mapped_addr[1]);
+    uintptr_t* mapped_addr);
 
 mx_status_t sys_vmar_unmap(
     mx_handle_t vmar_handle,
@@ -460,10 +460,10 @@ mx_status_t sys_vmar_protect(
     uint32_t prot);
 
 mx_status_t sys_bootloader_fb_get_info(
-    uint32_t format[1],
-    uint32_t width[1],
-    uint32_t height[1],
-    uint32_t stride[1]);
+    uint32_t* format,
+    uint32_t* width,
+    uint32_t* height,
+    uint32_t* stride);
 
 mx_status_t sys_set_framebuffer(
     mx_handle_t handle,
@@ -482,7 +482,7 @@ mx_status_t sys_clock_adjust(
 mx_handle_t sys_pci_get_nth_device(
     mx_handle_t handle,
     uint32_t index,
-    mx_pcie_get_nth_info_t out_info[1]);
+    mx_pcie_get_nth_info_t* out_info);
 
 mx_status_t sys_pci_claim_device(
     mx_handle_t handle);
@@ -515,7 +515,7 @@ mx_status_t sys_pci_io_read(
     uint32_t bar_num,
     uint32_t offset,
     uint32_t len,
-    uint32_t out_value[1]);
+    uint32_t* out_value);
 
 mx_handle_t sys_pci_map_interrupt(
     mx_handle_t handle,
@@ -527,7 +527,7 @@ mx_handle_t sys_pci_map_config(
 mx_status_t sys_pci_query_irq_mode_caps(
     mx_handle_t handle,
     uint32_t mode,
-    uint32_t out_max_irqs[1]);
+    uint32_t* out_max_irqs);
 
 mx_status_t sys_pci_set_irq_mode(
     mx_handle_t handle,
@@ -536,7 +536,7 @@ mx_status_t sys_pci_set_irq_mode(
 
 mx_status_t sys_pci_init(
     mx_handle_t handle,
-    const mx_pci_init_arg_t init_buf[],
+    const mx_pci_init_arg_t* init_buf,
     uint32_t len);
 
 mx_status_t sys_pci_add_subtract_io_range(
@@ -554,15 +554,15 @@ mx_status_t sys_acpi_cache_flush(
 
 mx_status_t sys_resource_create(
     mx_handle_t parent_handle,
-    const mx_rrec_t records[],
+    const mx_rrec_t* records,
     uint32_t count,
-    mx_handle_t resource_out[1]);
+    mx_handle_t* resource_out);
 
 mx_status_t sys_resource_get_handle(
     mx_handle_t handle,
     uint32_t index,
     uint32_t options,
-    mx_handle_t out[1]);
+    mx_handle_t* out);
 
 mx_status_t sys_resource_do_action(
     mx_handle_t handle,
@@ -577,7 +577,7 @@ mx_status_t sys_resource_connect(
 
 mx_status_t sys_resource_accept(
     mx_handle_t handle,
-    mx_handle_t channel[1]);
+    mx_handle_t* channel);
 
 int sys_syscall_test_0();
 

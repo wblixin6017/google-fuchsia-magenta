@@ -472,6 +472,7 @@ struct GenParams {
     const char* empty_args;
     const char* switch_var;
     const char* switch_type;
+    const bool  prefer_pointers;
     std::map<string, string> attributes;
 };
 
@@ -560,11 +561,15 @@ bool generate_legacy_header(
                 if (arg.arr_spec->kind == ArraySpec::IN)
                     os << "const ";
 
-                os << arg.type << " " << arg.name;
-                os << "[";
-                if (arg.arr_spec->count)
-                    os << arg.arr_spec->count;
-                os << "]";
+                if (gp.prefer_pointers) {
+                    os << arg.type << "* " << arg.name;
+                } else {
+                    os << arg.type << " " << arg.name;
+                    os << "[";
+                    if (arg.arr_spec->count)
+                        os << arg.arr_spec->count;
+                    os << "]";
+                }
             }
 
             os << ",";
@@ -598,12 +603,87 @@ bool generate_legacy_header(
     return os.good();
 }
 
-bool generate_legacy_code(int index, const GenParams& gp, std::ofstream& os, const Syscall& sc) {
+bool generate_legacy_code(
+    int index, const GenParams& gp, std::ofstream& os, const Syscall& sc) {
     if (is_vdso(sc))
         return true;
-    os << "    case " << index << ": " << gp.switch_var
-       << " = reinterpret_cast<" << gp.switch_type << ">(" << gp.name_prefix << sc.name <<");\n"
-       << "       break;\n";
+
+    constexpr uint32_t indent_spaces = 8u;
+
+    auto syscall_name = gp.name_prefix + sc.name;
+
+    // case 0: ret =
+    os << "    case " << index << ": " << gp.switch_var << " = ";
+
+    string ret_type;
+    if (sc.ret_spec.empty()) {
+        ret_type = override_type(string());
+    } else {
+        if (is_noreturn(sc)) {
+            fprintf(stderr, "error: unexpected return spec for %s\n", sc.name.c_str());
+            return false;
+        }
+        ret_type = override_type(sc.ret_spec[0].to_string());
+    }
+    bool is_void = ret_type.compare("void") == 0;
+    if (is_void) {
+        // void function - synthesise an empty return value.
+        // case 0: ret = 0; sys_andy(
+        os << "0; " << syscall_name << "(";
+    } else {
+        // case 0: ret = static_cast<int64_t(sys_andy(
+        os << "static_cast<uint64_t>(" << syscall_name << "(";
+    }
+
+    // Writes all arguments.
+    int arg_num = 1;
+    for (const auto& arg : sc.arg_spec) {
+        if (!os.good())
+            return false;
+
+        // writes each parameter in its own line.
+        os << "\n" << string(indent_spaces, ' ');
+
+        auto overrided = override_type(arg.to_string());
+
+        if (overrided != arg.to_string()) {
+            if (overrided.find("*") != std::string::npos) {
+                os << " reinterpret_cast<" << overrided << ">(";
+            } else {
+                os << " static_cast<" << overrided << ">(";
+            }
+        } else if (!arg.arr_spec) {
+            os << " static_cast<" << arg.type << ">(";
+        } else {
+            os << " reinterpret_cast<";
+            if (arg.arr_spec->kind == ArraySpec::IN)
+                os << "const ";
+
+            os << arg.type << "*>(";
+        }
+        os << "arg" << arg_num << "),";
+        ++arg_num;
+    }
+
+    if (!sc.arg_spec.empty()) {
+        // remove the comma.
+        os.seekp(-1, std::ios_base::end);
+    } else {
+        // empty args might have a special type.
+        if (gp.empty_args)
+            os << gp.empty_args;
+    }
+
+    if (!is_void) {
+        // Close the static_cast.
+        os << ")";
+    }
+    os << ") ";
+
+    os.seekp(-1, std::ios_base::end);
+
+    os << ";\n       break;\n";
+
     return os.good();
 }
 
@@ -674,6 +754,7 @@ const GenParams gen_params[] = {
         "void",             // no-args special type
         nullptr,            // switch var (does not apply)
         nullptr,            // switch type (does not apply)
+        false,
         user_attrs,         // attributes dictionary
     },
     // The kernel header, C++.  (KernelHeaderCPP)
@@ -682,6 +763,10 @@ const GenParams gen_params[] = {
         ".kernel.h",        // file postfix.
         nullptr,            // no function prefix.
         "sys_",             // function name prefix.
+        nullptr,
+        nullptr,
+        nullptr,
+        true,               // output arrays as pointers
     },
     // The kernel C++ code. A switch statement set.
     {
@@ -690,8 +775,8 @@ const GenParams gen_params[] = {
         nullptr,            // no function prefix.
         "sys_",             // function name prefix.
         nullptr,            // no-args (does not apply)
-        "sfunc",            // switch var name
-        "syscall_func"      // switch var type
+        "ret",              // switch var name
+        "uint64_t"          // switch var type
     },
     //  The assembly file for x86-64 (KernelAsmIntel64).
     {
