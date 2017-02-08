@@ -19,7 +19,6 @@ LK_HEAP_IMPLEMENTATION ?= cmpctmalloc
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/platform.c \
-	$(LOCAL_DIR)/secondary_boot.S \
 	$(MSM_COMMON)/uart.c \
 
 # $(LOCAL_DIR)/gpio.c \
