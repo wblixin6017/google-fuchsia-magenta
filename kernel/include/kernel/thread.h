@@ -30,17 +30,20 @@ __BEGIN_CDECLS;
 #endif
 
 enum thread_state {
-    THREAD_SUSPENDED = 0,
+    THREAD_INITIAL = 0,
     THREAD_READY,
     THREAD_RUNNING,
     THREAD_BLOCKED,
     THREAD_SLEEPING,
+    THREAD_SUSPENDED,
     THREAD_DEATH,
 };
 
 typedef int (*thread_start_routine)(void *arg);
 typedef void (*thread_trampoline_routine)(void) __NO_RETURN;
 typedef void (*thread_exit_callback_t)(void *arg);
+typedef void (*thread_suspend_callback_t)(void *arg);
+typedef void (*thread_resume_callback_t)(void *arg);
 
 #define THREAD_FLAG_DETACHED                  (1<<0)
 #define THREAD_FLAG_FREE_STACK                (1<<1)
@@ -50,6 +53,7 @@ typedef void (*thread_exit_callback_t)(void *arg);
 #define THREAD_FLAG_DEBUG_STACK_BOUNDS_CHECK  (1<<5)
 
 #define THREAD_SIGNAL_KILL                    (1<<0)
+#define THREAD_SIGNAL_SUSPEND                 (1<<1)
 
 #define THREAD_MAGIC (0x74687264) // 'thrd'
 
@@ -120,6 +124,10 @@ typedef struct thread {
     /* callbacks particular events */
     thread_exit_callback_t exit_callback;
     void *exit_callback_arg;
+    thread_suspend_callback_t suspend_callback;
+    void *suspend_callback_arg;
+    thread_resume_callback_t resume_callback;
+    void *resume_callback_arg;
 
     char name[THREAD_NAME_LENGTH];
 #if WITH_DEBUG_LINEBUFFER
@@ -169,9 +177,12 @@ thread_t *thread_create_idle_thread(uint cpu_num);
 void thread_set_name(const char *name);
 void thread_set_priority(int priority);
 void thread_set_exit_callback(thread_t *t, thread_exit_callback_t cb, void *cb_arg);
+void thread_set_suspend_callback(thread_t *t, thread_suspend_callback_t cb, void *cb_arg);
+void thread_set_resume_callback(thread_t *t, thread_resume_callback_t cb, void *cb_arg);
 thread_t *thread_create(const char *name, thread_start_routine entry, void *arg, int priority, size_t stack_size);
 thread_t *thread_create_etc(thread_t *t, const char *name, thread_start_routine entry, void *arg, int priority, void *stack, size_t stack_size, thread_trampoline_routine alt_trampoline);
 status_t thread_resume(thread_t *);
+status_t thread_suspend(thread_t *);
 void thread_exit(int retcode) __NO_RETURN;
 void thread_forget(thread_t *);
 

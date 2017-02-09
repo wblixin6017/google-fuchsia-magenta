@@ -64,6 +64,7 @@ thread_t idle_threads[SMP_MAX_CPUS];
 void thread_resched(void);
 static int idle_thread_routine(void *) __NO_RETURN;
 static void thread_exit_locked(thread_t *current_thread, int retcode) __NO_RETURN;
+static void thread_do_suspend(void);
 
 /* scheduler */
 
@@ -147,7 +148,7 @@ thread_t *thread_create_etc(
     t->entry = entry;
     t->arg = arg;
     t->priority = priority;
-    t->state = THREAD_SUSPENDED;
+    t->state = THREAD_INITIAL;
     t->signals = 0;
     t->blocking_wait_queue = NULL;
     t->blocked_status = NO_ERROR;
@@ -232,8 +233,9 @@ status_t thread_set_real_time(thread_t *t)
 /**
  * @brief  Make a suspended thread executable.
  *
- * This function is typically called to start a thread which has just been
- * created with thread_create()
+ * This function is called to start a thread which has just been
+ * created with thread_create() or which has been suspended with
+ * thread_suspend().
  *
  * @param t  Thread to resume
  *
@@ -250,7 +252,11 @@ status_t thread_resume(thread_t *t)
         resched = true;
 
     THREAD_LOCK(state);
-    if (t->state == THREAD_SUSPENDED) {
+
+    /* Clear the suspend signal in case there is a pending suspend */
+    t->signals &= ~THREAD_SIGNAL_SUSPEND;
+
+    if (t->state == THREAD_INITIAL || t->state == THREAD_SUSPENDED) {
         sched_unblock(t, resched);
     }
 
@@ -266,6 +272,58 @@ status_t thread_detach_and_resume(thread_t *t)
     if (err < 0)
         return err;
     return thread_resume(t);
+}
+
+/**
+ * @brief  Suspend a ready/running thread
+ *
+ * @param t  Thread to suspend
+ *
+ * @return NO_ERROR on success.
+ */
+status_t thread_suspend(thread_t *t)
+{
+    DEBUG_ASSERT(t->magic == THREAD_MAGIC);
+    DEBUG_ASSERT(!thread_is_idle(t));
+
+    THREAD_LOCK(state);
+
+    switch (t->state) {
+        case THREAD_INITIAL:
+        case THREAD_DEATH:
+            THREAD_UNLOCK(state);
+            return ERR_BAD_STATE;
+        case THREAD_READY:
+            /* thread is ready to run and not blocked or suspended.
+             * will wake up and deal with the signal soon. */
+            break;
+        case THREAD_RUNNING:
+            /* thread is running (on another cpu) */
+            mp_reschedule(1u << thread_last_cpu(t), 0);
+            break;
+        case THREAD_SUSPENDED:
+            /* thread is suspended already */
+            break;
+        case THREAD_BLOCKED:
+            /* thread is blocked on something and marked interruptable */
+            if (t->interruptable)
+                thread_unblock_from_wait_queue(t, ERR_INTERRUPTED_RETRY);
+            break;
+        case THREAD_SLEEPING:
+            /* thread is sleeping */
+            if (t->interruptable) {
+                t->blocked_status = ERR_INTERRUPTED_RETRY;
+
+                sched_unblock(t, false);
+            }
+            break;
+    }
+
+    t->signals |= THREAD_SIGNAL_SUSPEND;
+
+    THREAD_UNLOCK(state);
+
+    return NO_ERROR;
 }
 
 status_t thread_join(thread_t *t, int *retcode, lk_time_t timeout)
@@ -448,10 +506,10 @@ void thread_kill(thread_t *t, bool block)
     /* general logic is to wake up the thread so it notices it had a signal delivered to it */
 
     switch (t->state) {
-        case THREAD_SUSPENDED:
-            /* thread is suspended.
-             * not really safe to wake it up, since it's only in the state (currently)
-             * because its under construction by the creator thread.
+        case THREAD_INITIAL:
+            /* thread hasn't been started yet.
+             * not really safe to wake it up, since it's only in this state because it's under
+             * construction by the creator thread.
              */
             break;
         case THREAD_READY:
@@ -463,6 +521,10 @@ void thread_kill(thread_t *t, bool block)
         case THREAD_RUNNING:
             /* thread is running (on another cpu) */
             mp_reschedule(1u << thread_last_cpu(t), 0);
+            break;
+        case THREAD_SUSPENDED:
+            /* thread is suspended, resume it so it can get the kill signal */
+            sched_unblock(t, false);
             break;
         case THREAD_BLOCKED:
             /* thread is blocked on something and marked interruptable */
@@ -491,6 +553,32 @@ done:
     THREAD_UNLOCK(state);
 }
 
+/* finish suspending the current thread */
+void thread_do_suspend(void)
+{
+    thread_t *current_thread = get_current_thread();
+    if (current_thread->suspend_callback) {
+        current_thread->suspend_callback(current_thread->suspend_callback_arg);
+    }
+
+    THREAD_LOCK(state);
+
+    // Make sure the suspend signal wasn't cleared while we were running the
+    // callback.
+    if (current_thread->signals & THREAD_SIGNAL_SUSPEND) {
+        current_thread->state = THREAD_SUSPENDED;
+        current_thread->signals &= ~THREAD_SIGNAL_SUSPEND;
+
+        thread_resched();
+    }
+
+    THREAD_UNLOCK(state);
+
+    if (current_thread->resume_callback) {
+        current_thread->resume_callback(current_thread->resume_callback_arg);
+    }
+}
+
 /* check for any pending signals and handle them */
 void thread_process_pending_signals(void)
 {
@@ -507,9 +595,14 @@ void thread_process_pending_signals(void)
         THREAD_UNLOCK(state);
         thread_exit(0);
         /* unreachable */
+    } else if (current_thread->signals & THREAD_SIGNAL_SUSPEND) {
+        /* transition the thread to the suspended state */
+        DEBUG_ASSERT(current_thread->state == THREAD_RUNNING);
+        THREAD_UNLOCK(state);
+        thread_do_suspend();
+    } else {
+        THREAD_UNLOCK(state);
     }
-
-    THREAD_UNLOCK(state);
 }
 
 __NO_RETURN static int idle_thread_routine(void *arg)
@@ -786,8 +879,12 @@ status_t thread_sleep_etc(lk_time_t delay, bool interruptable)
     THREAD_LOCK(state);
 
     /* if we've been killed and going in interruptable, abort here */
-    if (interruptable && unlikely((current_thread->signals & THREAD_SIGNAL_KILL))) {
-        blocked_status = ERR_INTERRUPTED;
+    if (interruptable && unlikely((current_thread->signals))) {
+        if (current_thread->signals & THREAD_SIGNAL_KILL) {
+            blocked_status = ERR_INTERRUPTED;
+        } else {
+            blocked_status = ERR_INTERRUPTED_RETRY;
+        }
         goto out;
     }
 
@@ -907,8 +1004,29 @@ void thread_set_name(const char *name)
  */
 void thread_set_exit_callback(thread_t *t, thread_exit_callback_t cb, void *cb_arg)
 {
+    DEBUG_ASSERT(t->state == THREAD_INITIAL);
     t->exit_callback = cb;
     t->exit_callback_arg = cb_arg;
+}
+
+/**
+ * @brief Set the callback pointer to a function called on thread suspend.
+ */
+void thread_set_suspend_callback(thread_t *t, thread_suspend_callback_t cb, void *cb_arg)
+{
+    DEBUG_ASSERT(t->state == THREAD_INITIAL);
+    t->suspend_callback = cb;
+    t->suspend_callback_arg = cb_arg;
+}
+
+/**
+ * @brief Set the callback pointer to a function called on thread resume.
+ */
+void thread_set_resume_callback(thread_t *t, thread_resume_callback_t cb, void *cb_arg)
+{
+    DEBUG_ASSERT(t->state == THREAD_INITIAL);
+    t->resume_callback = cb;
+    t->resume_callback_arg = cb_arg;
 }
 
 /**
@@ -1034,6 +1152,8 @@ void thread_owner_name(thread_t *t, char out_name[THREAD_NAME_LENGTH])
 static const char *thread_state_to_str(enum thread_state state)
 {
     switch (state) {
+        case THREAD_INITIAL:
+            return "init";
         case THREAD_SUSPENDED:
             return "susp";
         case THREAD_READY:
@@ -1201,6 +1321,14 @@ status_t wait_queue_block(wait_queue_t *wait, lk_time_t timeout)
 
     if (timeout == 0)
         return ERR_TIMED_OUT;
+
+    if (current_thread->interruptable && unlikely(current_thread->signals)) {
+        if (current_thread->signals & THREAD_SIGNAL_KILL) {
+            return ERR_INTERRUPTED;
+        } else if (current_thread->signals & THREAD_SIGNAL_SUSPEND) {
+            return ERR_INTERRUPTED_RETRY;
+        }
+    }
 
     list_add_tail(&wait->list, &current_thread->queue_node);
     wait->count++;
