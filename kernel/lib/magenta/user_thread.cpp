@@ -172,8 +172,10 @@ status_t UserThread::Initialize(const char* name, size_t len) {
     // bump the ref on this object that the LK thread state will now own until the lk thread has exited
     AddRef();
 
-    // register an exit handler with the LK kernel
+    // register event handlers with the LK kernel
     thread_set_exit_callback(&thread_, &ThreadExitCallback, reinterpret_cast<void*>(this));
+    thread_set_suspend_callback(&thread_, &ThreadSuspendCallback, reinterpret_cast<void*>(this));
+    thread_set_resume_callback(&thread_, &ThreadResumeCallback, reinterpret_cast<void*>(this));
 
     // set the per-thread pointer
     lkthread->user_thread = reinterpret_cast<void*>(this);
@@ -292,6 +294,18 @@ void UserThread::Kill() {
     SetState(State::DYING);
 }
 
+status_t UserThread::Suspend() {
+    LTRACE_ENTRY_OBJ;
+
+    return thread_suspend(&thread_);
+}
+
+status_t UserThread::Resume() {
+    LTRACE_ENTRY_OBJ;
+
+    return thread_resume(&thread_);
+}
+
 void UserThread::DispatcherClosed() {
     canary_.Assert();
 
@@ -362,11 +376,51 @@ void UserThread::Exiting() {
     LTRACE_EXIT_OBJ;
 }
 
+void UserThread::Suspending() {
+    LTRACE_ENTRY_OBJ;
+
+    AutoLock lock(&state_lock_);
+
+    DEBUG_ASSERT(state_ == State::RUNNING || state_ == State::DYING);
+    if (state_ == State::RUNNING) {
+        SetState(State::SUSPENDED);
+    }
+
+    LTRACE_EXIT_OBJ;
+}
+
+void UserThread::Resuming() {
+    LTRACE_ENTRY_OBJ;
+
+    AutoLock lock(&state_lock_);
+
+    DEBUG_ASSERT(state_ == State::SUSPENDED || state_ == State::DYING);
+    if (state_ == State::SUSPENDED) {
+        SetState(State::RUNNING);
+    }
+
+    LTRACE_EXIT_OBJ;
+}
+
 // low level LK callback in thread's context just before exiting
 void UserThread::ThreadExitCallback(void* arg) {
     UserThread* t = reinterpret_cast<UserThread*>(arg);
 
     t->Exiting();
+}
+
+// low level LK callback in thread's context just before suspending
+void UserThread::ThreadSuspendCallback(void* arg) {
+    UserThread* t = reinterpret_cast<UserThread*>(arg);
+
+    t->Suspending();
+}
+
+// low level LK callback in thread's context just before resuming from suspend
+void UserThread::ThreadResumeCallback(void* arg) {
+    UserThread* t = reinterpret_cast<UserThread*>(arg);
+
+    t->Resuming();
 }
 
 // low level LK entry point for the thread
@@ -688,6 +742,8 @@ const char* StateToString(UserThread::State state) {
         return "initialized";
     case UserThread::State::RUNNING:
         return "running";
+    case UserThread::State::SUSPENDED:
+        return "suspended";
     case UserThread::State::DYING:
         return "dying";
     case UserThread::State::DEAD:

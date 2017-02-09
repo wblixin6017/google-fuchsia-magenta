@@ -36,6 +36,7 @@ public:
         INITIAL,     // newly created thread
         INITIALIZED, // LK thread state is initialized
         RUNNING,     // thread is running
+        SUSPENDED,   // thread is suspended
         DYING,       // thread has been signaled for kill, but has not exited yet
         DEAD,        // thread has exited and is not running
     };
@@ -85,6 +86,9 @@ public:
     void Exit() __NO_RETURN;
     void Kill();
     void DispatcherClosed();
+
+    status_t Suspend();
+    status_t Resume();
 
     // accessors
     ProcessDispatcher* process() { return process_.get(); }
@@ -161,6 +165,14 @@ private:
     // callback from kernel when thread is exiting, just before it stops for good.
     void Exiting();
     static void ThreadExitCallback(void* arg);
+
+    // callback from kernel when thread is suspending
+    void Suspending();
+    static void ThreadSuspendCallback(void* arg);
+
+    // callback from kernel when thread is resuming
+    void Resuming();
+    static void ThreadResumeCallback(void* arg);
 
     // change states of the object, do what is appropriate for the state transition
     void SetState(State) TA_REQ(state_lock_);
