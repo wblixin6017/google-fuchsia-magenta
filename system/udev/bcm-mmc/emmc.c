@@ -733,6 +733,7 @@ out:
 }
 
 static mx_status_t emmc_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
+    printf("!!!! ENTERING EMMC BIND !!!!\n");
     // Create a context to pass bind variables to the bootstrap thread.
     emmc_setup_context_t* ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
@@ -765,6 +766,6 @@ mx_driver_t _driver_emmc_dwc = {
 MAGENTA_DRIVER_BEGIN(_driver_emmc_dwc, "bcm-emmc", "magenta", "0.1", 3)
     BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_SOC),
     BI_ABORT_IF(NE, BIND_SOC_VID, SOC_VID_BROADCOMM),
-    BI_MATCH_IF(EQ, BIND_SOC_PID, SOC_DID_BROADCOMM_VC_BUS_MMC),
+    BI_MATCH_IF(EQ, BIND_SOC_DID, SOC_DID_BROADCOMM_VIDEOCORE_BUS),
 MAGENTA_DRIVER_END(_driver_emmc_dwc)
 // clang-format on
