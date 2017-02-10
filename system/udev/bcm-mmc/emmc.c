@@ -275,9 +275,6 @@ static int emmc_irq_thread(void *arg) {
         mx_interrupt_complete(irq_handle);
 
         // Signal that an IRQ happened.
-        // TODO(gkalsi): Race condition, if this irq fires twice before we have
-        // a chance to process the IRQs that fired previously, we'll miss
-        // IRQ events.
         completion_signal(&emmc->irq_completion);
     }
     
@@ -384,6 +381,12 @@ static void emmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 
     // Read the response data.
     if (cmd & SDMMC_RESP_LEN_136) {
+        // NOTE: This is a BCM28xx specific quirk. The bottom 8 bits of the 136
+        // bit response are normally filled by 7 CRC bits and 1 reserved bit.
+        // The BCM controller checks the CRC for us and strips it off in the
+        // process.
+        // The higher level stack expects 136B responses to be packed in a
+        // certain way so we shift all the fields back to their proper offsets.
         pdata->response[0] = (regs->resp3 << 8) | ((regs->resp2 >> 24) & 0xFF);
         pdata->response[1] = (regs->resp2 << 8) | ((regs->resp1 >> 24) & 0xFF);
         pdata->response[2] = (regs->resp1 << 8) | ((regs->resp0 >> 24) & 0xFF);
@@ -398,12 +401,19 @@ static void emmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 
     size_t bytes_copied = 0;
     if (cmd & SDMMC_RESP_DATA_PRESENT) {
+        // Select the interrupt that we want to wait on based on whether we're
+        // reading or writing.
         if (cmd & SDMMC_CMD_READ) {
             regs->irqen = error_interrupts | EMMC_IRQ_BUFF_READ_READY;
         } else {
             regs->irqen = error_interrupts | EMMC_IRQ_BUFF_WRITE_READY;
         }
 
+        // Sequentially read or write each block.
+        // BCM28xx quirk: The BCM28xx appears to use its internal DMA engine to
+        // perform transfers against the SD card. Normally we would use SDMA or
+        // ADMA (if the part supported it). Since this part doesn't appear to
+        // support either, we just use PIO.
         for (size_t blkid = 0; blkid < blkcnt; blkid++) {
             mx_status_t st;
             if ((st = emmc_await_irq(emmc)) != NO_ERROR) {
@@ -425,15 +435,9 @@ static void emmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
             }
         }
 
-        // TODO(gkalsi): Is this needed?
-        // mx_nanosleep(MX_MSEC(10));
-
         if ((regs->state & EMMC_STATE_DAT_INHIBIT) == 0) {
             regs->irq = 0xffff0002;
         }
-
-        // Invalidate cache.
-        txn->ops->cacheop(txn, IOTXN_CACHE_INVALIDATE, 0, blkcnt * blksiz);
     }
 
     txn->ops->complete(txn, NO_ERROR, bytes_copied);
@@ -476,7 +480,6 @@ static mx_status_t emmc_set_bus_frequency(emmc_t* emmc, uint32_t target_freq) {
 }
 
 static mx_status_t emmc_set_bus_width(emmc_t* emmc, const uint32_t new_bus_width) {
-    // TODO(gkalsi): Disable all interrupts and grab a lock while doing this?
     switch (new_bus_width) {
         case 1:
             emmc->regs->ctrl0 &= ~EMMC_HOSTCTRL_FOUR_BIT_BUS_WIDTH;
@@ -728,7 +731,7 @@ out:
 }
 
 static mx_status_t emmc_bind(mx_driver_t* drv, mx_device_t* dev) {
-    // Create a context.
+    // Create a context to pass bind variables to the bootstrap thread.
     emmc_setup_context_t* ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
         return ERR_NO_MEMORY;

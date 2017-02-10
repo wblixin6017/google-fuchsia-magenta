@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// Standard Includes
 #include <endian.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <threads.h>
 
+// DDK Includes
 #include <ddk/binding.h>
 #include <ddk/completion.h>
 #include <ddk/device.h>
@@ -15,12 +17,21 @@
 #include <ddk/protocol/block.h>
 #include <ddk/protocol/sdmmc.h>
 
-#include <hexdump/hexdump.h>
-
+// If this bit is set in the Operating Conditions Register, then we know that
+// the card is a SDHC (high capacity) card.
 #define OCR_SDHC      0xc0000000
+
+// The "STRUCTURE" field of the "Card Specific Data" register defines the
+// version of the structure and how to interpret the rest of the bits.
+#define CSD_STRUCT_V1 0x0
 #define CSD_STRUCT_V2 0x1
 
-#define TRACE 1
+// Various transfer states that the card can be in.
+#define SDMMC_STATE_TRAN 0x4
+#define SDMMC_STATE_RECV 0x5
+#define SDMMC_STATE_DATA 0x6
+
+#define TRACE 0
 
 #if TRACE
 #define xprintf(fmt...) printf(fmt)
@@ -30,6 +41,7 @@
     } while (0)
 #endif
 
+// Device structure.
 typedef struct sdmmc {
     mx_device_t device;
     mx_device_t* parent;
@@ -44,9 +56,7 @@ typedef struct sdmmc_setup_context {
 } sdmmc_setup_context_t;
 
 static void sdmmc_txn_cplt(iotxn_t* request, void* cookie) {
-    completion_t* cplt = (completion_t*)cookie;
-
-    completion_signal(cplt);
+    completion_signal((completion_t*)cookie);
 };
 
 static mx_status_t sdmmc_do_command(mx_device_t* dev, const uint32_t cmd,
@@ -66,28 +76,34 @@ static mx_status_t sdmmc_do_command(mx_device_t* dev, const uint32_t cmd,
     return txn->status;
 }
 
-static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t cmdlen, void* reply, size_t max) {
+static mx_off_t sdmmc_get_size(mx_device_t* dev) {
+    sdmmc_t* sdmmc = get_sdmmc(dev);
+    return sdmmc->capacity;
+}
+
+static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
+                           size_t cmdlen, void* reply, size_t max) {
     switch (op) {
     case IOCTL_BLOCK_GET_SIZE: {
         uint64_t* disk_size = reply;
         if (max < sizeof(*disk_size))
             return ERR_BUFFER_TOO_SMALL;
-        *disk_size = 2ul * 8010596352ul;
+        *disk_size = sdmmc_get_size(dev);
         return sizeof(*disk_size);
     }
     case IOCTL_BLOCK_GET_BLOCKSIZE: {
         uint64_t* blksize = reply;
         if (max < sizeof(*blksize))
             return ERR_BUFFER_TOO_SMALL;
-        *blksize = 512;
+        // Since we only support SDHC cards, the blocksize must be the SDHC
+        // blocksize.
+        *blksize = SDHC_BLOCK_SIZE;
         return sizeof(*blksize);
     }
     case IOCTL_BLOCK_GET_NAME: {
-        assert(false);
         return ERR_NOT_SUPPORTED;
     }
     case IOCTL_DEVICE_SYNC: {
-        assert(false);
         return ERR_NOT_SUPPORTED;
     }
     default:
@@ -110,18 +126,21 @@ static mx_status_t sdmmc_release(mx_device_t* device) {
 static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     if (txn->offset % SDHC_BLOCK_SIZE) {
         xprintf("sdmmc: iotxn offset not aligned to block boundary, "
-                "offset =%" PRIu64 ", block size = %d\n", txn->offset, SDHC_BLOCK_SIZE);
+                "offset =%" PRIu64 ", block size = %d\n",
+                txn->offset, SDHC_BLOCK_SIZE);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
 
     if (txn->length % SDHC_BLOCK_SIZE) {
         xprintf("sdmmc: iotxn length not aligned to block boundary, "
-                "offset =%" PRIu64 ", block size = %d\n", txn->length, SDHC_BLOCK_SIZE);
+                "offset =%" PRIu64 ", block size = %d\n",
+                txn->length, SDHC_BLOCK_SIZE);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
 
+    iotxn_t* emmc_txn = NULL;
     sdmmc_t* sdmmc = get_sdmmc(dev);
     mx_device_t* parent = sdmmc->parent;
     uint32_t cmd = 0;
@@ -148,7 +167,6 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
             return;
     }
 
-    iotxn_t* emmc_txn;
     if (iotxn_alloc(&emmc_txn, 0, txn->length, 0) != NO_ERROR) {
         xprintf("sdmmc: error allocating emmc iotxn\n");
         txn->ops->complete(txn, ERR_INTERNAL, 0);
@@ -162,26 +180,33 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     sdmmc_protocol_data_t* pdata = iotxn_pdata(emmc_txn, sdmmc_protocol_data_t);
 
     uint8_t current_state;
-    do {
-        mx_status_t rc = sdmmc_do_command(parent, SDMMC_SEND_STATUS, sdmmc->rca << 16, emmc_txn);
+    const size_t max_attempts = 10;
+    size_t attempt = 0;
+    for (; attempt <= max_attempts; attempt++) {
+        mx_status_t rc = sdmmc_do_command(parent, SDMMC_SEND_STATUS,
+                                          sdmmc->rca << 16, emmc_txn);
         if (rc != NO_ERROR) {
             txn->ops->complete(txn, rc, 0);
-            // TODO(gkalsi): goto out?
-            return;
+            goto out;
         }
 
         current_state = (pdata->response[0] >> 9) & 0xf;
         
-        if (current_state == 5) {
+        if (current_state == SDMMC_STATE_RECV) {
             rc = sdmmc_do_command(parent, SDMMC_STOP_TRANSMISSION, 0, emmc_txn);
             continue;
-        } else if (current_state == 4) {
+        } else if (current_state == SDMMC_STATE_TRAN) {
             break;
         }
 
         mx_nanosleep(MX_MSEC(100));
-    } while (current_state != 4);
+    }
 
+    if (attempt == max_attempts) {
+        // Too many retries, fail.
+        txn->ops->complete(txn, ERR_BAD_STATE, 0);
+        goto out;
+    }
 
     // Which block to operate against.
     const uint32_t blkid = emmc_txn->offset / SDHC_BLOCK_SIZE;
@@ -190,10 +215,11 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     pdata->blocksize = SDHC_BLOCK_SIZE;
 
     void* buffer;
+    size_t bytes_processed = 0;
     if (txn->opcode == IOTXN_OP_WRITE) {
         txn->ops->mmap(txn, &buffer);
-        // hexdump(buffer, txn->length);
         emmc_txn->ops->copyto(emmc_txn, buffer, txn->length, 0);
+        bytes_processed = txn->length;
     }
 
     mx_status_t rc = sdmmc_do_command(parent, cmd, blkid, emmc_txn);
@@ -201,19 +227,17 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
         txn->ops->complete(txn, rc, 0);
     }
 
-    // TODO(gkalsi): Make sure we're not copying more than the amount of space
-    // we have available.
     if (txn->opcode == IOTXN_OP_READ) {
+        bytes_processed = MIN(emmc_txn->actual, txn->length)
         emmc_txn->ops->mmap(emmc_txn, &buffer);
-        txn->ops->copyto(txn, buffer, emmc_txn->actual, 0);
+        txn->ops->copyto(txn, buffer, bytes_processed, 0);
     }
 
-    txn->ops->complete(txn, NO_ERROR, emmc_txn->actual);
-}
+    txn->ops->complete(txn, NO_ERROR, bytes_processed);
 
-static mx_off_t sdmmc_get_size(mx_device_t* dev) {
-    sdmmc_t* sdmmc = get_sdmmc(dev);
-    return sdmmc->capacity;
+out:
+    if (emmc_txn)
+        emmc_txn->ops->release(emmc_txn);
 }
 
 // Block device protocol.
@@ -251,7 +275,8 @@ static int sdmmc_bootstrap_thread(void* arg) {
 
     // Get the protocol data from the iotxn. We use this to pass the command
     // type and command arguments to the EMMC driver.
-    sdmmc_protocol_data_t* pdata = iotxn_pdata(setup_txn, sdmmc_protocol_data_t);
+    sdmmc_protocol_data_t* pdata =
+        iotxn_pdata(setup_txn, sdmmc_protocol_data_t);
 
     // Reset the card. No matter what state the card is in, issuing the
     // GO_IDLE_STATE command will put the card into the idle state.
@@ -330,7 +355,8 @@ static int sdmmc_bootstrap_thread(void* arg) {
 
     sdmmc->rca = (pdata->response[0] >> 16) & 0xffff;
     if (pdata->response[0] & 0xe000) {
-        xprintf("sdmmc: SEND_RELATIVE_ADDR failed with resp = %d\n", (pdata->response[0] & 0xe000));
+        xprintf("sdmmc: SEND_RELATIVE_ADDR failed with resp = %d\n",
+                (pdata->response[0] & 0xe000));
         st = ERR_INTERNAL;
         goto err;
     }
@@ -355,7 +381,8 @@ static int sdmmc_bootstrap_thread(void* arg) {
         goto err;
     }
 
-    const uint32_t c_size = ((pdata->response[2] >> 16) | (pdata->response[1] << 16)) & 0x3fffff;
+    const uint32_t c_size = ((pdata->response[2] >> 16) |
+                             (pdata->response[1] << 16)) & 0x3fffff;
     sdmmc->capacity = (c_size + 1ul) * 512ul * 1024ul;
     xprintf("sdmmc: found card with capacity = %"PRIu64"B\n", sdmmc->capacity);
 
@@ -418,6 +445,8 @@ err:
 
     if (setup_txn)
         setup_txn->ops->release(setup_txn);
+
+    driver_unbind(drv, dev);
 
     return -1;
 }
