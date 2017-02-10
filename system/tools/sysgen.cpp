@@ -472,7 +472,6 @@ struct GenParams {
     const char* empty_args;
     const char* switch_var;
     const char* switch_type;
-    const bool  prefer_pointers;
     std::map<string, string> attributes;
 };
 
@@ -561,15 +560,11 @@ bool generate_legacy_header(
                 if (arg.arr_spec->kind == ArraySpec::IN)
                     os << "const ";
 
-                if (gp.prefer_pointers) {
-                    os << arg.type << "* " << arg.name;
-                } else {
-                    os << arg.type << " " << arg.name;
-                    os << "[";
-                    if (arg.arr_spec->count)
-                        os << arg.arr_spec->count;
-                    os << "]";
-                }
+                os << arg.type << " " << arg.name;
+                os << "[";
+                if (arg.arr_spec->count)
+                    os << arg.arr_spec->count;
+                os << "]";
             }
 
             os << ",";
@@ -603,17 +598,13 @@ bool generate_legacy_header(
     return os.good();
 }
 
-bool generate_legacy_code(
-    int index, const GenParams& gp, std::ofstream& os, const Syscall& sc) {
+bool generate_legacy_delegate_code(int index, const GenParams& gp, std::ofstream& os, const Syscall& sc) {
     if (is_vdso(sc))
         return true;
 
-    constexpr uint32_t indent_spaces = 8u;
+    constexpr uint32_t indent_spaces = 4u;
 
     auto syscall_name = gp.name_prefix + sc.name;
-
-    // case 0: ret =
-    os << "    case " << index << ": " << gp.switch_var << " = ";
 
     string ret_type;
     if (sc.ret_spec.empty()) {
@@ -625,26 +616,37 @@ bool generate_legacy_code(
         }
         ret_type = override_type(sc.ret_spec[0].to_string());
     }
-    int num_args = sc.arg_spec.size();
-
-    bool is_void = ret_type.compare("void") == 0;
-    if (is_void) {
-        // void function - synthesise an empty return value.
-        // case 0: ret = 0; sys_andy(
-        os << "0; ";
-    }
-    os << "reinterpret_cast<syscall_func" << num_args << ">(" << syscall_name << ")(";
+    os << ret_type;
+    os << " " << syscall_name << "(";
 
     // Writes all arguments.
-    int arg_num = 1;
+    string delegate_args;
+
     for (const auto& arg : sc.arg_spec) {
         if (!os.good())
             return false;
-
         // writes each parameter in its own line.
         os << "\n" << string(indent_spaces, ' ');
-        os << "arg" << arg_num << ",";
-        ++arg_num;
+
+        auto overrided = override_type(arg.to_string());
+
+        if (overrided != arg.to_string()) {
+            os << overrided << " " << arg.name;
+        } else if (!arg.arr_spec) {
+            os << arg.type << " " << arg.name;
+        } else {
+            if (arg.arr_spec->kind == ArraySpec::IN)
+                os << "const ";
+
+            os << arg.type << " " << arg.name;
+            os << "[";
+            if (arg.arr_spec->count)
+                os << arg.arr_spec->count;
+            os << "]";
+        }
+
+        os << ",";
+        delegate_args = delegate_args + arg.name + ", ";
     }
 
     if (!sc.arg_spec.empty()) {
@@ -660,8 +662,21 @@ bool generate_legacy_code(
 
     os.seekp(-1, std::ios_base::end);
 
-    os << ";\n       break;\n";
+    os << "{\n    ";
+    if (ret_type.compare("void") != 0) {
+        os << "return ";
+    }
+    os << "sys_" << sc.name << "(" << delegate_args.substr(0, delegate_args.length() - 2) << ");\n}\n\n";
 
+    return os.good();
+}
+
+bool generate_legacy_code(int index, const GenParams& gp, std::ofstream& os, const Syscall& sc) {
+    if (is_vdso(sc))
+        return true;
+    os << "    case " << index << ": " << gp.switch_var
+       << " = reinterpret_cast<" << gp.switch_type << ">(" << gp.name_prefix << sc.name <<");\n"
+       << "       break;\n";
     return os.good();
 }
 
@@ -714,7 +729,9 @@ const std::map<string, string> user_attrs = {
 enum GenType : uint32_t {
     UserHeaderC,
     KernelHeaderCPP,
+    KernelDelegationHeaderCPP,
     KernelCodeCPP,
+    KernelDelegationCodeCPP,
     KernelAsmIntel64,
     KernelAsmArm64,
     SyscallNumberHeader,
@@ -732,7 +749,6 @@ const GenParams gen_params[] = {
         "void",             // no-args special type
         nullptr,            // switch var (does not apply)
         nullptr,            // switch type (does not apply)
-        false,
         user_attrs,         // attributes dictionary
     },
     // The kernel header, C++.  (KernelHeaderCPP)
@@ -741,20 +757,33 @@ const GenParams gen_params[] = {
         ".kernel.h",        // file postfix.
         nullptr,            // no function prefix.
         "sys_",             // function name prefix.
-        nullptr,
-        nullptr,
-        nullptr,
-        true,               // output arrays as pointers
+    },
+    // The kernel header, C++.  (KernelHeaderCPP)
+    {
+        generate_legacy_header,
+        ".kernel-del.h",    // file postfix.
+        nullptr,            // no function prefix.
+        "delegate_sys_",    // function name prefix.
     },
     // The kernel C++ code. A switch statement set.
     {
         generate_legacy_code,
         ".kernel.inc",      // file postfix.
         nullptr,            // no function prefix.
-        "sys_",             // function name prefix.
+        "delegate_sys_",             // function name prefix.
         nullptr,            // no-args (does not apply)
-        "ret",              // switch var name
-        "uint64_t"          // switch var type
+        "sfunc",            // switch var name
+        "syscall_func"      // switch var type
+    },
+    // The kernel C++ code. Function delegation.
+    {
+        generate_legacy_delegate_code,
+        ".kernel-del.inc",  // file postfix.
+        nullptr,            // no function prefix.
+        "delegate_sys_",             // function name prefix.
+        nullptr,            // no-args (does not apply)
+        "sfunc",            // switch var name
+        "syscall_func"      // switch var type
     },
     //  The assembly file for x86-64 (KernelAsmIntel64).
     {
@@ -941,7 +970,11 @@ int main(int argc, char* argv[]) {
         return 1;
     if (!generator.Generate(GenType::KernelHeaderCPP, output_prefix))
         return 1;
+    if (!generator.Generate(GenType::KernelDelegationHeaderCPP, output_prefix))
+        return 1;
     if (!generator.Generate(GenType::KernelCodeCPP, output_prefix))
+        return 1;
+    if (!generator.Generate(GenType::KernelDelegationCodeCPP, output_prefix))
         return 1;
     if (!generator.Generate(GenType::KernelAsmIntel64, output_prefix))
         return 1;

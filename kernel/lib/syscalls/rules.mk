@@ -27,6 +27,7 @@ MODULE_SRCS := \
     $(LOCAL_DIR)/syscalls_magenta.cpp \
     $(LOCAL_DIR)/syscalls_object.cpp \
     $(LOCAL_DIR)/syscalls_port.cpp \
+    $(LOCAL_DIR)/syscalls_priv_del.cpp \
     $(LOCAL_DIR)/syscalls_resource.cpp \
     $(LOCAL_DIR)/syscalls_task.cpp \
     $(LOCAL_DIR)/syscalls_test.cpp \

@@ -13,6 +13,8 @@ fi
 rm -f generated.arm64.S
 rm -f generated.kernel.h
 rm -f generated.kernel.inc
+rm -f generated.kernel-del.h
+rm -f generated.kernel-del.inc
 rm -f generated.user.h
 rm -f generated.x86-64.S
 rm -f generated.syscall-numbers.h
@@ -41,5 +43,9 @@ rsync $rsync_options generated.kernel.h \
     kernel/lib/magenta/include/magenta/gen-sysdefs.h
 rsync $rsync_options generated.kernel.inc \
     kernel/lib/magenta/include/magenta/gen-switch.inc
+rsync $rsync_options generated.kernel-del.h \
+    kernel/lib/magenta/include/magenta/gen-del-sysdefs.h
+rsync $rsync_options generated.kernel-del.inc \
+    kernel/lib/magenta/include/magenta/gen-del.inc
 rsync $rsync_options generated.trace.inc \
     kernel/lib/magenta/include/magenta/gen-trace.inc
