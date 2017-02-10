@@ -625,15 +625,15 @@ bool generate_legacy_code(
         }
         ret_type = override_type(sc.ret_spec[0].to_string());
     }
+    int num_args = sc.arg_spec.size();
+
     bool is_void = ret_type.compare("void") == 0;
     if (is_void) {
         // void function - synthesise an empty return value.
         // case 0: ret = 0; sys_andy(
-        os << "0; " << syscall_name << "(";
-    } else {
-        // case 0: ret = static_cast<int64_t(sys_andy(
-        os << "static_cast<uint64_t>(" << syscall_name << "(";
+        os << "0; ";
     }
+    os << "reinterpret_cast<syscall_func" << num_args << ">(" << syscall_name << ")(";
 
     // Writes all arguments.
     int arg_num = 1;
@@ -643,25 +643,7 @@ bool generate_legacy_code(
 
         // writes each parameter in its own line.
         os << "\n" << string(indent_spaces, ' ');
-
-        auto overrided = override_type(arg.to_string());
-
-        if (overrided != arg.to_string()) {
-            if (overrided.find("*") != std::string::npos) {
-                os << " reinterpret_cast<" << overrided << ">(";
-            } else {
-                os << " static_cast<" << overrided << ">(";
-            }
-        } else if (!arg.arr_spec) {
-            os << " static_cast<" << arg.type << ">(";
-        } else {
-            os << " reinterpret_cast<";
-            if (arg.arr_spec->kind == ArraySpec::IN)
-                os << "const ";
-
-            os << arg.type << "*>(";
-        }
-        os << "arg" << arg_num << "),";
+        os << "arg" << arg_num << ",";
         ++arg_num;
     }
 
@@ -674,10 +656,6 @@ bool generate_legacy_code(
             os << gp.empty_args;
     }
 
-    if (!is_void) {
-        // Close the static_cast.
-        os << ")";
-    }
     os << ") ";
 
     os.seekp(-1, std::ios_base::end);

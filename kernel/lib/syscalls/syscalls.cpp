@@ -26,6 +26,19 @@
 
 #define LOCAL_TRACE 0
 
+using syscall_func0 = int64_t (*)();
+using syscall_func1 = int64_t (*)(uint64_t a);
+using syscall_func2 = int64_t (*)(uint64_t a, uint64_t b);
+using syscall_func3 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c);
+using syscall_func4 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d);
+using syscall_func5 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e);
+using syscall_func6 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e,
+                                  uint64_t f);
+using syscall_func7 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e,
+                                  uint64_t f, uint64_t g);
+using syscall_func8 = int64_t (*)(uint64_t a, uint64_t b, uint64_t c, uint64_t d, uint64_t e,
+                                  uint64_t f, uint64_t g, uint64_t h);
+
 int sys_invalid_syscall(void) {
     LTRACEF("invalid syscall\n");
     return ERR_BAD_SYSCALL;

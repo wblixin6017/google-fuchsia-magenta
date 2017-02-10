@@ -1,621 +1,621 @@
 // Copyright 2017 The Fuchsia Authors. All rights reserved.
 // This is a GENERATED file. The license governing this file can be found in the LICENSE file.
 
-    case 0: ret = static_cast<uint64_t>(sys_time_get(
-         static_cast<uint32_t>(arg1)));
-       break;
-    case 1: ret = static_cast<uint64_t>(sys_nanosleep(
-         static_cast<mx_time_t>(arg1)));
-       break;
-    case 7: ret = static_cast<uint64_t>(sys_handle_close(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 8: ret = static_cast<uint64_t>(sys_handle_duplicate(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_rights_t>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 9: ret = static_cast<uint64_t>(sys_handle_replace(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_rights_t>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 10: ret = static_cast<uint64_t>(sys_handle_wait_one(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_signals_t>(arg2),
-         static_cast<mx_time_t>(arg3),
-         reinterpret_cast<mx_signals_t*>(arg4)));
-       break;
-    case 11: ret = static_cast<uint64_t>(sys_handle_wait_many(
-         reinterpret_cast<mx_wait_item_t*>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<mx_time_t>(arg3)));
-       break;
-    case 12: ret = static_cast<uint64_t>(sys_object_signal(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 13: ret = static_cast<uint64_t>(sys_object_signal_peer(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 14: ret = static_cast<uint64_t>(sys_object_get_property(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<size_t>(arg4)));
-       break;
-    case 15: ret = static_cast<uint64_t>(sys_object_set_property(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<size_t>(arg4)));
-       break;
-    case 16: ret = static_cast<uint64_t>(sys_object_get_info(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5),
-         reinterpret_cast<size_t*>(arg6)));
-       break;
-    case 17: ret = static_cast<uint64_t>(sys_object_get_child(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint64_t>(arg2),
-         static_cast<mx_rights_t>(arg3),
-         reinterpret_cast<mx_handle_t*>(arg4)));
-       break;
-    case 18: ret = static_cast<uint64_t>(sys_object_bind_exception_port(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_handle_t>(arg2),
-         static_cast<uint64_t>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 19: ret = static_cast<uint64_t>(sys_channel_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 20: ret = static_cast<uint64_t>(sys_channel_read(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<uint32_t*>(arg5),
-         reinterpret_cast<mx_handle_t*>(arg6),
-         static_cast<uint32_t>(arg7),
-         reinterpret_cast<uint32_t*>(arg8)));
-       break;
-    case 21: ret = static_cast<uint64_t>(sys_channel_write(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<const mx_handle_t*>(arg5),
-         static_cast<uint32_t>(arg6)));
-       break;
-    case 22: ret = static_cast<uint64_t>(sys_channel_call(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<mx_time_t>(arg3),
-         reinterpret_cast<const mx_channel_call_args_t*>(arg4),
-         reinterpret_cast<uint32_t*>(arg5),
-         reinterpret_cast<uint32_t*>(arg6),
-         reinterpret_cast<mx_status_t*>(arg7)));
-       break;
-    case 23: ret = static_cast<uint64_t>(sys_socket_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 24: ret = static_cast<uint64_t>(sys_socket_write(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 25: ret = static_cast<uint64_t>(sys_socket_read(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 26: ret = 0; sys_thread_exit();
-       break;
-    case 27: ret = static_cast<uint64_t>(sys_thread_create(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const char*>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<mx_handle_t*>(arg5)));
-       break;
-    case 28: ret = static_cast<uint64_t>(sys_thread_start(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uintptr_t>(arg2),
-         static_cast<uintptr_t>(arg3),
-         static_cast<uintptr_t>(arg4),
-         static_cast<uintptr_t>(arg5)));
-       break;
-    case 29: ret = static_cast<uint64_t>(sys_thread_read_state(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<uint32_t*>(arg5)));
-       break;
-    case 30: ret = static_cast<uint64_t>(sys_thread_write_state(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 31: ret = 0; sys_process_exit(
-         static_cast<int>(arg1));
-       break;
-    case 32: ret = static_cast<uint64_t>(sys_process_create(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const char*>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<mx_handle_t*>(arg5),
-         reinterpret_cast<mx_handle_t*>(arg6)));
-       break;
-    case 33: ret = static_cast<uint64_t>(sys_process_start(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_handle_t>(arg2),
-         static_cast<uintptr_t>(arg3),
-         static_cast<uintptr_t>(arg4),
-         static_cast<mx_handle_t>(arg5),
-         static_cast<uintptr_t>(arg6)));
-       break;
-    case 34: ret = static_cast<uint64_t>(sys_process_read_memory(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uintptr_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 35: ret = static_cast<uint64_t>(sys_process_write_memory(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uintptr_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 36: ret = static_cast<uint64_t>(sys_job_create(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 37: ret = static_cast<uint64_t>(sys_task_resume(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2)));
-       break;
-    case 38: ret = static_cast<uint64_t>(sys_task_kill(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 39: ret = static_cast<uint64_t>(sys_event_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 40: ret = static_cast<uint64_t>(sys_eventpair_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 41: ret = static_cast<uint64_t>(sys_futex_wait(
-         reinterpret_cast<mx_futex_t*>(arg1),
-         static_cast<int>(arg2),
-         static_cast<mx_time_t>(arg3)));
-       break;
-    case 42: ret = static_cast<uint64_t>(sys_futex_wake(
-         reinterpret_cast<mx_futex_t*>(arg1),
-         static_cast<uint32_t>(arg2)));
-       break;
-    case 43: ret = static_cast<uint64_t>(sys_futex_requeue(
-         reinterpret_cast<mx_futex_t*>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<int>(arg3),
-         reinterpret_cast<mx_futex_t*>(arg4),
-         static_cast<uint32_t>(arg5)));
-       break;
-    case 44: ret = static_cast<uint64_t>(sys_waitset_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 45: ret = static_cast<uint64_t>(sys_waitset_add(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint64_t>(arg2),
-         static_cast<mx_handle_t>(arg3),
-         static_cast<mx_signals_t>(arg4)));
-       break;
-    case 46: ret = static_cast<uint64_t>(sys_waitset_remove(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint64_t>(arg2)));
-       break;
-    case 47: ret = static_cast<uint64_t>(sys_waitset_wait(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_time_t>(arg2),
-         reinterpret_cast<mx_waitset_result_t*>(arg3),
-         reinterpret_cast<uint32_t*>(arg4)));
-       break;
-    case 48: ret = static_cast<uint64_t>(sys_port_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 49: ret = static_cast<uint64_t>(sys_port_queue(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const void*>(arg2),
-         static_cast<size_t>(arg3)));
-       break;
-    case 50: ret = static_cast<uint64_t>(sys_port_wait(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_time_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<size_t>(arg4)));
-       break;
-    case 51: ret = static_cast<uint64_t>(sys_port_bind(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint64_t>(arg2),
-         static_cast<mx_handle_t>(arg3),
-         static_cast<mx_signals_t>(arg4)));
-       break;
-    case 52: ret = static_cast<uint64_t>(sys_vmo_create(
-         static_cast<uint64_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<mx_handle_t*>(arg3)));
-       break;
-    case 53: ret = static_cast<uint64_t>(sys_vmo_read(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<void*>(arg2),
-         static_cast<uint64_t>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 54: ret = static_cast<uint64_t>(sys_vmo_write(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const void*>(arg2),
-         static_cast<uint64_t>(arg3),
-         static_cast<size_t>(arg4),
-         reinterpret_cast<size_t*>(arg5)));
-       break;
-    case 55: ret = static_cast<uint64_t>(sys_vmo_get_size(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<uint64_t*>(arg2)));
-       break;
-    case 56: ret = static_cast<uint64_t>(sys_vmo_set_size(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint64_t>(arg2)));
-       break;
-    case 57: ret = static_cast<uint64_t>(sys_vmo_op_range(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint64_t>(arg3),
-         static_cast<uint64_t>(arg4),
-         reinterpret_cast<void*>(arg5),
-         static_cast<size_t>(arg6)));
-       break;
-    case 58: ret = static_cast<uint64_t>(sys_cprng_draw(
-         reinterpret_cast<void*>(arg1),
-         static_cast<size_t>(arg2),
-         reinterpret_cast<size_t*>(arg3)));
-       break;
-    case 59: ret = static_cast<uint64_t>(sys_cprng_add_entropy(
-         reinterpret_cast<const void*>(arg1),
-         static_cast<size_t>(arg2)));
-       break;
-    case 60: ret = static_cast<uint64_t>(sys_fifo0_create(
-         static_cast<uint64_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 61: ret = static_cast<uint64_t>(sys_fifo0_op(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint64_t>(arg3),
-         reinterpret_cast<mx_fifo_state_t*>(arg4)));
-       break;
-    case 62: ret = static_cast<uint64_t>(sys_log_create(
-         static_cast<uint32_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 63: ret = static_cast<uint64_t>(sys_log_write(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<const void*>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 64: ret = static_cast<uint64_t>(sys_log_read(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<void*>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 65: ret = static_cast<uint64_t>(sys_ktrace_read(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<void*>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<uint32_t*>(arg5)));
-       break;
-    case 66: ret = static_cast<uint64_t>(sys_ktrace_control(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         reinterpret_cast<void*>(arg4)));
-       break;
-    case 67: ret = static_cast<uint64_t>(sys_ktrace_write(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 68: ret = static_cast<uint64_t>(sys_mtrace_control(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<void*>(arg5),
-         static_cast<uint32_t>(arg6)));
-       break;
-    case 69: ret = static_cast<uint64_t>(sys_debug_transfer_handle(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_handle_t>(arg2)));
-       break;
-    case 70: ret = static_cast<uint64_t>(sys_debug_read(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<void*>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 71: ret = static_cast<uint64_t>(sys_debug_write(
-         reinterpret_cast<const void*>(arg1),
-         static_cast<uint32_t>(arg2)));
-       break;
-    case 72: ret = static_cast<uint64_t>(sys_debug_send_command(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const void*>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 73: ret = static_cast<uint64_t>(sys_interrupt_create(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 74: ret = static_cast<uint64_t>(sys_interrupt_complete(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 75: ret = static_cast<uint64_t>(sys_interrupt_wait(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 76: ret = static_cast<uint64_t>(sys_mmap_device_io(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 77: ret = static_cast<uint64_t>(sys_mmap_device_memory(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_paddr_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<mx_cache_policy_t>(arg4),
-         reinterpret_cast<uintptr_t*>(arg5)));
-       break;
-    case 78: ret = static_cast<uint64_t>(sys_io_mapping_get_info(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<uintptr_t*>(arg2),
-         reinterpret_cast<uint64_t*>(arg3)));
-       break;
-    case 79: ret = static_cast<uint64_t>(sys_vmo_create_contiguous(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<size_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         reinterpret_cast<mx_handle_t*>(arg4)));
-       break;
-    case 80: ret = static_cast<uint64_t>(sys_vmar_allocate(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<size_t>(arg2),
-         static_cast<size_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<mx_handle_t*>(arg5),
-         reinterpret_cast<uintptr_t*>(arg6)));
-       break;
-    case 81: ret = static_cast<uint64_t>(sys_vmar_destroy(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 82: ret = static_cast<uint64_t>(sys_vmar_map(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<size_t>(arg2),
-         static_cast<mx_handle_t>(arg3),
-         static_cast<uint64_t>(arg4),
-         static_cast<size_t>(arg5),
-         static_cast<uint32_t>(arg6),
-         reinterpret_cast<uintptr_t*>(arg7)));
-       break;
-    case 83: ret = static_cast<uint64_t>(sys_vmar_unmap(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uintptr_t>(arg2),
-         static_cast<size_t>(arg3)));
-       break;
-    case 84: ret = static_cast<uint64_t>(sys_vmar_protect(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uintptr_t>(arg2),
-         static_cast<size_t>(arg3),
-         static_cast<uint32_t>(arg4)));
-       break;
-    case 85: ret = static_cast<uint64_t>(sys_bootloader_fb_get_info(
-         reinterpret_cast<uint32_t*>(arg1),
-         reinterpret_cast<uint32_t*>(arg2),
-         reinterpret_cast<uint32_t*>(arg3),
-         reinterpret_cast<uint32_t*>(arg4)));
-       break;
-    case 86: ret = static_cast<uint64_t>(sys_set_framebuffer(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<void*>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         static_cast<uint32_t>(arg5),
-         static_cast<uint32_t>(arg6),
-         static_cast<uint32_t>(arg7)));
-       break;
-    case 87: ret = static_cast<uint64_t>(sys_clock_adjust(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<int64_t>(arg3)));
-       break;
-    case 88: ret = static_cast<uint64_t>(sys_pci_get_nth_device(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<mx_pcie_get_nth_info_t*>(arg3)));
-       break;
-    case 89: ret = static_cast<uint64_t>(sys_pci_claim_device(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 90: ret = static_cast<uint64_t>(sys_pci_enable_bus_master(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<bool>(arg2)));
-       break;
-    case 91: ret = static_cast<uint64_t>(sys_pci_enable_pio(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<bool>(arg2)));
-       break;
-    case 92: ret = static_cast<uint64_t>(sys_pci_reset_device(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 93: ret = static_cast<uint64_t>(sys_pci_map_mmio(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<mx_cache_policy_t>(arg3)));
-       break;
-    case 94: ret = static_cast<uint64_t>(sys_pci_io_write(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         static_cast<uint32_t>(arg5)));
-       break;
-    case 95: ret = static_cast<uint64_t>(sys_pci_io_read(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         reinterpret_cast<uint32_t*>(arg5)));
-       break;
-    case 96: ret = static_cast<uint64_t>(sys_pci_map_interrupt(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<int32_t>(arg2)));
-       break;
-    case 97: ret = static_cast<uint64_t>(sys_pci_map_config(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 98: ret = static_cast<uint64_t>(sys_pci_query_irq_mode_caps(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         reinterpret_cast<uint32_t*>(arg3)));
-       break;
-    case 99: ret = static_cast<uint64_t>(sys_pci_set_irq_mode(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 100: ret = static_cast<uint64_t>(sys_pci_init(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const mx_pci_init_arg_t*>(arg2),
-         static_cast<uint32_t>(arg3)));
-       break;
-    case 101: ret = static_cast<uint64_t>(sys_pci_add_subtract_io_range(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<bool>(arg2),
-         static_cast<uint64_t>(arg3),
-         static_cast<uint64_t>(arg4),
-         static_cast<bool>(arg5)));
-       break;
-    case 102: ret = static_cast<uint64_t>(sys_acpi_uefi_rsdp(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 103: ret = static_cast<uint64_t>(sys_acpi_cache_flush(
-         static_cast<mx_handle_t>(arg1)));
-       break;
-    case 104: ret = static_cast<uint64_t>(sys_resource_create(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<const mx_rrec_t*>(arg2),
-         static_cast<uint32_t>(arg3),
-         reinterpret_cast<mx_handle_t*>(arg4)));
-       break;
-    case 105: ret = static_cast<uint64_t>(sys_resource_get_handle(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         reinterpret_cast<mx_handle_t*>(arg4)));
-       break;
-    case 106: ret = static_cast<uint64_t>(sys_resource_do_action(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<uint32_t>(arg2),
-         static_cast<uint32_t>(arg3),
-         static_cast<uint32_t>(arg4),
-         static_cast<uint32_t>(arg5)));
-       break;
-    case 107: ret = static_cast<uint64_t>(sys_resource_connect(
-         static_cast<mx_handle_t>(arg1),
-         static_cast<mx_handle_t>(arg2)));
-       break;
-    case 108: ret = static_cast<uint64_t>(sys_resource_accept(
-         static_cast<mx_handle_t>(arg1),
-         reinterpret_cast<mx_handle_t*>(arg2)));
-       break;
-    case 109: ret = static_cast<uint64_t>(sys_syscall_test_0());
-       break;
-    case 110: ret = static_cast<uint64_t>(sys_syscall_test_1(
-         static_cast<int>(arg1)));
-       break;
-    case 111: ret = static_cast<uint64_t>(sys_syscall_test_2(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2)));
-       break;
-    case 112: ret = static_cast<uint64_t>(sys_syscall_test_3(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3)));
-       break;
-    case 113: ret = static_cast<uint64_t>(sys_syscall_test_4(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3),
-         static_cast<int>(arg4)));
-       break;
-    case 114: ret = static_cast<uint64_t>(sys_syscall_test_5(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3),
-         static_cast<int>(arg4),
-         static_cast<int>(arg5)));
-       break;
-    case 115: ret = static_cast<uint64_t>(sys_syscall_test_6(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3),
-         static_cast<int>(arg4),
-         static_cast<int>(arg5),
-         static_cast<int>(arg6)));
-       break;
-    case 116: ret = static_cast<uint64_t>(sys_syscall_test_7(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3),
-         static_cast<int>(arg4),
-         static_cast<int>(arg5),
-         static_cast<int>(arg6),
-         static_cast<int>(arg7)));
-       break;
-    case 117: ret = static_cast<uint64_t>(sys_syscall_test_8(
-         static_cast<int>(arg1),
-         static_cast<int>(arg2),
-         static_cast<int>(arg3),
-         static_cast<int>(arg4),
-         static_cast<int>(arg5),
-         static_cast<int>(arg6),
-         static_cast<int>(arg7),
-         static_cast<int>(arg8)));
+    case 0: ret = reinterpret_cast<syscall_func1>(sys_time_get)(
+        arg1);
+       break;
+    case 1: ret = reinterpret_cast<syscall_func1>(sys_nanosleep)(
+        arg1);
+       break;
+    case 7: ret = reinterpret_cast<syscall_func1>(sys_handle_close)(
+        arg1);
+       break;
+    case 8: ret = reinterpret_cast<syscall_func3>(sys_handle_duplicate)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 9: ret = reinterpret_cast<syscall_func3>(sys_handle_replace)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 10: ret = reinterpret_cast<syscall_func4>(sys_handle_wait_one)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 11: ret = reinterpret_cast<syscall_func3>(sys_handle_wait_many)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 12: ret = reinterpret_cast<syscall_func3>(sys_object_signal)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 13: ret = reinterpret_cast<syscall_func3>(sys_object_signal_peer)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 14: ret = reinterpret_cast<syscall_func4>(sys_object_get_property)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 15: ret = reinterpret_cast<syscall_func4>(sys_object_set_property)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 16: ret = reinterpret_cast<syscall_func6>(sys_object_get_info)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 17: ret = reinterpret_cast<syscall_func4>(sys_object_get_child)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 18: ret = reinterpret_cast<syscall_func4>(sys_object_bind_exception_port)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 19: ret = reinterpret_cast<syscall_func3>(sys_channel_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 20: ret = reinterpret_cast<syscall_func8>(sys_channel_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7,
+        arg8);
+       break;
+    case 21: ret = reinterpret_cast<syscall_func6>(sys_channel_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 22: ret = reinterpret_cast<syscall_func7>(sys_channel_call)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7);
+       break;
+    case 23: ret = reinterpret_cast<syscall_func3>(sys_socket_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 24: ret = reinterpret_cast<syscall_func5>(sys_socket_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 25: ret = reinterpret_cast<syscall_func5>(sys_socket_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 26: ret = 0; reinterpret_cast<syscall_func0>(sys_thread_exit)();
+       break;
+    case 27: ret = reinterpret_cast<syscall_func5>(sys_thread_create)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 28: ret = reinterpret_cast<syscall_func5>(sys_thread_start)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 29: ret = reinterpret_cast<syscall_func5>(sys_thread_read_state)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 30: ret = reinterpret_cast<syscall_func4>(sys_thread_write_state)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 31: ret = 0; reinterpret_cast<syscall_func1>(sys_process_exit)(
+        arg1);
+       break;
+    case 32: ret = reinterpret_cast<syscall_func6>(sys_process_create)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 33: ret = reinterpret_cast<syscall_func6>(sys_process_start)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 34: ret = reinterpret_cast<syscall_func5>(sys_process_read_memory)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 35: ret = reinterpret_cast<syscall_func5>(sys_process_write_memory)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 36: ret = reinterpret_cast<syscall_func3>(sys_job_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 37: ret = reinterpret_cast<syscall_func2>(sys_task_resume)(
+        arg1,
+        arg2);
+       break;
+    case 38: ret = reinterpret_cast<syscall_func1>(sys_task_kill)(
+        arg1);
+       break;
+    case 39: ret = reinterpret_cast<syscall_func2>(sys_event_create)(
+        arg1,
+        arg2);
+       break;
+    case 40: ret = reinterpret_cast<syscall_func3>(sys_eventpair_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 41: ret = reinterpret_cast<syscall_func3>(sys_futex_wait)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 42: ret = reinterpret_cast<syscall_func2>(sys_futex_wake)(
+        arg1,
+        arg2);
+       break;
+    case 43: ret = reinterpret_cast<syscall_func5>(sys_futex_requeue)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 44: ret = reinterpret_cast<syscall_func2>(sys_waitset_create)(
+        arg1,
+        arg2);
+       break;
+    case 45: ret = reinterpret_cast<syscall_func4>(sys_waitset_add)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 46: ret = reinterpret_cast<syscall_func2>(sys_waitset_remove)(
+        arg1,
+        arg2);
+       break;
+    case 47: ret = reinterpret_cast<syscall_func4>(sys_waitset_wait)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 48: ret = reinterpret_cast<syscall_func2>(sys_port_create)(
+        arg1,
+        arg2);
+       break;
+    case 49: ret = reinterpret_cast<syscall_func3>(sys_port_queue)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 50: ret = reinterpret_cast<syscall_func4>(sys_port_wait)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 51: ret = reinterpret_cast<syscall_func4>(sys_port_bind)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 52: ret = reinterpret_cast<syscall_func3>(sys_vmo_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 53: ret = reinterpret_cast<syscall_func5>(sys_vmo_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 54: ret = reinterpret_cast<syscall_func5>(sys_vmo_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 55: ret = reinterpret_cast<syscall_func2>(sys_vmo_get_size)(
+        arg1,
+        arg2);
+       break;
+    case 56: ret = reinterpret_cast<syscall_func2>(sys_vmo_set_size)(
+        arg1,
+        arg2);
+       break;
+    case 57: ret = reinterpret_cast<syscall_func6>(sys_vmo_op_range)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 58: ret = reinterpret_cast<syscall_func3>(sys_cprng_draw)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 59: ret = reinterpret_cast<syscall_func2>(sys_cprng_add_entropy)(
+        arg1,
+        arg2);
+       break;
+    case 60: ret = reinterpret_cast<syscall_func2>(sys_fifo0_create)(
+        arg1,
+        arg2);
+       break;
+    case 61: ret = reinterpret_cast<syscall_func4>(sys_fifo0_op)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 62: ret = reinterpret_cast<syscall_func2>(sys_log_create)(
+        arg1,
+        arg2);
+       break;
+    case 63: ret = reinterpret_cast<syscall_func4>(sys_log_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 64: ret = reinterpret_cast<syscall_func4>(sys_log_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 65: ret = reinterpret_cast<syscall_func5>(sys_ktrace_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 66: ret = reinterpret_cast<syscall_func4>(sys_ktrace_control)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 67: ret = reinterpret_cast<syscall_func4>(sys_ktrace_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 68: ret = reinterpret_cast<syscall_func6>(sys_mtrace_control)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 69: ret = reinterpret_cast<syscall_func2>(sys_debug_transfer_handle)(
+        arg1,
+        arg2);
+       break;
+    case 70: ret = reinterpret_cast<syscall_func3>(sys_debug_read)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 71: ret = reinterpret_cast<syscall_func2>(sys_debug_write)(
+        arg1,
+        arg2);
+       break;
+    case 72: ret = reinterpret_cast<syscall_func3>(sys_debug_send_command)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 73: ret = reinterpret_cast<syscall_func3>(sys_interrupt_create)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 74: ret = reinterpret_cast<syscall_func1>(sys_interrupt_complete)(
+        arg1);
+       break;
+    case 75: ret = reinterpret_cast<syscall_func1>(sys_interrupt_wait)(
+        arg1);
+       break;
+    case 76: ret = reinterpret_cast<syscall_func3>(sys_mmap_device_io)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 77: ret = reinterpret_cast<syscall_func5>(sys_mmap_device_memory)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 78: ret = reinterpret_cast<syscall_func3>(sys_io_mapping_get_info)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 79: ret = reinterpret_cast<syscall_func4>(sys_vmo_create_contiguous)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 80: ret = reinterpret_cast<syscall_func6>(sys_vmar_allocate)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 81: ret = reinterpret_cast<syscall_func1>(sys_vmar_destroy)(
+        arg1);
+       break;
+    case 82: ret = reinterpret_cast<syscall_func7>(sys_vmar_map)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7);
+       break;
+    case 83: ret = reinterpret_cast<syscall_func3>(sys_vmar_unmap)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 84: ret = reinterpret_cast<syscall_func4>(sys_vmar_protect)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 85: ret = reinterpret_cast<syscall_func4>(sys_bootloader_fb_get_info)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 86: ret = reinterpret_cast<syscall_func7>(sys_set_framebuffer)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7);
+       break;
+    case 87: ret = reinterpret_cast<syscall_func3>(sys_clock_adjust)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 88: ret = reinterpret_cast<syscall_func3>(sys_pci_get_nth_device)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 89: ret = reinterpret_cast<syscall_func1>(sys_pci_claim_device)(
+        arg1);
+       break;
+    case 90: ret = reinterpret_cast<syscall_func2>(sys_pci_enable_bus_master)(
+        arg1,
+        arg2);
+       break;
+    case 91: ret = reinterpret_cast<syscall_func2>(sys_pci_enable_pio)(
+        arg1,
+        arg2);
+       break;
+    case 92: ret = reinterpret_cast<syscall_func1>(sys_pci_reset_device)(
+        arg1);
+       break;
+    case 93: ret = reinterpret_cast<syscall_func3>(sys_pci_map_mmio)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 94: ret = reinterpret_cast<syscall_func5>(sys_pci_io_write)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 95: ret = reinterpret_cast<syscall_func5>(sys_pci_io_read)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 96: ret = reinterpret_cast<syscall_func2>(sys_pci_map_interrupt)(
+        arg1,
+        arg2);
+       break;
+    case 97: ret = reinterpret_cast<syscall_func1>(sys_pci_map_config)(
+        arg1);
+       break;
+    case 98: ret = reinterpret_cast<syscall_func3>(sys_pci_query_irq_mode_caps)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 99: ret = reinterpret_cast<syscall_func3>(sys_pci_set_irq_mode)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 100: ret = reinterpret_cast<syscall_func3>(sys_pci_init)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 101: ret = reinterpret_cast<syscall_func5>(sys_pci_add_subtract_io_range)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 102: ret = reinterpret_cast<syscall_func1>(sys_acpi_uefi_rsdp)(
+        arg1);
+       break;
+    case 103: ret = reinterpret_cast<syscall_func1>(sys_acpi_cache_flush)(
+        arg1);
+       break;
+    case 104: ret = reinterpret_cast<syscall_func4>(sys_resource_create)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 105: ret = reinterpret_cast<syscall_func4>(sys_resource_get_handle)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 106: ret = reinterpret_cast<syscall_func5>(sys_resource_do_action)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 107: ret = reinterpret_cast<syscall_func2>(sys_resource_connect)(
+        arg1,
+        arg2);
+       break;
+    case 108: ret = reinterpret_cast<syscall_func2>(sys_resource_accept)(
+        arg1,
+        arg2);
+       break;
+    case 109: ret = reinterpret_cast<syscall_func0>(sys_syscall_test_0)();
+       break;
+    case 110: ret = reinterpret_cast<syscall_func1>(sys_syscall_test_1)(
+        arg1);
+       break;
+    case 111: ret = reinterpret_cast<syscall_func2>(sys_syscall_test_2)(
+        arg1,
+        arg2);
+       break;
+    case 112: ret = reinterpret_cast<syscall_func3>(sys_syscall_test_3)(
+        arg1,
+        arg2,
+        arg3);
+       break;
+    case 113: ret = reinterpret_cast<syscall_func4>(sys_syscall_test_4)(
+        arg1,
+        arg2,
+        arg3,
+        arg4);
+       break;
+    case 114: ret = reinterpret_cast<syscall_func5>(sys_syscall_test_5)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5);
+       break;
+    case 115: ret = reinterpret_cast<syscall_func6>(sys_syscall_test_6)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6);
+       break;
+    case 116: ret = reinterpret_cast<syscall_func7>(sys_syscall_test_7)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7);
+       break;
+    case 117: ret = reinterpret_cast<syscall_func8>(sys_syscall_test_8)(
+        arg1,
+        arg2,
+        arg3,
+        arg4,
+        arg5,
+        arg6,
+        arg7,
+        arg8);
        break;
 
