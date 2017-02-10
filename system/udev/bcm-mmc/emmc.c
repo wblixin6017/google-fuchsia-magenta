@@ -383,10 +383,18 @@ static void emmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     }
 
     // Read the response data.
-    pdata->response[0] = regs->resp0;
-    pdata->response[1] = regs->resp1;
-    pdata->response[2] = regs->resp2;
-    pdata->response[3] = regs->resp3;
+    if (cmd & SDMMC_RESP_LEN_136) {
+        pdata->response[0] = (regs->resp3 << 8) | ((regs->resp2 >> 24) & 0xFF);
+        pdata->response[1] = (regs->resp2 << 8) | ((regs->resp1 >> 24) & 0xFF);
+        pdata->response[2] = (regs->resp1 << 8) | ((regs->resp0 >> 24) & 0xFF);
+        pdata->response[3] = (regs->resp0 << 8);
+
+
+    } else if (cmd & (SDMMC_RESP_LEN_48 | SDMMC_RESP_LEN_48B)) {
+        pdata->response[0] = regs->resp0;
+        pdata->response[1] = regs->resp1;
+    }
+
 
     size_t bytes_copied = 0;
     if (cmd & SDMMC_RESP_DATA_PRESENT) {
@@ -509,9 +517,22 @@ static ssize_t emmc_ioctl(mx_device_t* dev, uint32_t op,
     return ERR_NOT_SUPPORTED;
 }
 
+static void emmc_unbind(mx_device_t* device) {
+    emmc_t* emmc = dev_to_bcm_emmc(device);
+    device_remove(&emmc->device);
+}
+
+static mx_status_t emmmc_release(mx_device_t* device) {
+    emmc_t* emmc = dev_to_bcm_emmc(device);
+    free(emmc);
+    return NO_ERROR;
+}
+
 static mx_protocol_device_t emmc_device_proto = {
     .iotxn_queue = emmc_iotxn_queue,
     .ioctl = emmc_ioctl,
+    .unbind = emmc_unbind,
+    .release = emmmc_release,
 };
 
 // Async thread that binds the device.
@@ -648,7 +669,7 @@ static int emmc_bootstrap_thread(void *arg) {
     ctrl1 |= ((divider_lo << 8) | (divider_hi << 6));
 
     // Set the command timeout.
-    ctrl1 |= (7 << 16);
+    ctrl1 |= (0xe << 16);
 
     // Write back the clock frequency, command timeout and clock enable bits.
     regs->ctrl1 = ctrl1;

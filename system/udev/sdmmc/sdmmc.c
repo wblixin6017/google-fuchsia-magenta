@@ -17,7 +17,8 @@
 
 #include <hexdump/hexdump.h>
 
-#define OCR_SDHC 0xc0000000
+#define OCR_SDHC      0xc0000000
+#define CSD_STRUCT_V2 0x1
 
 #define TRACE 1
 
@@ -33,6 +34,7 @@ typedef struct sdmmc {
     mx_device_t device;
     mx_device_t* parent;
     uint16_t rca;
+    uint64_t capacity;
 } sdmmc_t;
 #define get_sdmmc(dev) containerof(dev, sdmmc_t, device)
 
@@ -95,25 +97,27 @@ static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_
 }
 
 static void sdmmc_unbind(mx_device_t* device) {
-    printf("sdmmc: unbind\n");
+    sdmmc_t* sdmmc = get_sdmmc(device);
+    device_remove(&sdmmc->device);
 }
 
 static mx_status_t sdmmc_release(mx_device_t* device) {
-    printf("sdmmc: release\n");
+    sdmmc_t* sdmmc = get_sdmmc(device);
+    free(sdmmc);
     return NO_ERROR;
 }
 
 static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     if (txn->offset % SDHC_BLOCK_SIZE) {
-        printf("sdmmc: iotxn offset not aligned to block boundary, "
-               "offset =%" PRIu64 ", block size = %d\n", txn->offset, SDHC_BLOCK_SIZE);
+        xprintf("sdmmc: iotxn offset not aligned to block boundary, "
+                "offset =%" PRIu64 ", block size = %d\n", txn->offset, SDHC_BLOCK_SIZE);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
 
     if (txn->length % SDHC_BLOCK_SIZE) {
-        printf("sdmmc: iotxn length not aligned to block boundary, "
-               "offset =%" PRIu64 ", block size = %d\n", txn->length, SDHC_BLOCK_SIZE);
+        xprintf("sdmmc: iotxn length not aligned to block boundary, "
+                "offset =%" PRIu64 ", block size = %d\n", txn->length, SDHC_BLOCK_SIZE);
         txn->ops->complete(txn, ERR_INVALID_ARGS, 0);
         return;
     }
@@ -146,7 +150,7 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 
     iotxn_t* emmc_txn;
     if (iotxn_alloc(&emmc_txn, 0, txn->length, 0) != NO_ERROR) {
-        printf("sdmmc: error allocating emmc iotxn\n");
+        xprintf("sdmmc: error allocating emmc iotxn\n");
         txn->ops->complete(txn, ERR_INTERNAL, 0);
         return;
     }
@@ -166,7 +170,6 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
             return;
         }
 
-        // printf("sdmmc: status = 0x%08x\n", pdata->response[0]);
         current_state = (pdata->response[0] >> 9) & 0xf;
         
         if (current_state == 5) {
@@ -209,7 +212,8 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 }
 
 static mx_off_t sdmmc_get_size(mx_device_t* dev) {
-    return 4096 * 4096;
+    sdmmc_t* sdmmc = get_sdmmc(dev);
+    return sdmmc->capacity;
 }
 
 // Block device protocol.
@@ -336,6 +340,25 @@ static int sdmmc_bootstrap_thread(void* arg) {
         goto err;
     }
 
+    // Determine the size of the card.
+    if ((st = sdmmc_do_command(dev, SDMMC_SEND_CSD, sdmmc->rca << 16, setup_txn)) != NO_ERROR) {
+        xprintf("sdmmc: failed to send app cmd, retcode = %d\n", st);
+        goto err;
+    }
+
+    // For now we only support SDHC cards. These cards must have a CSD type = 1,
+    // since CSD type 0 is unable to support SDHC sized cards.
+    uint8_t csd_structure = (pdata->response[0] >> 30) & 0x3;
+    if (csd_structure != CSD_STRUCT_V2) {
+        xprintf("sdmmc: unsupported card type, expected CSD version = %d, "
+                "got version %d\n", CSD_STRUCT_V2, csd_structure);
+        goto err;
+    }
+
+    const uint32_t c_size = ((pdata->response[2] >> 16) | (pdata->response[1] << 16)) & 0x3fffff;
+    sdmmc->capacity = (c_size + 1ul) * 512ul * 1024ul;
+    xprintf("sdmmc: found card with capacity = %"PRIu64"B\n", sdmmc->capacity);
+
     if ((st = sdmmc_do_command(dev, SDMMC_SELECT_CARD, sdmmc->rca << 16, setup_txn)) != NO_ERROR) {
         xprintf("sdmmc: SELECT_CARD failed with retcode = %d\n", st);
         goto err;
@@ -356,7 +379,7 @@ static int sdmmc_bootstrap_thread(void* arg) {
 
     uint32_t scr;
     setup_txn->ops->copyfrom(setup_txn, &scr, sizeof(scr), 0);
-    scr = htobe32(scr);
+    scr = be32toh(scr);
 
     // If this card supports 4 bit mode, then put it into 4 bit mode.
     const uint32_t supported_bus_widths = (scr >> 16) & 0xf;
