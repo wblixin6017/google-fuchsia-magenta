@@ -177,7 +177,7 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     emmc_txn->flags = txn->flags;
     emmc_txn->offset = txn->offset;
     emmc_txn->length = txn->length;
-    emmc_txn->protocol = MX_PROTOCOL_MMC;
+    emmc_txn->protocol = MX_PROTOCOL_SDMMC;
     sdmmc_protocol_data_t* pdata = iotxn_pdata(emmc_txn, sdmmc_protocol_data_t);
 
     uint8_t current_state;
@@ -483,6 +483,6 @@ mx_driver_t _driver_sdmmc = {
 // The formatter does not play nice with these macros.
 // clang-format off
 MAGENTA_DRIVER_BEGIN(_driver_sdmmc, "sdmmc", "magenta", "0.1", 1)
-    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_MMC),
+    BI_MATCH_IF(EQ, BIND_PROTOCOL, MX_PROTOCOL_SDMMC),
 MAGENTA_DRIVER_END(_driver_sdmmc)
 // clang-format on

@@ -703,7 +703,7 @@ static int emmc_bootstrap_thread(void *arg) {
 
     // Create the device.
     device_init(&emmc->device, drv, "bcm-emmc", &emmc_device_proto);
-    emmc->device.protocol_id = MX_PROTOCOL_MMC;
+    emmc->device.protocol_id = MX_PROTOCOL_SDMMC;
 
     // Create a thread to handle IRQs.
     thrd_t irq_thrd;
@@ -766,6 +766,6 @@ mx_driver_t _driver_emmc_dwc = {
 MAGENTA_DRIVER_BEGIN(_driver_emmc_dwc, "bcm-emmc", "magenta", "0.1", 3)
     BI_ABORT_IF(NE, BIND_PROTOCOL, MX_PROTOCOL_SOC),
     BI_ABORT_IF(NE, BIND_SOC_VID, SOC_VID_BROADCOMM),
-    BI_MATCH_IF(EQ, BIND_SOC_DID, SOC_DID_BROADCOMM_VIDEOCORE_BUS),
+    BI_MATCH_IF(EQ, BIND_SOC_DID, SOC_DID_BROADCOMM_EMMC),
 MAGENTA_DRIVER_END(_driver_emmc_dwc)
 // clang-format on
