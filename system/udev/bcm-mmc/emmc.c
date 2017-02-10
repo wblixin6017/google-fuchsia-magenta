@@ -722,6 +722,8 @@ out:
     if (emmc)
         free(emmc);
 
+    driver_unbind(drv, dev);
+
     // If we're in the error path, make sure the error retcode is set.
     assert(st != NO_ERROR);
 
@@ -730,7 +732,7 @@ out:
     return -1;
 }
 
-static mx_status_t emmc_bind(mx_driver_t* drv, mx_device_t* dev) {
+static mx_status_t emmc_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
     // Create a context to pass bind variables to the bootstrap thread.
     emmc_setup_context_t* ctx = calloc(1, sizeof(*ctx));
     if (!ctx)

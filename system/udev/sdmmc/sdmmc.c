@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/param.h>
 #include <threads.h>
 
 // DDK Includes
@@ -228,7 +229,7 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     }
 
     if (txn->opcode == IOTXN_OP_READ) {
-        bytes_processed = MIN(emmc_txn->actual, txn->length)
+        bytes_processed = MIN(emmc_txn->actual, txn->length);
         emmc_txn->ops->mmap(emmc_txn, &buffer);
         txn->ops->copyto(txn, buffer, bytes_processed, 0);
     }
@@ -451,7 +452,7 @@ err:
     return -1;
 }
 
-static mx_status_t sdmmc_bind(mx_driver_t* drv, mx_device_t* dev) {
+static mx_status_t sdmmc_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
     // Create a context.
     sdmmc_setup_context_t* ctx = calloc(1, sizeof(*ctx));
     if (!ctx)
