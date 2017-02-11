@@ -85,4 +85,28 @@ information, see `docs/getting_started.md`:
 
 8. Insert the SD Card and connect power to boot the Pi
 
+## Accessing the SD Card from Magenta
+Note that Magenta currently only supports MinFS filesystems, so we must create
+a MinFS partition on the SD card as follows:
 
+1. Ensure that your card is formatted with an MBR (this is required to boot the
+   pi).
+
+2. Create a second unformatted partition on the SDCard. Use a tool (such as
+   `fdisk`) to set the partition type of the second partition to `0xE9`. This 
+   will tell magenta that this is a magenta data partition and that it should be
+   mounted at the `/data/` mount point.
+
+   fdisk can be used to edit the partition type as follows:
+   1. `sudo fdisk /dev/<sdN>`
+   2. Press `p` to print the partitions on the card and find the new (unformatted)
+      partition.
+   3. Press `t` to edit the partition type
+   4. Fdisk will ask you for a partition number, use the partition number that
+      refers to the unformatted partition from step 2
+   5. Fdisk will ask you for a hex code, enter `E9` to continue
+   6. Press `w` to write your changes back to the card and exit.
+   7. Format the new partition as MinFS using either your host or Magenta
+
+3. Magenta should automatically mount the new partition at `/data` during boot
+   on the Pi3.
