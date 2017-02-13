@@ -73,12 +73,15 @@ typedef struct thread {
 
     /* active bits */
     struct list_node queue_node;
-    int priority;
     enum thread_state state;
     lk_bigtime_t last_started_running;
     lk_bigtime_t remaining_time_slice;
     unsigned int flags;
     unsigned int signals;
+
+    int base_priority;
+    int priority_boost;
+
 #if WITH_SMP
     uint last_cpu; /* last/current cpu the thread is running on */
     int pinned_cpu; /* only run on pinned_cpu if >= 0 */
@@ -150,8 +153,8 @@ typedef struct thread {
 #endif
 
 /* thread priority */
-#define NUM_PRIORITIES 32
-#define LOWEST_PRIORITY 0
+#define NUM_PRIORITIES (32)
+#define LOWEST_PRIORITY (0)
 #define HIGHEST_PRIORITY (NUM_PRIORITIES - 1)
 #define DPC_PRIORITY (NUM_PRIORITIES - 2)
 #define IDLE_PRIORITY LOWEST_PRIORITY
@@ -175,7 +178,7 @@ void thread_secondary_cpu_entry(void) __NO_RETURN;
 void thread_construct_first(thread_t *t, const char *name);
 thread_t *thread_create_idle_thread(uint cpu_num);
 void thread_set_name(const char *name);
-void thread_set_priority(int priority);
+void thread_set_priority(unsigned int priority);
 void thread_set_exit_callback(thread_t *t, thread_exit_callback_t cb, void *cb_arg);
 thread_t *thread_create(const char *name, thread_start_routine entry, void *arg, int priority, size_t stack_size);
 thread_t *thread_create_etc(thread_t *t, const char *name, thread_start_routine entry, void *arg, int priority, void *stack, size_t stack_size, thread_trampoline_routine alt_trampoline);
@@ -187,6 +190,11 @@ status_t thread_detach(thread_t *t);
 status_t thread_join(thread_t *t, int *retcode, lk_time_t timeout);
 status_t thread_detach_and_resume(thread_t *t);
 status_t thread_set_real_time(thread_t *t);
+
+/* scheduler routines */
+void thread_yield(void);      /* give up the cpu and time slice voluntarily */
+void thread_preempt(void);    /* get preempted at irq time */
+void thread_reschedule(void); /* revaluate the run queue, can be used after waking up threads */
 
 void thread_owner_name(thread_t *t, char out_name[THREAD_NAME_LENGTH]);
 void thread_print_backtrace(thread_t* t, void* fp);
@@ -218,14 +226,9 @@ void dump_thread(thread_t *t, bool full);
 void arch_dump_thread(thread_t *t);
 void dump_all_threads(bool full);
 
-/* scheduler routines */
-void thread_yield(void);             /* give up the cpu and time slice voluntarily */
-void thread_preempt(bool interrupt); /* get preempted (return to head of queue and reschedule) */
-void thread_resched(void);
-
 static inline bool thread_is_realtime(thread_t *t)
 {
-    return (t->flags & THREAD_FLAG_REAL_TIME) && t->priority > DEFAULT_PRIORITY;
+    return (t->flags & THREAD_FLAG_REAL_TIME) && t->base_priority > DEFAULT_PRIORITY;
 }
 
 static inline bool thread_is_idle(thread_t *t)

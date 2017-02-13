@@ -133,7 +133,7 @@ mx_status_t PortDispatcher::Queue(IOP_Packet* packet) {
     }
 
     if (wake_count)
-        thread_preempt(false);
+        thread_reschedule();
 
     return NO_ERROR;
 }
@@ -176,7 +176,7 @@ void* PortDispatcher::Signal(void* cookie, uint64_t key, mx_signals_t signal) {
     }
 
     if (wake_count)
-        thread_preempt(false);
+        thread_reschedule();
 
     return node;
 }

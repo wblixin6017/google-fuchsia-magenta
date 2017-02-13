@@ -97,7 +97,7 @@ status_t UserThread::Initialize(const char* name, size_t len) {
     memcpy(thread_name, name, len);
 
     // create an underlying LK thread
-    thread_t* lkthread = thread_create_etc(&thread_, thread_name, StartRoutine, this, LOW_PRIORITY,
+    thread_t* lkthread = thread_create_etc(&thread_, thread_name, StartRoutine, this, DEFAULT_PRIORITY,
                                            NULL, DEFAULT_STACK_SIZE, NULL);
 
     if (!lkthread) {

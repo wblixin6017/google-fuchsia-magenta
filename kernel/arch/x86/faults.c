@@ -404,7 +404,7 @@ void x86_exception_handler(x86_iframe_t *frame)
     }
 
     if (ret != INT_NO_RESCHEDULE)
-        thread_preempt(true);
+        thread_preempt();
 
     ktrace_tiny(TAG_IRQ_EXIT, (frame->vector << 8) | arch_curr_cpu_num());
 

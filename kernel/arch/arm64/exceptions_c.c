@@ -325,7 +325,7 @@ void arm64_irq(struct arm64_iframe_short *iframe, uint exception_flags)
 
     /* preempt the thread if the interrupt has signaled it */
     if (ret != INT_NO_RESCHEDULE)
-        thread_preempt(true);
+        thread_preempt();
 }
 
 /* called from assembly */

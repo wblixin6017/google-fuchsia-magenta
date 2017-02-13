@@ -61,7 +61,6 @@ spin_lock_t thread_lock = SPIN_LOCK_INITIAL_VALUE;
 thread_t idle_threads[SMP_MAX_CPUS];
 
 /* local routines */
-void thread_resched(void);
 static int idle_thread_routine(void *) __NO_RETURN;
 static void thread_exit_locked(thread_t *current_thread, int retcode) __NO_RETURN;
 
@@ -146,7 +145,8 @@ thread_t *thread_create_etc(
 
     t->entry = entry;
     t->arg = arg;
-    t->priority = priority;
+    t->base_priority = priority;
+    t->priority_boost = 0;
     t->state = THREAD_SUSPENDED;
     t->signals = 0;
     t->blocking_wait_queue = NULL;
@@ -251,7 +251,9 @@ status_t thread_resume(thread_t *t)
 
     THREAD_LOCK(state);
     if (t->state == THREAD_SUSPENDED) {
-        sched_unblock(t, resched);
+        sched_unblock(t);
+        if (resched)
+            sched_reschedule();
     }
 
     THREAD_UNLOCK(state);
@@ -368,7 +370,7 @@ __NO_RETURN static void thread_exit_locked(thread_t *current_thread, int retcode
     }
 
     /* reschedule */
-    thread_resched();
+    _thread_resched_internal();
 
     panic("somehow fell through thread_exit()\n");
 }
@@ -474,7 +476,7 @@ void thread_kill(thread_t *t, bool block)
             if (t->interruptable) {
                 t->blocked_status = ERR_INTERRUPTED;
 
-                sched_unblock(t, false);
+                sched_unblock(t);
             }
             break;
         case THREAD_DEATH:
@@ -528,7 +530,7 @@ __NO_RETURN static int idle_thread_routine(void *arg)
  * This is probably not the function you're looking for. See
  * thread_yield() instead.
  */
-void thread_resched(void)
+void _thread_resched_internal(void)
 {
     thread_t *current_thread = get_current_thread();
     uint cpu = arch_curr_cpu_num();
@@ -613,10 +615,10 @@ void thread_resched(void)
     /* do the switch */
     set_current_thread(newthread);
 
-    TRACE_CONTEXT_SWITCH("cpu %u, old %p (%s, pri %d, flags 0x%x), new %p (%s, pri %d, flags 0x%x)\n",
-            cpu, oldthread, oldthread->name, oldthread->priority,
+    TRACE_CONTEXT_SWITCH("cpu %u, old %p (%s, pri %d:%d, flags 0x%x), new %p (%s, pri %d:%d, flags 0x%x)\n",
+            cpu, oldthread, oldthread->name, oldthread->base_priority, oldthread->priority_boost,
             oldthread->flags, newthread, newthread->name,
-            newthread->priority, newthread->flags);
+            newthread->base_priority, newthread->priority_boost, newthread->flags);
 
 #if THREAD_STACK_BOUNDS_CHECK
     /* check that the old thread has not blown its stack just before pushing its context */
@@ -671,22 +673,12 @@ void thread_yield(void)
 }
 
 /**
- * @brief Preempt the current thread, usually from an interrupt
+ * @brief Preempt the current thread from an interrupt
  *
  * This function places the current thread at the head of the run
  * queue and then yields the cpu to another thread.
- *
- * Exception:  If the time slice for this thread has expired, then
- * the thread goes to the end of the run queue.
- *
- * This function will return at some later time. Possibly immediately if
- * no other threads are waiting to execute.
- *
- * @param interrupt for tracing purposes set if the preemption is happening
- * at interrupt context.
- *
  */
-void thread_preempt(bool interrupt)
+void thread_preempt(void)
 {
     thread_t *current_thread = get_current_thread();
 
@@ -696,16 +688,34 @@ void thread_preempt(bool interrupt)
 
     if (!thread_is_idle(current_thread)) {
         /* only track when a meaningful preempt happens */
-        if (interrupt) {
-            THREAD_STATS_INC(irq_preempts);
-        } else {
-            THREAD_STATS_INC(preempts);
-        }
+        THREAD_STATS_INC(irq_preempts);
     }
 
     THREAD_LOCK(state);
 
     sched_preempt();
+
+    THREAD_UNLOCK(state);
+}
+
+/**
+ * @brief Reevaluate the run queue on the current cpu.
+ *
+ * This function places the current thread at the head of the run
+ * queue and then yields the cpu to another thread. Similar to
+ * thread_preempt, but intended to be used at non interrupt context.
+ */
+void thread_reschedule(void)
+{
+    thread_t *current_thread = get_current_thread();
+
+    DEBUG_ASSERT(current_thread->magic == THREAD_MAGIC);
+    DEBUG_ASSERT(current_thread->state == THREAD_RUNNING);
+    DEBUG_ASSERT(!arch_in_int_handler());
+
+    THREAD_LOCK(state);
+
+    sched_reschedule();
 
     THREAD_UNLOCK(state);
 }
@@ -749,7 +759,7 @@ static enum handler_return thread_sleep_handler(timer_t *timer, lk_time_t now, v
 
     t->blocked_status = NO_ERROR;
 
-    sched_unblock(t, false);
+    sched_unblock(t);
 
     spin_unlock(&thread_lock);
 
@@ -845,7 +855,8 @@ void thread_construct_first(thread_t *t, const char *name)
     __UNUSED uint cpu = arch_curr_cpu_num();
 
     init_thread_struct(t, name);
-    t->priority = HIGHEST_PRIORITY;
+    t->base_priority = HIGHEST_PRIORITY;
+    t->priority_boost = 0;
     t->state = THREAD_RUNNING;
     t->flags = THREAD_FLAG_DETACHED;
     t->signals = 0;
@@ -911,7 +922,7 @@ void thread_set_exit_callback(thread_t *t, thread_exit_callback_t cb, void *cb_a
  *
  * See thread_create() for a discussion of priority values.
  */
-void thread_set_priority(int priority)
+void thread_set_priority(unsigned int priority)
 {
     thread_t *current_thread = get_current_thread();
 
@@ -921,9 +932,10 @@ void thread_set_priority(int priority)
         priority = IDLE_PRIORITY + 1;
     if (priority > HIGHEST_PRIORITY)
         priority = HIGHEST_PRIORITY;
-    current_thread->priority = priority;
+    current_thread->base_priority = priority;
+    current_thread->priority_boost = 0;
 
-    sched_preempt();
+    sched_reschedule();
 
     THREAD_UNLOCK(state);
 }
@@ -946,7 +958,8 @@ void thread_become_idle(void)
     thread_set_name(name);
 
     /* mark ourself as idle */
-    t->priority = IDLE_PRIORITY;
+    t->base_priority = IDLE_PRIORITY;
+    t->priority_boost = 0;
     t->flags |= THREAD_FLAG_IDLE;
     thread_set_pinned_cpu(t, arch_curr_cpu_num());
 
@@ -955,7 +968,7 @@ void thread_become_idle(void)
 
     /* enable interrupts and start the scheduler */
     arch_enable_ints();
-    thread_yield();
+    thread_reschedule();
 
     idle_thread_routine(NULL);
 }
@@ -1066,11 +1079,11 @@ void dump_thread(thread_t *t, bool full_dump)
     if (full_dump) {
         dprintf(INFO, "dump_thread: t %p (%s:%s)\n", t, oname, t->name);
 #if WITH_SMP
-        dprintf(INFO, "\tstate %s, last_cpu %u, pinned_cpu %d, priority %d, remaining time slice %" PRIu64 "\n",
-                thread_state_to_str(t->state), t->last_cpu, t->pinned_cpu, t->priority, t->remaining_time_slice);
+        dprintf(INFO, "\tstate %s, last_cpu %u, pinned_cpu %d, priority %d:%d, remaining time slice %" PRIu64 "\n",
+                thread_state_to_str(t->state), t->last_cpu, t->pinned_cpu, t->base_priority, t->priority_boost, t->remaining_time_slice);
 #else
-        dprintf(INFO, "\tstate %s, priority %d, remaining time slice %" PRIu64 "\n",
-                thread_state_to_str(t->state), t->priority, t->remaining_time_slice);
+        dprintf(INFO, "\tstate %s, priority %d:%d, remaining time slice %" PRIu64 "\n",
+                thread_state_to_str(t->state), t->base_priority, t->priority_boost, t->remaining_time_slice);
 #endif
         dprintf(INFO, "\truntime_ns %" PRIu64 ", runtime_s %" PRIu64 "\n",
                 runtime, runtime / 1000000000);
@@ -1089,8 +1102,8 @@ void dump_thread(thread_t *t, bool full_dump)
                 t->user_thread, t->user_pid, t->user_tid);
         arch_dump_thread(t);
     } else {
-        printf("thr %p st %4s pri %2d pid %" PRIu64 " tid %" PRIu64 " (%s:%s)\n",
-               t, thread_state_to_str(t->state), t->priority, t->user_pid, t->user_tid, oname, t->name);
+        printf("thr %p st %4s pri %2d:%d pid %" PRIu64 " tid %" PRIu64 " (%s:%s)\n",
+               t, thread_state_to_str(t->state), t->base_priority, t->priority_boost, t->user_pid, t->user_tid, oname, t->name);
     }
 }
 
@@ -1249,7 +1262,9 @@ int wait_queue_wake_one(wait_queue_t *wait, bool reschedule, status_t wait_queue
         t->blocked_status = wait_queue_error;
         t->blocking_wait_queue = NULL;
 
-        sched_unblock(t, reschedule);
+        sched_unblock(t);
+        if (reschedule)
+            sched_reschedule();
 
         ret = 1;
     }
@@ -1302,7 +1317,9 @@ int wait_queue_wake_all(wait_queue_t *wait, bool reschedule, status_t wait_queue
     DEBUG_ASSERT(ret > 0);
     DEBUG_ASSERT(wait->count == 0);
 
-    sched_unblock_list(&list, reschedule);
+    sched_unblock_list(&list);
+    if (reschedule)
+        sched_reschedule();
 
     return ret;
 }
@@ -1359,7 +1376,7 @@ status_t thread_unblock_from_wait_queue(thread_t *t, status_t wait_queue_error)
     t->blocking_wait_queue = NULL;
     t->blocked_status = wait_queue_error;
 
-    sched_unblock(t, false);
+    sched_unblock(t);
 
     return NO_ERROR;
 }

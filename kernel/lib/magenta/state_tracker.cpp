@@ -21,7 +21,7 @@ void StateTracker::AddObserver(StateObserver* observer) {
             observers_.push_front(observer);
     }
     if (awoke_threads)
-        thread_preempt(false);
+        thread_reschedule();
 }
 
 void StateTracker::RemoveObserver(StateObserver* observer) {
@@ -48,7 +48,7 @@ void StateTracker::Cancel(Handle* handle) {
     }
 
     if (awoke_threads)
-        thread_preempt(false);
+        thread_reschedule();
 }
 
 void StateTracker::UpdateState(mx_signals_t clear_mask,
@@ -78,6 +78,6 @@ void StateTracker::UpdateState(mx_signals_t clear_mask,
     }
 
     if (awoke_threads) {
-        thread_preempt(false);
+        thread_reschedule();
     }
 }
