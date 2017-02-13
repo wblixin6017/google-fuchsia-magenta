@@ -13,6 +13,10 @@ MODULE_SRCS := \
 
 MODULE_STATIC_LIBS := ulib/ddk
 
-MODULE_LIBS := ulib/driver ulib/magenta ulib/musl
+MODULE_LIBS :=  ulib/driver \
+                ulib/magenta \
+                ulib/musl \
+                ulib/qcom/glink \
+                ulib/qcom/clock \
 
 include make/module.mk

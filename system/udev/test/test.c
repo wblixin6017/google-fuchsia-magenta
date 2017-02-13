@@ -9,6 +9,9 @@
 #include <ddk/driver.h>
 #include <ddk/binding.h>
 
+#include <rpm-glink.h>
+extern void platform_clock_init(void);
+extern void glink_init(void);
 
 static int irq_thread(void* arg) {
     printf("irq_thread start\n");
@@ -47,11 +50,22 @@ static int irq_thread(void* arg) {
 static mx_status_t test_init(mx_driver_t* driver) {
     printf("test_init HELLO!\n");
 
+// qcom clock driver init
+    platform_clock_init();
+    
+    
+//com glink driver init
+    glink_init();
+// currently this hangs
+    printf("call rpm_glink_init!\n");
+    rpm_glink_init();
+    printf("did rpm_glink_init!\n");
+
+/*
     thrd_t thread;
     thrd_create_with_name(&thread, irq_thread, NULL, "irq_thread");
     thrd_detach(thread);
-
-
+*/
     return NO_ERROR;
 }
 
