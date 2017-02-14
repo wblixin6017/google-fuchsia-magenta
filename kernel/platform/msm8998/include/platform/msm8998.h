@@ -35,5 +35,6 @@
 
 #define ARM_GENERIC_TIMER_PHYSICAL_VIRT (PPI_BASE + 3)
 #define UART_INT                        (SPI_BASE + 114)
+#define GLINK_RPM_INT                   (SPI_BASE + 136)
 
 #define MAX_INT 640

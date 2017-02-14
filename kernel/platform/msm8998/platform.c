@@ -25,6 +25,8 @@
 #include <dev/interrupt/arm_gic.h>
 #include <platform/msm8998.h>
 
+#include "platform_p.h"
+
 #include <target.h>
 
 #include <libfdt.h>
@@ -165,6 +167,8 @@ void platform_early_init(void)
     /* initialize the interrupt controller and timers */
     arm_gic_init();
     arm_generic_timer_init(ARM_GENERIC_TIMER_PHYSICAL_VIRT, 0);
+
+    glink_rpm_init();
 
     /* add the main memory arena */
     pmm_add_arena(&arena);

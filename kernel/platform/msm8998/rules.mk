@@ -19,6 +19,7 @@ LK_HEAP_IMPLEMENTATION ?= cmpctmalloc
 
 MODULE_SRCS += \
 	$(LOCAL_DIR)/platform.c \
+    $(LOCAL_DIR)/glink-rpm.c \
 	$(MSM_COMMON)/uart.c \
 
 MEMBASE := 0x80000000
