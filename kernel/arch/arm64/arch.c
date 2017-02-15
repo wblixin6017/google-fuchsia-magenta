@@ -251,11 +251,11 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg
 
     /* set up a default spsr to get into 64bit user space:
      * zeroed NZCV
-     * no SS, no IL, no D
+     * no SS, no IL, no D, no A
      * all interrupts enabled
      * mode 0: EL0t
      */
-    uint32_t spsr = 0;
+    uint32_t spsr = (1<<9) | (1<<8);
 
     arch_disable_ints();
 
