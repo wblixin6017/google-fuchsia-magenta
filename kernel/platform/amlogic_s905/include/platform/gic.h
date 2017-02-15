@@ -7,9 +7,9 @@
 
 #pragma once
 
-#include <platform/qemu-virt.h>
+#include <platform/s905.h>
 
 #define GICBASE(n)  (CPUPRIV_BASE_VIRT)
-#define GICC_OFFSET (0x01000)
-#define GICD_OFFSET (0x02000)
+#define GICC_OFFSET (0x02000)
+#define GICD_OFFSET (0x01000)
 

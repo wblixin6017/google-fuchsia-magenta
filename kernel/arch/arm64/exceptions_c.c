@@ -334,6 +334,7 @@ void arm64_invalid_exception(struct arm64_iframe_long *iframe, unsigned int whic
 void arm64_invalid_exception(struct arm64_iframe_long *iframe, unsigned int which)
 {
     printf("invalid exception, which 0x%x\n", which);
+    printf("ESR 0x%lx\n", ARM64_READ_SYSREG(esr_el1));
     dump_iframe(iframe);
 
     platform_halt(HALT_ACTION_HALT, HALT_REASON_SW_PANIC);
