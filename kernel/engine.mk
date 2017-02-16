@@ -507,6 +507,7 @@ HOST_CPPFLAGS += --sysroot=$(HOST_SYSROOT)
 endif
 
 include system/uapp/minfs/build.mk
+include system/ulib/tftp/build.mk
 # host tools
 include system/tools/build.mk
 
