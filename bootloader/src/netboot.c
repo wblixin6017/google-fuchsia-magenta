@@ -105,6 +105,16 @@ void udp6_recv(void* data, size_t len,
         nb_boot_now = 1;
         printf("netboot: Boot Kernel...\n");
         break;
+    /*case NB_UPDATE_BOOTLOADER:*/
+        /*xefi_file_protocol* file = xefi_open_file(L"test.bin", EFI_FILE_MODE_CREATE);*/
+        /*if (!file) {*/
+            /*printf("Couldn't open Test.bin\n");*/
+            /*break;*/
+        /*}*/
+
+        /*xefi_write_file(file, &nbkernel.offset, nbkernel.data);*/
+        /*xefi_close_file(file);*/
+
     default:
         ack.cmd = NB_ERROR_BAD_CMD;
         ack.arg = 0;
@@ -204,6 +214,7 @@ int netboot_poll(void) {
     netifc_poll();
 
     if (nb_boot_now) {
+
         nb_boot_now = 0;
         return 1;
     } else {

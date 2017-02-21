@@ -361,10 +361,10 @@ static int xfer(struct sockaddr_in6* addr, const char* fn, const char* name, boo
 
         // ACKs really are NACKs
         if (ack->cookie > 0 && ack->cmd == NB_ACK && ack->arg != current_pos) {
-            fprintf(stderr, "\n%s: need to rewind to %d from %zu\n", appname, ack->arg, current_pos);
+            //fprintf(stderr, "\n%s: need to rewind to %d from %zu\n", appname, ack->arg, current_pos);
             current_pos = ack->arg;
             if (fseek(xd.fp, current_pos, SEEK_SET)) {
-                fprintf(stderr, "\n%s: error: Failed to rewind '%s' to %zu\n", appname, fn, current_pos);
+                //fprintf(stderr, "\n%s: error: Failed to rewind '%s' to %zu\n", appname, fn, current_pos);
                 goto done;
             }
         } else if (ack->cmd == NB_FILE_RECEIVED) {

@@ -24,7 +24,8 @@
 #define NB_READ               8 // arg=blocknum
 #define NB_WRITE              9 // arg=blocknum, data=data
 #define NB_CLOSE             10 // arg=0
-#define NB_LAST_DATA         11  // arg=blocknum, data=data
+#define NB_LAST_DATA         11 // arg=blocknum, data=data
+#define NB_UPDATE_BOOTLOADER 12 // arg=0
 
 #define NB_ACK                0 // arg=0 or -err, NB_READ: data=data
 #define NB_FILE_RECEIVED      0x70000001 // arg=size

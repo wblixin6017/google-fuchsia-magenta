@@ -295,11 +295,6 @@ void do_netboot() {
         cmdline[nbcmdline.offset] = 0;
 
         // maybe it's a kernel image?
-        char fbres[11];
-        if (cmdline_get(cmdline, "bootloader.fbres", fbres, sizeof(fbres)) > 0) {
-            set_gfx_mode_from_cmdline(fbres);
-        }
-
         boot_kernel(gImg, gSys, (void*) nbkernel.data, nbkernel.offset,
                     (void*) nbramdisk.data, nbramdisk.offset,
                     cmdline, strlen(cmdline), cmdextra, strlen(cmdextra));
@@ -428,7 +423,7 @@ EFIAPI efi_status efi_main(efi_handle img, efi_system_table* sys) {
         case 'm': {
             size_t rsz = 0;
             void* ramdisk = NULL;
-            efi_file_protocol* ramdisk_file = xefi_open_file(L"ramdisk.bin");
+            efi_file_protocol* ramdisk_file = xefi_open_file(L"ramdisk.bin", EFI_FILE_MODE_READ);
             if (ramdisk_file) {
                 printf("Loading ramdisk.bin...\n");
                 ramdisk = xefi_read_file(ramdisk_file, &rsz);
