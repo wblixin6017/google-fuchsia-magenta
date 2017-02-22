@@ -1,0 +1,7 @@
+// CPU topology IDs
+list            cpu-map                     1
+list            cpu-map.clusters            2
+uint32          cpu-map.clusters.id         3
+string          cpu-map.clusters.name       4
+list            cpu-map.clusters.cpus       5
+uint32          cpu-map.clusters.cpus.id    6

@@ -1,0 +1,43 @@
+include "kernel/include/mdi/kernel-defs.mdi"
+
+cpu-map = {
+    clusters = {
+        {
+            id = 0
+            name = "silver"
+            cpus = {
+                {
+                    id = 0
+                }
+                {
+                    id = 1
+                }
+                {
+                    id = 2
+                }
+                {
+                    id = 3
+                }
+            }
+        }
+        {
+            id = 1
+            name = "gold"
+            cpus = {
+                {
+                    id = 0
+                }
+                {
+                    id = 1
+                }
+                {
+                    id = 2
+                }
+                {
+                    id = 3
+                }
+            }
+        }
+    }
+}
+

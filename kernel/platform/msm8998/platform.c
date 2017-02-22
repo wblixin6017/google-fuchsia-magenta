@@ -41,6 +41,9 @@
 #include <kernel/thread.h>
 #endif
 
+#include <mdi/mdi.h>
+#include <mdi/mdi-defs.h>
+
 /* initial memory mappings. parsed by start.S */
 struct mmu_initial_mapping mmu_initial_mappings[] = {
  /* 1GB of sdram space */
@@ -67,8 +70,6 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
 #define DEBUG_UART 1
 
 extern void arm_reset(void);
-
-//static uint8_t * kernel_args;
 
 static pmm_arena_info_t arena = {
     .name = "sdram",
@@ -176,22 +177,77 @@ void platform_early_init(void)
                     &list);
 }
 
+#if WITH_SMP
+static void init_secondary_cpus(void) {
+    mdi_node_ref_t  root;
+    mdi_node_ref_t  cpu_map;
+    mdi_node_ref_t  clusters;
+
+    if (mdi_init_embedded(&root) != NO_ERROR) {
+        printf("mdi_init_embedded failed\n");
+        return;
+    }
+
+    if (mdi_list_find_node(&root, MDI_CPU_MAP, &cpu_map) != NO_ERROR) {
+        printf("mdi_list_find_node couldn't find cpu-map\n");
+        return;
+    }
+    if (mdi_list_find_node(&cpu_map, MDI_CPU_MAP_CLUSTERS, &clusters) != NO_ERROR) {
+        printf("mdi_list_find_node couldn't find clusters\n");
+        return;
+    }
+
+    mdi_node_ref_t  cluster;
+    mx_status_t cluster_status;
+
+    mdi_list_each_child(clusters, cluster, cluster_status) {
+        uint32_t cluster_id;
+        mdi_node_ref_t node;
+        mdi_node_ref_t cpus;
+
+        if (mdi_list_find_node(&cluster, MDI_CPU_MAP_CLUSTERS_ID, &node) != NO_ERROR) {
+            printf("mdi_list_find_node couldn't find cluster id\n");
+            return;
+        }
+        if (mdi_node_uint32(&node, &cluster_id) != NO_ERROR) {
+            printf("could not read cluster id\n");
+            return;
+        }
+        if (mdi_list_find_node(&cluster, MDI_CPU_MAP_CLUSTERS_CPUS, &cpus) != NO_ERROR) {
+            printf("mdi_list_find_node couldn't find cluster CPUs\n");
+            return;
+        }
+
+        mdi_node_ref_t  cpu;
+        mx_status_t cpus_status;
+
+        mdi_list_each_child(cpus, cpu, cpus_status) {
+            uint32_t cpu_id;
+
+            if (mdi_list_find_node(&cpu, MDI_CPU_MAP_CLUSTERS_CPUS_ID, &node) != NO_ERROR) {
+                printf("mdi_list_find_node couldn't find CPU id\n");
+                return;
+            }
+            if (mdi_node_uint32(&node, &cpu_id) != NO_ERROR) {
+                printf("could not read CPU id\n");
+                return;
+            }
+            if (cluster_id != 0 || cpu_id != 0) {
+                uint64_t mpid = (cluster_id << 8) | cpu_id;
+                arm64_set_secondary_sp(mpid, pmm_alloc_kpages(ARCH_DEFAULT_STACK_SIZE / PAGE_SIZE, NULL, NULL));
+                psci_cpu_on(cluster_id, cpu_id, MEMBASE + KERNEL_LOAD_OFFSET);
+            }
+        }
+    }
+}
+#endif
+
 void platform_init(void)
 {
     uart_init();
 
 #if WITH_SMP
-    /* TODO - number of cpus (and topology) should be parsed from device index or command line */
-
-    for (int i = 1; i < SMP_MAX_CPUS; i++) {
-
-        uint64_t mpid = (PSCI_INDEX_TO_CLUSTER(i) << 8) | PSCI_INDEX_TO_ID(i);
-
-        arm64_set_secondary_sp(mpid, pmm_alloc_kpages(ARCH_DEFAULT_STACK_SIZE / PAGE_SIZE, NULL, NULL));
-
-        psci_cpu_on( PSCI_INDEX_TO_CLUSTER(i) , PSCI_INDEX_TO_ID(i), MEMBASE + KERNEL_LOAD_OFFSET);
-    }
-
+    init_secondary_cpus();
 #endif
 }
 
