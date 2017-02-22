@@ -1,0 +1,11 @@
+uint8               test-uint8              10000
+int32               test-int32              10001
+uint32              test-uint32             10002
+uint64              test-uint64             10003
+boolean             test-boolean-true       10004
+boolean             test-boolean-false      10005
+string              test-string             10006
+
+list                test-list               10010
+int32               test-list.int           10011
+string              test-list.str           10012

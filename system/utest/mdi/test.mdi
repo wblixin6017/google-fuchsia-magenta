@@ -1,0 +1,24 @@
+include "system/utest/mdi/test-defs.mdi"
+
+test-uint8 = 123
+test-int32 = -123
+test-uint32 = 0xFFFFFFFF
+test-uint64 = 0x3FFFFFFFF
+test-boolean-true = true
+test-boolean-false = false
+test-string = "hello"
+
+test-list = {
+    {
+        int = 1
+        str = "one"
+    }
+    {
+        int = 2
+        str = "two"
+    }
+    {
+        int = 3
+        str = "three"
+    }
+}
