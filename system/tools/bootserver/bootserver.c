@@ -32,6 +32,7 @@ static const char spinner[] = {'|', '/', '-', '\\'};
 static const int MAX_READ_RETRIES = 10;
 static const int MAX_SEND_RETRIES = 10000;
 static int64_t us_between_packets = 20;
+static bool show_debug = false;
 
 static int io_rcv(int s, nbmsg* msg, nbmsg* ack) {
     for (int i = 0; i < MAX_READ_RETRIES; i++) {
@@ -408,12 +409,18 @@ done:
 
 void usage(void) {
     fprintf(stderr,
-            "usage:   %s [ <option> ]* <kernel> [ <ramdisk> ] [ -- [ <kerneloption> ]* ]\n"
+            "usage:   %s [ <option> ]* <kernel> [ <kerneloption> ]*\n"
             "\n"
             "options:\n"
-            "  -1  only boot once, then exit\n"
-            "  -a  only boot device with this IPv6 address\n"
-            "  -n  only boot device with this nodename\n",
+            "  -1   only boot once, then exit.\n"
+            "  -a   only boot device with this IPv6 address.\n"
+            "  -d   print extra debug information.\n"
+            "  -i <us>\n"
+            "       microseconds to wait between packets.\n"
+            "  -n <nodename>\n"
+            "       only boot device with this nodename.\n"
+            "  -r <ramdisk>\n"
+            "       use <ramdisk> as ramdisk.\n",
             appname);
     exit(1);
 }
@@ -431,13 +438,13 @@ int main(int argc, char** argv) {
     struct sockaddr_in6 addr;
     char tmp[INET6_ADDRSTRLEN];
     char cmdline[4096];
-    char* cmdnext = cmdline;
     char* nodename = NULL;
     int r, s, n = 1;
     const char* kernel_fn = NULL;
     const char* ramdisk_fn = NULL;
     int once = 0;
     int status;
+    int opt;
 
     cmdline[0] = 0;
     if ((appname = strrchr(argv[0], '/')) != NULL) {
@@ -446,72 +453,80 @@ int main(int argc, char** argv) {
         appname = argv[0];
     }
 
-    while (argc > 1) {
-        if (argv[1][0] != '-') {
-            if (kernel_fn == NULL) {
-                kernel_fn = argv[1];
-            } else if (ramdisk_fn == NULL) {
-                ramdisk_fn = argv[1];
-            } else {
-                usage();
-            }
-        } else if (!strcmp(argv[1], "-1")) {
+    while ((opt = getopt(argc, argv, "1a:di:n:r:")) != -1) {
+        switch (opt) {
+        case '1':
             once = 1;
-        } else if (!strcmp(argv[1], "-i")) {
-            if (argc <= 1) {
-                fprintf(stderr, "'-i' option requires an argument (micros between packets)\n");
+            break;
+        case 'a':
+            if (inet_pton(AF_INET6, optarg, &allowed_addr) != 1) {
+                fprintf(stderr, "%s: invalid ipv6 address specified\n", argv[2]);
                 return -1;
             }
-            errno = 0;
-            us_between_packets = strtoll(argv[2], NULL, 10);
+        case 'd':
+            show_debug = true;
+            break;
+        case 'i':
+            us_between_packets = strtoll(optarg, NULL, 10);
             if (errno != 0 || us_between_packets <= 0) {
                 fprintf(stderr, "invalid arg for -i: %s\n", argv[2]);
                 return -1;
             }
             fprintf(stderr, "packet spacing set to %" PRId64 " microseconds\n", us_between_packets);
-            argc--;
-            argv++;
-        } else if (!strcmp(argv[1], "-a")) {
-            if (argc <= 1) {
-                fprintf(stderr, "'-a' option requires a valid ipv6 address\n");
-                return -1;
-            }
-            if (inet_pton(AF_INET6, argv[2], &allowed_addr) != 1) {
-                fprintf(stderr, "%s: invalid ipv6 address specified\n", argv[2]);
-                return -1;
-            }
-            argc--;
-            argv++;
-        } else if (!strcmp(argv[1], "-n")) {
-            if (argc <= 1) {
-                fprintf(stderr, "'-n' option requires a valid nodename\n");
-                return -1;
-            }
-            nodename = argv[2];
-            argc--;
-            argv++;
-        } else if (!strcmp(argv[1], "--")) {
-            while (argc > 2) {
-                size_t len = strlen(argv[2]);
-                if (len > (sizeof(cmdline) - 2 - (cmdnext - cmdline))) {
-                    fprintf(stderr, "%s: commandline too large\n", appname);
-                    return -1;
-                }
-                if (cmdnext != cmdline) {
-                    *cmdnext++ = ' ';
-                }
-                memcpy(cmdnext, argv[2], len + 1);
-                cmdnext += len;
-                argc--;
-                argv++;
-            }
             break;
-        } else {
+        case 'n':
+            nodename = optarg;
+            break;
+        case 'r':
+            ramdisk_fn = optarg;
+            break;
+        default:
             usage();
+            exit(1);
         }
-        argc--;
-        argv++;
     }
+
+    // At this point getopt will have optind set to be the index where the
+    // kernel filename should be. getopt differs between bsd and gnu when
+    // it comes to handling permuting args and --, so we cannot rely on that.
+    // If we used - args for everything this would be far easier, but we don't
+    // want to break everyone's workflow. For this reason the next arg is
+    // assumed to be the kernel, and any arguments past it are kernel
+    // arguments. Anything starting with - after this point is ignored.
+    if (optind < argc) {
+        kernel_fn = argv[optind++];
+    }
+
+    // This could be more efficient, but it's clean/concise this way
+    for (; optind < argc; optind++) {
+        // Ignore args and --
+        if (argv[optind][0] == '-')
+            continue;
+
+        size_t len = strlen(argv[optind]);
+        if (strlen(cmdline) + len + 2 < sizeof(cmdline)) {
+            strncat(cmdline, argv[optind], len);
+            // Add the space if we have another arg to append
+            if (optind + 1 < argc) {
+                strncat(cmdline, " ", 1);
+            }
+        } else {
+            break;
+        }
+    }
+
+    if (show_debug) {
+        for (int x = 0; x < argc; x++) {
+            fprintf(stderr, "argv[%d]: '%s'\n", x, argv[x]);
+        }
+        fprintf(stderr, "once: %s\n", (once) ? "true" : "false");
+        fprintf(stderr, "us_between_packets: %" PRId64 "\n", us_between_packets);
+        fprintf(stderr, "kernel_fn: '%s'\n", kernel_fn);
+        fprintf(stderr, "ramdisk_fn: '%s'\n", ramdisk_fn);
+        fprintf(stderr, "nodename: '%s'\n", nodename);
+        fprintf(stderr, "cmdline: '%s'\n", cmdline);
+    }
+
     if (kernel_fn == NULL) {
         usage();
     }

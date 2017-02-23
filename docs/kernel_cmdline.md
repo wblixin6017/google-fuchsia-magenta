@@ -127,7 +127,7 @@ Pass each option using -c, for example:
 
 Pass the kernel commandline at the end, after a -- separator, for example:
 ```
-bootserver magenta.bin bootfs.bin -- gfxconsole.font=18x32 gfxconsole.early=false
+bootserver -r bootfs.bin magenta.bin -- gfxconsole.font=18x32 gfxconsole.early=false
 ```
 
 ## in GigaBoot20x6, when booting from USB flash
