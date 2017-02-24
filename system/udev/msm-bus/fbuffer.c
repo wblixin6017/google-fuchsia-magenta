@@ -134,6 +134,27 @@ mx_status_t fb_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie) {
 
     status = device_add(&disp_device, parent);
 
+    // XXX(yky): add the usb device here for now
+    // should probably be its own devhost
+    mx_device_t* usbdev = NULL;
+    if (device_create(&usbdev, driver, "msm-dwc3", &msm_device_proto) != NO_ERROR) {
+        // not a failure
+        goto out;
+    }
+
+    usbdev->props = calloc(2, sizeof(mx_device_prop_t));
+    usbdev->props[0] = (mx_device_prop_t){BIND_SOC_VID, 0, SOC_VID_QCOM};
+    usbdev->props[1] = (mx_device_prop_t){BIND_SOC_DID, 0, SOC_DID_QCOM_DWC3};
+    usbdev->protocol_id = MX_PROTOCOL_SOC;
+    usbdev->prop_count = 2;
+
+    if (device_add(usbdev, parent) != NO_ERROR) {
+        // not a failure
+        free(usbdev);
+        return status;
+    }
+
+out:
     return status;
 }
 

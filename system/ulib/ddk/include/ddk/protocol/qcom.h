@@ -16,8 +16,10 @@ __BEGIN_CDECLS;
 // Qualcomm vendor id
 #define SOC_VID_QCOM                    0x0000
 
+// Qualcomm specific DIDs
+#define SOC_DID_QCOM_DWC3               0x0000
 
-// Google specific DIDs
+// Google specific PIDs
 #define SOC_PID_TRAPPER                 0x0000
 
 
