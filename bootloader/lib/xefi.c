@@ -18,6 +18,7 @@ void xefi_init(efi_handle img, efi_system_table* sys) {
     gSys = sys;
     gImg = img;
     gBS = sys->BootServices;
+    gRS = sys->RuntimeServices;
     gConOut = sys->ConOut;
 }
 

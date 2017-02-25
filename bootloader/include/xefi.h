@@ -47,6 +47,7 @@ typedef struct {
     efi_handle img;
     efi_system_table* sys;
     efi_boot_services* bs;
+    efi_runtime_services* rs;
     efi_simple_text_output_protocol* conout;
 } xefi_global;
 
@@ -56,5 +57,6 @@ extern xefi_global xefi_global_state;
 #define gImg (xefi_global_state.img)
 #define gSys (xefi_global_state.sys)
 #define gBS (xefi_global_state.bs)
+#define gRS (xefi_global_state.rs)
 #define gConOut (xefi_global_state.conout)
 
