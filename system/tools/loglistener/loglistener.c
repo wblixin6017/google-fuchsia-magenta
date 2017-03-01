@@ -19,6 +19,8 @@
 
 #include <magenta/netboot.h>
 
+#include "../netprotocol/configuration.h"
+
 static const char* appname;
 static const char* nodename = "*";
 
@@ -62,7 +64,14 @@ int main(int argc, char** argv) {
     fprintf(stderr, "%s: listening on [%s]%d for device %s\n", appname,
             inet_ntop(AF_INET6, &addr.sin6_addr, tmp, sizeof(tmp)),
             ntohs(addr.sin6_port), nodename);
+    configuration_t config;
+
     for (;;) {
+        // Reload regularly
+        if (!load_configuration(&config)) {
+            fprintf(stderr, "%s: failed to load list of trusted devices\n", appname);
+        }
+
         struct sockaddr_in6 ra;
         socklen_t rlen;
         char buf[4096 + 1];
@@ -81,7 +90,9 @@ int main(int argc, char** argv) {
         }
         if (pkt->magic != 0xaeae1123)
             continue;
-        if (strncmp(nodename, "*", 1) && strncmp(pkt->nodename, nodename, sizeof(pkt->nodename)))
+        if (strncmp(nodename, "*", 1) &&
+            strncmp(pkt->nodename, nodename, sizeof(pkt->nodename)) &&
+            !config.has_device(&config, pkt->nodename))
             continue;
         if (pkt->seqno != last_seqno) {
             buf[r] = 0;

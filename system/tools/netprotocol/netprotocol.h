@@ -4,9 +4,13 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include <magenta/netboot.h>
 
-#define MAXSIZE 1024
+#include "configuration.h"
+
+#define MAXSIZE MAX_NODENAME
 
 typedef struct {
     struct nbmsg_t hdr;
@@ -15,6 +19,10 @@ typedef struct {
 
 struct sockaddr_in6;
 
-int netboot_open(const char* hostname, unsigned port, struct sockaddr_in6* addr_out);
+// Returns whether discovery should continue or not.
+typedef bool (*on_device_cb)(device_info_t* device, void* cookie);
+int netboot_discover(unsigned port, const char* ifname, on_device_cb callback, void* cookie);
+
+int netboot_open(const char* hostname, const char* ifname);
 
 int netboot_txn(int s, msg* in, msg* out, int outlen);

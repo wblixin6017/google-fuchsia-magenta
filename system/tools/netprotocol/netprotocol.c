@@ -25,21 +25,18 @@
 
 static uint32_t cookie = 0x12345678;
 
-int netboot_open(const char* hostname, unsigned port, struct sockaddr_in6* addr_out) {
-    if ((hostname == NULL) || (hostname[0] == 0)) {
-        char* envname = getenv("MAGENTA_NODENAME");
-        hostname = envname && envname[0] != 0 ? envname : "*";
-    }
-    size_t hostname_len = strlen(hostname) + 1;
-    if (hostname_len > MAXSIZE) {
+int netboot_discover(unsigned port, const char* ifname, on_device_cb callback, void* data) {
+    if (!callback) {
         errno = EINVAL;
         return -1;
     }
+    const char* hostname = "*";
+    size_t hostname_len = strlen(hostname) + 1;
 
     struct sockaddr_in6 addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin6_family = AF_INET6;
-    addr.sin6_port = htons(NB_SERVER_PORT);
+    addr.sin6_port = htons(port);
     inet_pton(AF_INET6, "ff02::1", &addr.sin6_addr);
 
     int s;
@@ -79,6 +76,8 @@ int netboot_open(const char* hostname, unsigned port, struct sockaddr_in6* addr_
             if (in6->sin6_scope_id == 0) {
                 continue;
             }
+            if (ifname && ifname[0] != 0 && strcmp(ifname, ifa->ifa_name))
+                continue;
             // printf("tx %s (sid=%d)\n", ifa->ifa_name, in6->sin6_scope_id);
             size_t sz = sizeof(nbmsg) + hostname_len;
             addr.sin6_scope_id = in6->sin6_scope_id;
@@ -102,23 +101,84 @@ int netboot_open(const char* hostname, unsigned port, struct sockaddr_in6* addr_
                 (m.hdr.cmd == NB_ACK)) {
                 char tmp[INET6_ADDRSTRLEN];
                 if (inet_ntop(AF_INET6, &ra.sin6_addr, tmp, sizeof(tmp)) == NULL) {
-                    strcpy(tmp,"???");
+                    strcpy(tmp, "???");
                 }
-                printf("found %s at %s/%d\n", (char*)m.data, tmp, ra.sin6_scope_id);
-                ra.sin6_port = htons(NB_SERVER_PORT);
-                if (connect(s, (void*) &ra, rlen) < 0) {
-                    fprintf(stderr, "error: cannot connect UDP port\n");
-                    close(s);
-                    return -1;
+                // printf("found %s at %s/%d\n", (char*)m.data, tmp, ra.sin6_scope_id);
+                if (strncmp("::", tmp, 2)) {
+                    device_info_t info;
+                    strncpy(info.nodename, (char*)m.data, MAX_NODENAME);
+                    strncpy(info.inet6_addr_s, tmp, INET6_ADDRSTRLEN);
+                    memcpy(&info.inet6_addr, &ra, sizeof(ra));
+                    info.state = DEVICE;
+                    if (!callback(&info, data)) {
+                        break;
+                    }
                 }
-                return s;
             }
         }
     }
-
     close(s);
-    errno = ETIMEDOUT;
-    return -1;
+    return 0;
+}
+
+typedef struct netboot_open_cookie {
+    struct sockaddr_in6 addr;
+    char hostname[MAX_NODENAME];
+    uint32_t index;
+} netboot_open_cookie_t;
+
+static bool netboot_open_callback(device_info_t* device, void* data) {
+    netboot_open_cookie_t* cookie = data;
+    cookie->index++;
+    if (strcmp(cookie->hostname, "*") && strcmp(cookie->hostname, device->nodename)) {
+        return true;
+    }
+    memcpy(&cookie->addr, &device->inet6_addr, sizeof(device->inet6_addr));
+    return false;
+}
+
+// TODO use configuration file to prefer a listed device if *
+int netboot_open(const char* hostname, const char* ifname) {
+    if ((hostname == NULL) || (hostname[0] == 0)) {
+        char* envname = getenv("MAGENTA_NODENAME");
+        hostname = envname && envname[0] != 0 ? envname : "*";
+    }
+    size_t hostname_len = strlen(hostname) + 1;
+    if (hostname_len > MAXSIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    netboot_open_cookie_t cookie;
+    socklen_t rlen = sizeof(cookie.addr);
+    memset(&(cookie.addr), 0, sizeof(cookie.addr));
+    cookie.index = 0;
+    strncpy(cookie.hostname, hostname, MAX_NODENAME);
+    if (netboot_discover(NB_SERVER_PORT, ifname, netboot_open_callback, &cookie) < 0) {
+        return -1;
+    }
+    // Device not found
+    if (cookie.index == 0) {
+        return -1;
+    }
+
+    int s;
+    if ((s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        fprintf(stderr, "error: cannot create socket: %s\n", strerror(errno));
+        return -1;
+    }
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 250 * 1000;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+    if (connect(s, (void*)&cookie.addr, rlen) < 0) {
+        fprintf(stderr, "error: cannot connect UDP port\n");
+        close(s);
+        return -1;
+    }
+    return s;
 }
 
 // The netboot protocol ignores response packets that are invalid,
@@ -152,7 +212,7 @@ resend:
             (in->hdr.cookie != out->hdr.cookie) ||
             (in->hdr.cmd != NB_ACK)) {
             fprintf(stderr, "netboot: bad ack header"
-                    " (magic=0x%x, cookie=%x/%x, cmd=%d)\n",
+                            " (magic=0x%x, cookie=%x/%x, cmd=%d)\n",
                     in->hdr.magic, in->hdr.cookie, cookie, in->hdr.cmd);
             continue;
         }

@@ -7,12 +7,12 @@
 #include "netprotocol.h"
 
 #include <arpa/inet.h>
+#include <ifaddrs.h>
 #include <netinet/in.h>
 #include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <ifaddrs.h>
 
 #include <fcntl.h>
 #include <libgen.h>
@@ -238,7 +238,7 @@ int main(int argc, char** argv) {
     }
 
     int s;
-    if ((s = netboot_open(hostname, NB_SERVER_PORT, NULL)) < 0) {
+    if ((s = netboot_open(hostname, NULL)) < 0) {
         if (errno == ETIMEDOUT) {
             fprintf(stderr, "%s: lookup of %s timed out\n", appname, hostname);
         } else {

@@ -26,6 +26,8 @@
 
 #include <magenta/netboot.h>
 
+#include "../netprotocol/configuration.h"
+
 #define DEFAULT_US_BETWEEN_PACKETS 20
 
 static uint32_t cookie = 1;
@@ -533,7 +535,7 @@ int main(int argc, char** argv) {
     char* auto_ramdisk_fn = NULL;
     if (ramdisk_fn == NULL) {
         char* bootdata_fn = "bootdata.bin";
-        char *end = strrchr(kernel_fn, '/');
+        char* end = strrchr(kernel_fn, '/');
         if (end == NULL) {
             auto_ramdisk_fn = bootdata_fn;
         } else {
@@ -567,7 +569,14 @@ int main(int argc, char** argv) {
             inet_ntop(AF_INET6, &addr.sin6_addr, tmp, sizeof(tmp)),
             ntohs(addr.sin6_port));
 
+    configuration_t config;
+
     for (;;) {
+        // Reload regularly
+        if (!load_configuration(&config)) {
+            fprintf(stderr, "%s: failed to load list of trusted devices\n", appname);
+        }
+
         struct sockaddr_in6 ra;
         socklen_t rlen;
         char buf[4096];
@@ -607,15 +616,16 @@ int main(int argc, char** argv) {
 
         // ensure any payload is null-terminated
         buf[r] = 0;
-        if (nodename) {
-            if (!strncmp((const char*)msg->data, "nodename=", 9)) {
-                const char* node = (void*)msg->data + 9;
+        if (!strncmp((const char*)msg->data, "nodename=", 9)) {
+            const char* node = (void*)msg->data + 9;
+            if (nodename) {
                 if (strcmp(node, nodename)) {
                     fprintf(stderr, "%s: ignoring nodename %s (expecting %s)\n", appname, node, nodename);
                     continue;
                 }
-            } else {
-                fprintf(stderr, "%s: ignoring unknown nodename (expecting %s)\n", appname, nodename);
+            } else if (!config.has_device(&config, node)) {
+                fprintf(stderr, "%s: ignoring untrusted nodename %s\n", appname, node);
+                continue;
             }
         }
 

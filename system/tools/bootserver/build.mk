@@ -10,10 +10,10 @@ BOOTSERVER := $(BUILDDIR)/tools/bootserver
 
 TOOLS := $(BOOTSERVER)
 
-$(BUILDDIR)/tools/%: $(LOCAL_DIR)/%.c
+$(BUILDDIR)/tools/%: $(LOCAL_DIR)/%.c $(LOCAL_DIR)/../netprotocol/configuration.c
 	@echo compiling $@
 	@$(MKDIR)
-	$(NOECHO)$(HOST_CC) $(HOST_COMPILEFLAGS) $(HOST_CFLAGS) -o $@ $<
+	$(NOECHO)$(HOST_CC) $(HOST_COMPILEFLAGS) $(HOST_CFLAGS) -o $@ $^
 
 GENERATED += $(TOOLS)
 EXTRA_BUILDDEPS += $(TOOLS)
