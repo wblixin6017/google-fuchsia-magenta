@@ -511,6 +511,9 @@ const PciConfig* PcieBusDriver::GetConfig(uint bus_id,
                     (static_cast<size_t>(dev_id)  << 15) |
                     (static_cast<size_t>(func_id) << 12);
 
+    // TODO(cja): This is not going to work with PIO config. This will
+    // likely need to move to below :532 and check the type of address
+    // space.
     if (out_cfg_phys)
         *out_cfg_phys = iter->ecam().phys_base + offset;
 
