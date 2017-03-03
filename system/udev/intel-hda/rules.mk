@@ -3,4 +3,5 @@
 # found in the LICENSE file.
 
 INTEL_HDA_DRIVER_BASE := $(GET_LOCAL_DIR)
+include $(INTEL_HDA_DRIVER_BASE)/controller/rules.mk
 include $(INTEL_HDA_DRIVER_BASE)/intel-hda-driver-utils/rules.mk

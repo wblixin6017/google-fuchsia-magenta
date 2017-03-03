@@ -268,16 +268,16 @@ static inline void REG_WR(T* reg, U val) {
 }
 
 template <typename T>
-static inline void REG_MOD(T* reg, T mask, T val) {
-    REG_WR(reg, static_cast<T>((REG_RD(reg) & ~mask) | val));
+static inline void REG_MOD(T* reg, T clr_bits, T set_bits) {
+    REG_WR(reg, static_cast<T>((REG_RD(reg) & ~clr_bits) | set_bits));
 }
 
 template <typename T> static inline void REG_SET_BITS(T* reg, T bits) {
-    REG_MOD(reg, static_cast<T>(~bits), bits);
+    REG_MOD(reg, static_cast<T>(0), bits);
 }
 
 template <typename T> static inline void REG_CLR_BITS(T* reg, T bits) {
-    REG_MOD(reg, static_cast<T>(~bits), static_cast<T>(0));
+    REG_MOD(reg, bits, static_cast<T>(0));
 }
 
 #endif  // __cplusplus
