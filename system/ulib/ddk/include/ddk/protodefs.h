@@ -30,5 +30,7 @@ DDK_PROTOCOL_DEF(ACPI_BUS,       'pABS', "acpi-bus")
 DDK_PROTOCOL_DEF(ACPI,           'pACP', "acpi")
 DDK_PROTOCOL_DEF(SDMMC,          'pSDM', "sdmmc")
 DDK_PROTOCOL_DEF(WLANMAC,        'pWMA', "wlanmac")
+DDK_PROTOCOL_DEF(IHDA,           'pHDA', "intel-hda")
+DDK_PROTOCOL_DEF(IHDA_CODEC,     'pIHC', "intel-hda-codec")
 #undef DDK_PROTOCOL_DEF
 #endif
