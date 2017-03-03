@@ -1,0 +1,7 @@
+// MDI definitions for the kernel
+
+list    kernel-drivers                          1
+
+list    kernel-drivers.test                     10000
+uint32  kernel-drivers.test.foo                 10001
+

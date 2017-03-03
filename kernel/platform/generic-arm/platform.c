@@ -41,6 +41,11 @@
 #include <kernel/thread.h>
 #endif
 
+#include <magenta/bootdata.h>
+#include <mdi/mdi.h>
+#include <mdi/mdi-defs.h>
+#include <pdev/pdev.h>
+
 static void* ramdisk_base;
 static size_t ramdisk_size;
 
@@ -126,11 +131,52 @@ void* platform_get_ramdisk(size_t *size) {
     }
 }
 
+static void platform_mdi_init(void) {
+    mdi_node_ref_t  root;
+
+    // Look for MDI data in ramdisk bootdata
+    size_t offset = 0;
+    while (offset < ramdisk_size) {
+        bootdata_t* header = (ramdisk_base + offset);
+
+        if (header->magic != BOOTDATA_MAGIC) {
+            panic("bad magic in bootdata header\n");
+        }
+        if (header->type == BOOTDATA_TYPE_MDI) {
+            break;
+        }
+        offset += BOOTDATA_ALIGN(sizeof(*header) + header->insize);
+    }
+    if (offset >= ramdisk_size) {
+        panic("No MDI found in ramdisk\n");
+    }
+
+    if (mdi_init(ramdisk_base + offset, ramdisk_size - offset, &root) != NO_ERROR) {
+        panic("mdi_init failed\n");
+    }
+
+    // search top level nodes for CPU info and kernel drivers
+    mdi_node_ref_t  child;
+    mdi_each_child(&root, &child) {
+        mdi_id_t id = mdi_id(&child);
+
+        if (id == MDI_KERNEL_DRIVERS) {
+            pdev_init(&child);
+        }
+    }
+}
+
 void platform_early_init(void)
 {
     uart_init_early();
 
     read_device_tree(&ramdisk_base, &ramdisk_size, NULL);
+
+    if (!ramdisk_base || !ramdisk_size) {
+        panic("no ramdisk!\n");
+    }
+
+    platform_mdi_init();
 
     /* initialize the interrupt controller and timers */
     arm_gic_init();

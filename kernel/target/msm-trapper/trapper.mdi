@@ -1,0 +1,7 @@
+include "kernel/include/mdi/kernel-defs.mdi"
+
+kernel-drivers = {
+    test = {
+        foo = 12345
+    }
+}
