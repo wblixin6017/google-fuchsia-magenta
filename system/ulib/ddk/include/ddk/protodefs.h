@@ -33,5 +33,7 @@ DDK_PROTOCOL_DEF(SDMMC,          'pSDM', "sdmmc")
 DDK_PROTOCOL_DEF(WLANMAC,        'pWMA', "wlanmac")
 DDK_PROTOCOL_DEF(IHDA,           'pHDA', "intel-hda")
 DDK_PROTOCOL_DEF(IHDA_CODEC,     'pIHC', "intel-hda-codec")
+DDK_PROTOCOL_DEF(AUDIO2_INPUT,   'pA2I', "audio2-input")
+DDK_PROTOCOL_DEF(AUDIO2_OUTPUT,  'pA2O', "audio2-output")
 #undef DDK_PROTOCOL_DEF
 #endif
