@@ -49,6 +49,8 @@
 static void* ramdisk_base;
 static size_t ramdisk_size;
 
+static mdi_node_ref_t  cpu_map = {0};
+
 /* initial memory mappings. parsed by start.S */
 struct mmu_initial_mapping mmu_initial_mappings[] = {
  /* 1GB of sdram space */
@@ -131,6 +133,52 @@ void* platform_get_ramdisk(size_t *size) {
     }
 }
 
+#if WITH_SMP
+static void platform_cpu_init(void) {
+    uint cluster_cpus[SMP_CPU_MAX_CLUSTERS];
+    mdi_node_ref_t  clusters;
+
+    if (mdi_find_node(&cpu_map, MDI_CPU_MAP_CLUSTERS, &clusters) != NO_ERROR) {
+        printf("mdi_find_node couldn't find clusters\n");
+        return;
+    }
+
+    mdi_node_ref_t  cluster;
+    uint32_t cluster_count = 0;
+
+    mdi_each_child(&clusters, &cluster) {
+        mdi_node_ref_t node;
+        uint8_t cpu_count;
+
+        if (mdi_find_node(&cluster, MDI_CPU_MAP_CLUSTERS_CPU_COUNT, &node) != NO_ERROR) {
+            printf("mdi_find_node couldn't find cluster cpu-count\n");
+            return;
+        }
+        if (mdi_node_uint8(&node, &cpu_count) != NO_ERROR) {
+            printf("could not read cluster id\n");
+            return;
+        }
+
+        if (cluster_count >= SMP_CPU_MAX_CLUSTERS) {
+            printf("platform_cpu_init: MDI contains more than SMP_CPU_MAX_CLUSTERS clusters\n");
+            return;
+        }
+        cluster_cpus[cluster_count++] = cpu_count;
+    }
+    arch_init_cpu_map(cluster_count, cluster_cpus);
+
+    for (uint cluster = 0; cluster < cluster_count; cluster++) {
+        for (uint cpu = 0; cpu < cluster_cpus[cluster]; cpu++) {
+            if (cluster != 0 || cpu != 0) {
+                arm64_set_secondary_sp(cluster, cpu,
+                        pmm_alloc_kpages(ARCH_DEFAULT_STACK_SIZE / PAGE_SIZE, NULL, NULL));
+                psci_cpu_on(cluster, cpu, MEMBASE + KERNEL_LOAD_OFFSET);
+            }
+        }
+    }
+}
+#endif
+
 static void platform_mdi_init(void) {
     mdi_node_ref_t  root;
 
@@ -160,7 +208,9 @@ static void platform_mdi_init(void) {
     mdi_each_child(&root, &child) {
         mdi_id_t id = mdi_id(&child);
 
-        if (id == MDI_KERNEL_DRIVERS) {
+        if (id == MDI_CPU_MAP) {
+            cpu_map = child;
+        } else if (id == MDI_KERNEL_DRIVERS) {
             pdev_init(&child);
         }
     }
@@ -199,22 +249,7 @@ void platform_init(void)
     uart_init();
 
 #if WITH_SMP
-    /* TODO - number of cpus (and topology) should be parsed from device index or command line */
-#define CLUSTER_COUNT   2
-#define CLUSTER_CPUS    4
-
-    uint cluster_cpus[] = { CLUSTER_CPUS, CLUSTER_CPUS };
-    arch_init_cpu_map(countof(cluster_cpus), cluster_cpus);
-
-    for (uint cluster = 0; cluster < CLUSTER_COUNT; cluster++) {
-        for (uint cpu = 0; cpu < CLUSTER_CPUS; cpu++) {
-            if (cluster != 0 || cpu != 0) {
-                arm64_set_secondary_sp(cluster, cpu,
-                        pmm_alloc_kpages(ARCH_DEFAULT_STACK_SIZE / PAGE_SIZE, NULL, NULL));
-                psci_cpu_on(cluster, cpu, MEMBASE + KERNEL_LOAD_OFFSET);
-            }
-        }
-    }
+    platform_cpu_init();
 #endif
 }
 
