@@ -1,6 +1,9 @@
 include "kernel/include/mdi/kernel-defs.mdi"
 
 kernel-drivers = {
+    arm-psci = {
+        use-smc = true
+    }
     test = {
         foo = 12345
     }

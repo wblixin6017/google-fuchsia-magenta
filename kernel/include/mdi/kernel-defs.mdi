@@ -2,6 +2,10 @@
 
 list    kernel-drivers                          1
 
+list    kernel-drivers.arm-psci                 1000
+boolean kernel-drivers.arm-psci.use-smc         1001
+boolean kernel-drivers.arm-psci.use-hvc         1002
+
 list    kernel-drivers.test                     10000
 uint32  kernel-drivers.test.foo                 10001
 
