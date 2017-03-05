@@ -29,6 +29,9 @@ kernel-drivers = {
     arm-psci = {
         use-smc = true
     }
+    arm-generic-timer = {
+        irq-virt = 19
+    }
     test = {
         foo = 12345
     }
