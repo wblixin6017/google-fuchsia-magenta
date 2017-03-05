@@ -21,7 +21,6 @@
 
 #include <platform.h>
 #include <arch/arm64/platform.h>
-#include <platform/msm8998.h>
 
 #include <target.h>
 
@@ -52,7 +51,7 @@ static mdi_node_ref_t  cpu_map = {0};
 struct mmu_initial_mapping mmu_initial_mappings[] = {
  /* 1GB of sdram space */
  {
-     .phys = SDRAM_BASE,
+     .phys = MEMBASE,
      .virt = KERNEL_BASE,
      .size = MEMORY_APERTURE_SIZE,
      .flags = 0,
@@ -61,9 +60,9 @@ struct mmu_initial_mapping mmu_initial_mappings[] = {
 
  /* peripherals */
  {
-     .phys = MSM8998_PERIPH_BASE_PHYS,
-     .virt = MSM8998_PERIPH_BASE_VIRT,
-     .size = MSM8998_PERIPH_SIZE,
+     .phys = PERIPH_BASE_PHYS,
+     .virt = PERIPH_BASE_VIRT,
+     .size = PERIPH_SIZE,
      .flags = MMU_INITIAL_MAPPING_FLAG_DEVICE,
      .name = "msm peripherals"
  },
@@ -77,7 +76,7 @@ extern void arm_reset(void);
 
 static pmm_arena_info_t arena = {
     .name = "sdram",
-    .base = SDRAM_BASE,
+    .base = MEMBASE,
     .size = MEMSIZE,
     .flags = PMM_ARENA_FLAG_KMAP,
 };
@@ -226,11 +225,11 @@ void platform_early_init(void)
     /* add the main memory arena */
     pmm_add_arena(&arena);
 
+#ifdef BOOTLOADER_RESERVE_START
     /* Allocate memory regions reserved by bootloaders for other functions */
     struct list_node list = LIST_INITIAL_VALUE(list);
-    pmm_alloc_range(MSM8998_BOOT_HYP_START,
-                    (MSM8998_BOOT_APSS2_START - MSM8998_BOOT_HYP_START)/ PAGE_SIZE,
-                    &list);
+    pmm_alloc_range(BOOTLOADER_RESERVE_START, BOOTLOADER_RESERVE_SIZE / PAGE_SIZE, &list);
+#endif
 
     platform_preserve_ramdisk();
 }
@@ -297,8 +296,10 @@ void platform_halt(platform_halt_action suggested_action, platform_halt_reason r
 {
     if (suggested_action == HALT_ACTION_REBOOT) {
         psci_system_reset();
+#ifdef MSM8998_PSHOLD_PHYS
         // Deassert PSHold
-        *REG32(MSM8998_PSHOLD_VIRT) = 0;
+        *REG32(paddr_to_kvaddr(MSM8998_PSHOLD_PHYS)) = 0;
+#endif
     } else if (suggested_action == HALT_ACTION_SHUTDOWN) {
         // XXX shutdown seem to not work through psci
         // implement shutdown via pmic
