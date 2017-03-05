@@ -22,6 +22,11 @@ uint64  kernel-drivers.arm-gic-v3.gicr-offset   1013
 uint64  kernel-drivers.arm-gic-v3.gicr-stride   1014
 uint32  kernel-drivers.arm-gic-v3.ipi-base      1015
 
+// MSM UART driver
+list    kernel-drivers.msm-uart                 1020
+uint64  kernel-drivers.msm-uart.base-phys       1021
+uint32  kernel-drivers.msm-uart.irq             1022
+
 list    kernel-drivers.test                     10000
 uint32  kernel-drivers.test.foo                 10001
 
