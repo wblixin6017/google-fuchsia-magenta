@@ -1,11 +1,17 @@
 #pragma once
 
-#include <platform/gic.h>
 #include <reg.h>
 #include <arch/arm64.h>
+extern uint64_t arm_gicv3_gic_base;
+extern uint64_t arm_gicv3_gicd_offset;
+extern uint64_t arm_gicv3_gicr_offset;
+extern uint64_t arm_gicv3_gicr_stride;
 
-#define GICREG(gic, reg)   (*REG32(GICBASE(gic) + (reg)))
-#define GICREG64(gic, reg) (*REG64(GICBASE(gic) + (reg)))
+#define GICREG(gic, reg)    (*REG32(arm_gicv3_gic_base + (reg)))
+#define GICREG64(gic, reg)  (*REG64(arm_gicv3_gic_base + (reg)))
+#define GICD_OFFSET         arm_gicv3_gicd_offset
+#define GICR_OFFSET         arm_gicv3_gicr_offset
+#define GICR_STRIDE         arm_gicv3_gicr_stride
 
 #define ICC_CTLR_EL1    "S3_0_C12_C12_4"
 #define ICC_PMR_EL1     "S3_0_C4_C6_0"
