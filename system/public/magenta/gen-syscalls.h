@@ -53,6 +53,12 @@ extern mx_status_t mx_handle_close(
 extern mx_status_t _mx_handle_close(
     mx_handle_t handle) __attribute__((__leaf__));
 
+extern mx_status_t mx_handle_close_internal(
+    mx_handle_t handle) __attribute__((__leaf__));
+
+extern mx_status_t _mx_handle_close_internal(
+    mx_handle_t handle) __attribute__((__leaf__));
+
 extern mx_status_t mx_handle_duplicate(
     mx_handle_t handle,
     mx_rights_t rights,

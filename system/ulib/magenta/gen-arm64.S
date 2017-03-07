@@ -3,7 +3,7 @@
 
 m_syscall mx_time_get 0
 m_syscall mx_nanosleep 1
-m_syscall mx_handle_close 2
+m_syscall mx_handle_close_internal 2
 m_syscall mx_handle_duplicate 3
 m_syscall mx_handle_replace 4
 m_syscall mx_object_wait_one 5

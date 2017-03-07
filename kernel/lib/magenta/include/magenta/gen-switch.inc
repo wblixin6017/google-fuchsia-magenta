@@ -7,7 +7,7 @@
     case 1: ret = static_cast<uint64_t>(sys_nanosleep(
         static_cast<mx_time_t>(arg1)));
         break;
-    case 2: ret = static_cast<uint64_t>(sys_handle_close(
+    case 2: ret = static_cast<uint64_t>(sys_handle_close_internal(
         static_cast<mx_handle_t>(arg1)));
         break;
     case 3: ret = static_cast<uint64_t>(sys_handle_duplicate(

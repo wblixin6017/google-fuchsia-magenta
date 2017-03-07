@@ -3,7 +3,7 @@
 
 #define MX_SYS_time_get 0
 #define MX_SYS_nanosleep 1
-#define MX_SYS_handle_close 2
+#define MX_SYS_handle_close_internal 2
 #define MX_SYS_handle_duplicate 3
 #define MX_SYS_handle_replace 4
 #define MX_SYS_object_wait_one 5

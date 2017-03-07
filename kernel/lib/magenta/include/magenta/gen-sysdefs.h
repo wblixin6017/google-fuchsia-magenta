@@ -7,7 +7,7 @@ mx_time_t sys_time_get(
 mx_status_t sys_nanosleep(
     mx_time_t nanoseconds);
 
-mx_status_t sys_handle_close(
+mx_status_t sys_handle_close_internal(
     mx_handle_t handle);
 
 mx_status_t sys_handle_duplicate(

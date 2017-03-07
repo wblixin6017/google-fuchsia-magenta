@@ -3,7 +3,7 @@
 
 {0, 1, "time_get"},
 {1, 1, "nanosleep"},
-{2, 1, "handle_close"},
+{2, 1, "handle_close_internal"},
 {3, 3, "handle_duplicate"},
 {4, 3, "handle_replace"},
 {5, 4, "object_wait_one"},

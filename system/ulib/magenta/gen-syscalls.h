@@ -27,6 +27,9 @@ __attribute__((visibility("hidden"))) extern mx_status_t VDSO_mx_cache_flush(
 __attribute__((visibility("hidden"))) extern mx_status_t VDSO_mx_handle_close(
     mx_handle_t handle) __attribute__((__leaf__));
 
+__attribute__((visibility("hidden"))) extern mx_status_t VDSO_mx_handle_close_internal(
+    mx_handle_t handle) __attribute__((__leaf__));
+
 __attribute__((visibility("hidden"))) extern mx_status_t VDSO_mx_handle_duplicate(
     mx_handle_t handle,
     mx_rights_t rights,
