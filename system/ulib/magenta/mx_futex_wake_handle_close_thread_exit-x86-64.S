@@ -25,7 +25,7 @@ syscall_entry_begin mx_futex_wake_handle_close_thread_exit
     // Now the stack might be gone and we can never return!
 
     mov %ebx, %edi
-    magenta_syscall MX_SYS_handle_close
+    magenta_syscall MX_SYS_handle_close_internal
     test %eax, %eax
     jnz .Lhandle_close_fail
 

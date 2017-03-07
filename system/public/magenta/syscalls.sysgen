@@ -68,7 +68,11 @@ syscall cache_flush vdsocall
 
 # Generic handle operations
 
-syscall handle_close
+syscall handle_close vdsocall
+    (handle: mx_handle_t)
+    returns (mx_status_t);
+
+syscall handle_close_internal
     (handle: mx_handle_t)
     returns (mx_status_t);
 

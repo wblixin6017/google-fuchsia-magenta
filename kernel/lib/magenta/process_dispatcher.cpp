@@ -679,7 +679,7 @@ mx_status_t ProcessDispatcher::BadHandle(mx_handle_t handle_value,
         char name[MX_MAX_NAME_LEN];
         get_name(name);
         printf("\n[fatal: %s used a bad handle]\n", name);
-        Exit(error);
+        return -10101;
     }
     return error;
 }

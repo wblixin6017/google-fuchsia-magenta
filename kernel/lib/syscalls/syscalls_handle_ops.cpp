@@ -20,7 +20,7 @@
 
 #define LOCAL_TRACE 0
 
-mx_status_t sys_handle_close(mx_handle_t handle_value) {
+mx_status_t sys_handle_close_internal(mx_handle_t handle_value) {
     LTRACEF("handle %d\n", handle_value);
     auto up = ProcessDispatcher::GetCurrent();
     HandleOwner handle(up->RemoveHandle(handle_value));
