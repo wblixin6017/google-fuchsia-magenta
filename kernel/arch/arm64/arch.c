@@ -56,6 +56,15 @@ uint64_t arm64_get_boot_el(void)
 
 #if WITH_SMP
 status_t arm64_set_secondary_sp(uint64_t cpu_id, void* ptr) {
+printf("arm64_set_secondary_sp %" PRIx64 "\n", cpu_id);
+
+    // convert cpu_id to match mpidr register
+    uint64_t aff0 = cpu_id & ((1U << SMP_CPU_ID_BITS) - 1);
+    uint64_t aff1 = ((cpu_id >> SMP_CPU_CLUSTER_SHIFT) &
+                     ((1U << (SMP_CPU_CLUSTER_BITS + SMP_CPU_CLUSTER_SHIFT)) - 1));
+    cpu_id = aff0 | (aff1 << 8);
+
+printf("arm64_set_secondary_sp is now %" PRIx64 "\n", cpu_id);
 
     uint32_t i = 0;
     while (( i< SMP_MAX_CPUS) && (arm64_secondary_sp_list[i].cpu_id !=0)) {
@@ -268,13 +277,11 @@ void arch_enter_uspace(uintptr_t pc, uintptr_t sp, uintptr_t arg1, uintptr_t arg
 
 #if WITH_SMP
 /* called from assembly */
-void arm64_secondary_entry(ulong asm_cpu_num);
+void arm64_secondary_entry(void);
 
-void arm64_secondary_entry(ulong asm_cpu_num)
+void arm64_secondary_entry(void)
 {
     uint cpu = arch_curr_cpu_num();
-    if (cpu != asm_cpu_num)
-        return;
 
     arm64_cpu_early_init();
 
