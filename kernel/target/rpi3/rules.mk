@@ -10,3 +10,11 @@ PLATFORM := bcm28xx
 
 #include make/module.mk
 
+# build MDI
+MDI_SRCS := \
+    $(LOCAL_DIR)/rpi3.mdi \
+
+MDI_DEPS := \
+    kernel/include/mdi/kernel-defs.mdi \
+
+include make/mdi.mk

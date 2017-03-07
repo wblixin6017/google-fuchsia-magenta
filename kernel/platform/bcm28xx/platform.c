@@ -14,7 +14,6 @@
 #include <lk/init.h>
 #include <kernel/vm.h>
 #include <kernel/spinlock.h>
-#include <dev/timer/arm_generic.h>
 #include <dev/display.h>
 #include <dev/hw_rng.h>
 
@@ -29,8 +28,15 @@
 #include <arch/arm64.h>
 #include <arch/arm64/mmu.h>
 
+#include <magenta/bootdata.h>
+#include <mdi/mdi.h>
+#include <mdi/mdi-defs.h>
+#include <pdev/pdev.h>
+
 static void* ramdisk_base;
 static size_t ramdisk_size;
+
+static mdi_node_ref_t  cpu_map = {0};
 
 /* initial memory mappings. parsed by start.S */
 struct mmu_initial_mapping mmu_initial_mappings[] = {
@@ -81,15 +87,52 @@ void* platform_get_ramdisk(size_t *size) {
     }
 }
 
+static void platform_mdi_init(void) {
+    mdi_node_ref_t  root;
+
+    // Look for MDI data in ramdisk bootdata
+    size_t offset = 0;
+    while (offset < ramdisk_size) {
+        bootdata_t* header = (ramdisk_base + offset);
+
+        if (header->magic != BOOTDATA_MAGIC) {
+            panic("bad magic in bootdata header\n");
+        }
+        if (header->type == BOOTDATA_TYPE_MDI) {
+            break;
+        }
+        offset += BOOTDATA_ALIGN(sizeof(*header) + header->insize);
+    }
+    if (offset >= ramdisk_size) {
+        panic("No MDI found in ramdisk\n");
+    }
+
+    if (mdi_init(ramdisk_base + offset, ramdisk_size - offset, &root) != NO_ERROR) {
+        panic("mdi_init failed\n");
+    }
+
+    // search top level nodes for CPU info and kernel drivers
+    mdi_node_ref_t  child;
+    mdi_each_child(&root, &child) {
+        mdi_id_t id = mdi_id(&child);
+
+        if (id == MDI_CPU_MAP) {
+            cpu_map = child;
+        } else if (id == MDI_KERNEL_DRIVERS) {
+            pdev_init(&child);
+        }
+    }
+}
+
 void platform_early_init(void)
 {
     uart_init_early();
 
     read_device_tree(&ramdisk_base, &ramdisk_size, NULL);
 
-    intc_init();
+    platform_mdi_init();
 
-    arm_generic_timer_init(INTERRUPT_ARM_LOCAL_CNTPNSIRQ, 0);
+    intc_init();
 
     /* add the main memory arena */
     pmm_add_arena(&arena);

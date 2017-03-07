@@ -1,0 +1,7 @@
+include "kernel/include/mdi/kernel-defs.mdi"
+
+kernel-drivers = {
+    arm-generic-timer = {
+        irq-phys = 97 // INTERRUPT_ARM_LOCAL_CNTPNSIRQ
+    }
+}
