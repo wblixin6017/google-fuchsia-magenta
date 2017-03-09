@@ -10,6 +10,8 @@
 #include <hw/pci.h>
 
 #include <assert.h>
+
+#include <magenta/process.h>
 #include <magenta/syscalls.h>
 #include <magenta/types.h>
 #include <stdio.h>
@@ -186,6 +188,7 @@ static mx_protocol_device_t bochs_vbe_device_proto = {
 
 static mx_status_t bochs_vbe_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
     pci_protocol_t* pci;
+    mx_pci_resource_t pci_bar;
     mx_status_t status;
 
     if (device_get_protocol(dev, MX_PROTOCOL_PCI, (void**)&pci))
@@ -201,21 +204,34 @@ static mx_status_t bochs_vbe_bind(mx_driver_t* drv, mx_device_t* dev, void** coo
         return ERR_NO_MEMORY;
 
     // map register window
-    status = pci->map_mmio(dev, 2, MX_CACHE_POLICY_UNCACHED_DEVICE,
-                           &device->regs, &device->regs_size,
-                           &device->regs_handle);
+    status = pci->get_bar(dev, 2, &pci_bar);
     if (status != NO_ERROR) {
         goto fail;
     }
 
-    // map framebuffer window
-    status = pci->map_mmio(dev, 0, MX_CACHE_POLICY_WRITE_COMBINING,
-                           &device->framebuffer,
-                           &device->framebuffer_size,
-                           &device->framebuffer_handle);
+    status = mx_vmar_map(mx_vmar_root_self(), 0, pci_bar.mmio_handle, 0, pci_bar.size,
+                MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, (uintptr_t*)&device->regs);
     if (status != NO_ERROR) {
         goto fail;
     }
+
+    device->regs_size = pci_bar.size;
+    device->regs_handle = pci_bar.mmio_handle;
+
+    // map framebuffer window
+    status = pci->get_bar(dev, 0, &pci_bar);
+    if (status != NO_ERROR) {
+        goto fail;
+    }
+
+    status = mx_vmar_map(mx_vmar_root_self(), 0, pci_bar.mmio_handle, 0, pci_bar.size,
+                MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, (uintptr_t*)&device->framebuffer);
+    if (status != NO_ERROR) {
+        goto fail;
+    }
+
+    device->framebuffer_size = pci_bar.size;
+    device->framebuffer_handle = pci_bar.mmio_handle;
 
     // create and add the display (char) device
     device_init(&device->device, drv, "bochs_vbe", &bochs_vbe_device_proto);
