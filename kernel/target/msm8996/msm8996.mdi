@@ -1,0 +1,35 @@
+include "kernel/include/mdi/kernel-defs.mdi"
+
+cpu-map = {
+    clusters = {
+        {
+            name = "silver"
+            cpu-count = 2
+        }
+        {
+            name = "gold"
+            cpu-count = 2
+        }
+    }
+}
+
+kernel-drivers = {
+    // Keep msm-uart at top so it is initialized first
+    msm-uart = {
+        base-phys = 0x75b0000
+        irq = 146
+    }
+    arm-gic-v3 = {
+        base-phys = 0x9bc0000
+        gicd-offset = 0x00000
+        gicr-offset = 0x40000
+        gicr-stride = 0x40000
+        ipi-base = 5
+    }
+    arm-psci = {
+        use-smc = true
+    }
+    arm-generic-timer = {
+        irq-virt = 27
+    }
+}

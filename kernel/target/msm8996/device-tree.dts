@@ -1,0 +1,19 @@
+/dts-v1/;
+
+/ {
+//    model = "Open-Q 820";
+//    qcom,msm-id = <0x123 0x00030001>;
+//    qcom,board-id = <0x0001000a 0x0>;
+
+    model = "Eragon 820";
+    qcom,msm-id = <0x123 0x00030001>;
+    qcom,board-id = <0x1001a 0x0>;
+
+    chosen {
+        // need a dummy bootargs for bootloader to append to
+        bootargs = "";
+    };
+
+    // empty node needed to make fastboot happy
+    memory {};
+};
