@@ -318,6 +318,8 @@ mx_status_t AudioOutput::Play(AudioSource& source) {
         if (res != NO_ERROR)
             break;
 
+         mx_vmo_op_range(rb_vmo_, MX_VMO_OP_CACHE_CLEAN, 0, rb_sz_, nullptr, 0 );
+
         // If we have not started yet, do so.
         if (!started) {
             res = StartRingBuffer();
