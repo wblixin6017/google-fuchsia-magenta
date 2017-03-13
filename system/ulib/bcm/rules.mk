@@ -9,6 +9,10 @@ MODULE := $(LOCAL_DIR)
 MODULE_TYPE := userlib
 
 MODULE_SRCS += \
+	$(LOCAL_DIR)/dma.c \
+
+MODULE_STATIC_LIBS := ulib/ddk
+
 
 MODULE_NAME := bcm
 
