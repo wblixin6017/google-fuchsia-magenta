@@ -83,11 +83,13 @@ mx_status_t xhci_queue_transfer(xhci_t* xhci, uint32_t slot_id, usb_setup_t* set
     if (!ring->enabled)
         return ERR_REMOTE_CLOSED;
 
+#if 0
     // reset endpoint if it is halted
     xhci_endpoint_context_t* epc = slot->epcs[endpoint];
     if (XHCI_GET_BITS32(&epc->epc0, EP_CTX_EP_STATE_START, EP_CTX_EP_STATE_BITS) == 2 /* halted */ ) {
         xhci_reset_endpoint(xhci, slot_id, endpoint);
     }
+#endif
 
     uint32_t interruptor_target = 0;
     size_t max_transfer_size = 1 << (XFER_TRB_XFER_LENGTH_BITS - 1);
@@ -102,6 +104,7 @@ mx_status_t xhci_queue_transfer(xhci_t* xhci, uint32_t slot_id, usb_setup_t* set
         return ERR_INVALID_ARGS;
     }
 
+    xhci_endpoint_context_t* epc = slot->epcs[endpoint];
     uint32_t ep_type = XHCI_GET_BITS32(&epc->epc1, EP_CTX_EP_TYPE_START, EP_CTX_EP_TYPE_BITS);
     if (ep_type >= 4) ep_type -= 4;
     bool isochronous = (ep_type == USB_ENDPOINT_ISOCHRONOUS);
@@ -331,8 +334,8 @@ void xhci_handle_transfer_event(xhci_t* xhci, xhci_trb_t* trb) {
             result = length;
             break;
         case TRB_CC_STALL_ERROR:
-            // FIXME - better error for stall case?
-            result = ERR_BAD_STATE;
+printf("TRB_CC_STALL_ERROR\n");
+            result = ERR_IO_REFUSED;
             break;
         case TRB_CC_RING_UNDERRUN:
             // non-fatal error that happens when no transfers are available for isochronous endpoint
@@ -350,7 +353,6 @@ void xhci_handle_transfer_event(xhci_t* xhci, xhci_trb_t* trb) {
             xprintf("ignoring transfer event with cc: %d\n", cc);
             return;
         default:
-            // FIXME - how do we report stalls, etc?
             result = ERR_REMOTE_CLOSED;
             break;
     }
