@@ -25,6 +25,7 @@
 #define DMA_BASE                (BCM_PERIPH_BASE_PHYS + 0x7000)
 #define ARM_BASE                (BCM_PERIPH_BASE_PHYS + 0xB000)
 #define PM_BASE                 (BCM_PERIPH_BASE_PHYS + 0x100000)
+#define BCM_CM_BASE             (BCM_PERIPH_BASE_PHYS + 0x101000)
 #define PCM_CLOCK_BASE          (BCM_PERIPH_BASE_PHYS + 0x101098)
 #define RNG_BASE                (BCM_PERIPH_BASE_PHYS + 0x104000)
 #define GPIO_BASE               (BCM_PERIPH_BASE_PHYS + 0x200000)

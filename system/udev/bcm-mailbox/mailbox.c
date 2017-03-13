@@ -487,7 +487,16 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie
     i2c_device->protocol_id = MX_PROTOCOL_SOC;
     status = device_add(i2c_device, parent);
 
+    // Publish this mock device to allow the pcm device to bind to.
 
+    mx_device_t* pcm_device = malloc(sizeof(*pcm_device));
+    device_init(pcm_device, driver, "bcm-pcm", &empty_device_proto);
+    pcm_device->props = calloc(2, sizeof(mx_device_prop_t));
+    pcm_device->props[0] = (mx_device_prop_t){BIND_SOC_VID, 0, SOC_VID_BROADCOMM};
+    pcm_device->props[1] = (mx_device_prop_t){BIND_SOC_DID, 0, SOC_DID_BROADCOMM_PCM};
+    pcm_device->prop_count = 2;
+    pcm_device->protocol_id = MX_PROTOCOL_SOC;
+    status = device_add(pcm_device, parent);
     return NO_ERROR;
 }
 
