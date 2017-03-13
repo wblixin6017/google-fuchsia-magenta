@@ -12,13 +12,84 @@
 #include "usb-interface.h"
 #include "util.h"
 
+// This thread is for calling the iotxn completion callback for iotxns received from our client.
+// We do this on a separate thread because it is unsafe to call out on our own completion callback,
+// which is called on the main thread of the USB HCI driver.
+static int callback_thread(void* arg) {
+    usb_interface_t* intf = (usb_interface_t *)arg;
+    bool done = false;
+
+    while (!done) {
+        // wait for new txns to complete or for signal to exit this thread
+        completion_wait(&intf->callback_thread_completion, MX_TIME_INFINITE);
+
+        mtx_lock(&intf->callback_lock);
+
+        completion_reset(&intf->callback_thread_completion);
+        done = intf->callback_thread_stop;
+
+        // copy completed txns to a temp list so we can process them outside of our lock
+        list_node_t temp_list = LIST_INITIAL_VALUE(temp_list);
+        list_node_t* temp;
+        while ((temp = list_remove_head(&intf->completed_txns))) {
+            list_add_tail(&temp_list, temp);
+        }
+
+        mtx_unlock(&intf->callback_lock);
+
+        // call completion callbacks outside of the lock
+        iotxn_t* txn;
+        iotxn_t* temp_txn;
+        list_for_every_entry_safe(&temp_list, txn, temp_txn, iotxn_t, node) {
+            txn->ops->complete(txn, txn->status, txn->actual);
+        }
+    }
+
+    return 0;
+}
+
+// iotxn completion for the cloned txns passed down to the HCI driver
+static void clone_complete(iotxn_t* clone, void* cookie) {
+    iotxn_t* txn = (iotxn_t *)cookie;
+    usb_interface_t* intf = (usb_interface_t *)txn->context;
+
+    mtx_lock(&intf->callback_lock);
+    // move original txn to completed_txns list so it can be completed on the callback_thread
+    txn->status = clone->status;
+    txn->actual = clone->actual;
+    list_add_tail(&intf->completed_txns, &txn->node);
+    completion_signal(&intf->callback_thread_completion);
+    mtx_unlock(&intf->callback_lock);
+
+    clone->ops->release(clone);
+}
+
 static void usb_interface_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
     usb_interface_t* intf = get_usb_interface(device);
-    usb_protocol_data_t* usb_data = iotxn_pdata(txn, usb_protocol_data_t);
-    usb_data->device_id = intf->device_id;
 
-    // forward iotxn to HCI device
-    iotxn_queue(intf->hci_device, txn);
+    // clone the txn and pass it down to the HCI driver
+    iotxn_t* clone;
+    mx_status_t status = txn->ops->clone(txn, &clone, 0);
+    if (status != NO_ERROR) {
+        txn->ops->complete(txn, status, 0);
+        return;
+    }
+    usb_protocol_data_t* dest_data = iotxn_pdata(clone, usb_protocol_data_t);
+    dest_data->device_id = intf->device_id;
+
+    // stash intf in txn->context so we can get at it in clone_complete()
+    txn->context = intf;
+    clone->complete_cb = clone_complete;
+    clone->cookie = txn;
+    iotxn_queue(intf->hci_device, clone);
+
+    mtx_lock(&intf->callback_lock);
+    // start callback thread
+    if (!intf->callback_thread_started) {
+        thrd_create_with_name(&intf->callback_thread, callback_thread, intf, "usb-interface-callback-thread");
+        intf->callback_thread_started = true;
+    }
+    mtx_unlock(&intf->callback_lock);
 }
 
 static ssize_t usb_interface_ioctl(mx_device_t* device, uint32_t op,
@@ -53,6 +124,18 @@ static ssize_t usb_interface_ioctl(mx_device_t* device, uint32_t op,
 
 static mx_status_t usb_interface_release(mx_device_t* device) {
     usb_interface_t* intf = get_usb_interface(device);
+
+    mtx_lock(&intf->callback_lock);
+    bool thread_started = intf->callback_thread_started;
+    if (thread_started) {
+        intf->callback_thread_stop = true;
+        completion_signal(&intf->callback_thread_completion);
+    }
+    mtx_unlock(&intf->callback_lock);
+
+    if (thread_started) {
+        thrd_join(intf->callback_thread, NULL);
+    }
 
     free(intf->descriptor);
     free(intf);
@@ -132,6 +215,10 @@ mx_status_t usb_device_add_interface(usb_device_t* device,
     usb_interface_t* intf = calloc(1, sizeof(usb_interface_t));
     if (!intf)
         return ERR_NO_MEMORY;
+
+    mtx_init(&intf->callback_lock, mtx_plain);
+    completion_reset(&intf->callback_thread_completion);
+    list_initialize(&intf->completed_txns);
 
     intf->hci_device = device->hci_device;
     intf->hci_protocol = device->hci_protocol;
