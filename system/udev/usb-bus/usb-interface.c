@@ -12,13 +12,28 @@
 #include "usb-interface.h"
 #include "util.h"
 
+
+static void clone_complete(iotxn_t* clone, void* cookie) {
+    iotxn_t* txn = (iotxn_t *)cookie;
+    txn->ops->complete(txn, clone->status, clone->actual);
+    clone->ops->release(clone);
+}
+
 static void usb_interface_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
     usb_interface_t* intf = get_usb_interface(device);
-    usb_protocol_data_t* usb_data = iotxn_pdata(txn, usb_protocol_data_t);
-    usb_data->device_id = intf->device_id;
 
-    // forward iotxn to HCI device
-    iotxn_queue(intf->hci_device, txn);
+    iotxn_t* clone;
+    mx_status_t status = txn->ops->clone(txn, &clone, 0);
+    if (status != NO_ERROR) {
+        txn->ops->complete(txn, status, 0);
+        return;
+    }
+    usb_protocol_data_t* dest_data = iotxn_pdata(clone, usb_protocol_data_t);
+    dest_data->device_id = intf->device_id;
+
+    clone->complete_cb = clone_complete;
+    clone->cookie = txn;
+    iotxn_queue(intf->hci_device, clone);
 }
 
 static ssize_t usb_interface_ioctl(mx_device_t* device, uint32_t op,
