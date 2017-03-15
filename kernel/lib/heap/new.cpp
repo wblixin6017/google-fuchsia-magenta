@@ -15,9 +15,12 @@
 // have to rely on a linker failure to catch errant uses.
 // See MG-210.
 
+#include <string.h>
 #include <new.h>
 #include <debug.h>
 #include <lib/heap.h>
+
+#define ASSERT(x) do { if (!(x)) { while (1) { __asm__ volatile ("" : :: "memory"); } } } while (0)
 
 enum : unsigned {
     alloc_armed   = 1,
@@ -53,8 +56,14 @@ void *operator new(size_t s, AllocChecker* ac) noexcept {
     if (unlikely(s == 0))
         s = 1;
 
+    s += 16;
+
     auto mem = malloc(s);
-    ac->arm(s, mem != nullptr);
+    if (mem != nullptr) {
+        memcpy(mem, "HEAPHEA", 8);
+        mem = (void *)((uintptr_t)mem + 8);
+    }
+    ac->arm(s - 16, mem != nullptr);
     return mem;
 }
 
@@ -62,8 +71,14 @@ void *operator new[](size_t s, AllocChecker* ac) noexcept {
     if (unlikely(s == 0))
         s = 1;
 
+    s += 16;
+
     auto mem = malloc(s);
-    ac->arm(s, mem != nullptr);
+    if (mem != nullptr) {
+        memcpy(mem, "HEAPHEA", 8);
+        mem = (void *)((uintptr_t)mem + 8);
+    }
+    ac->arm(s - 16, mem != nullptr);
     return mem;
 }
 
@@ -72,17 +87,33 @@ void *operator new(size_t , void *p) {
 }
 
 void operator delete(void *p) {
-    return free(p);
+    if (p == nullptr)
+        return;
+    void *buf = (void*)((uintptr_t)p - 8);
+    ASSERT(memcmp(buf, "HEAPHEA", 8) == 0);
+    return free(buf);
 }
 
 void operator delete[](void *p) {
-    return free(p);
+    if (p == nullptr)
+        return;
+    void *buf = (void*)((uintptr_t)p - 8);
+    ASSERT(memcmp(buf, "HEAPHEA", 8) == 0);
+    return free(buf);
 }
 
 void operator delete(void *p, size_t) {
-    return free(p);
+    if (p == nullptr)
+        return;
+    void *buf = (void*)((uintptr_t)p - 8);
+    ASSERT(memcmp(buf, "HEAPHEA", 8) == 0);
+    return free(buf);
 }
 
 void operator delete[](void *p, size_t) {
-    return free(p);
+    if (p == nullptr)
+        return;
+    void *buf = (void*)((uintptr_t)p - 8);
+    ASSERT(memcmp(buf, "HEAPHEA", 8) == 0);
+    return free(buf);
 }
