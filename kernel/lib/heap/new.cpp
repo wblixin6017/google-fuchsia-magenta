@@ -15,6 +15,7 @@
 // have to rely on a linker failure to catch errant uses.
 // See MG-210.
 
+#include <string.h>
 #include <new.h>
 #include <debug.h>
 #include <lib/heap.h>

@@ -26,7 +26,7 @@
 // kept in linked lists with 8 different sizes per binary order of magnitude
 // and the header size is two words with eager coalescing on free.
 
-#if defined(DEBUG) || LK_DEBUGLEVEL > 2
+#if 1 || defined(DEBUG) || LK_DEBUGLEVEL > 2
 #define CMPCT_DEBUG
 #endif
 
