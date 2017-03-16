@@ -10,7 +10,7 @@
 #include <magenta/dispatcher.h>
 #include <magenta/types.h>
 
-class HypervisorDispatcher final : public Dispatcher {
+class HypervisorDispatcher final : public Dispatcher, public Magic<'DPYH'> {
 public:
     static mx_status_t Create(mxtl::RefPtr<Dispatcher>* dispatcher,
                               mx_rights_t* rights);

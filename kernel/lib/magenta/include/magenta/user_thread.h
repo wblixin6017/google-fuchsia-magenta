@@ -27,7 +27,7 @@ class ProcessDispatcher;
 class ThreadDispatcher;
 
 class UserThread : public mxtl::DoublyLinkedListable<UserThread*>
-                 , public mxtl::RefCounted<UserThread> {
+                 , public mxtl::RefCounted<UserThread>, public Magic<'RHTU'> {
 public:
     // state of the thread
     enum class State {

@@ -12,10 +12,11 @@
 #include <list.h>
 #include <magenta/types.h>
 #include <mxtl/intrusive_hash_table.h>
+#include <mxtl/magic.h>
 
 // Node for linked list of threads blocked on a futex
 // Intended to be embedded within a UserThread Instance
-class FutexNode : public mxtl::SinglyLinkedListable<FutexNode*> {
+class FutexNode : public mxtl::SinglyLinkedListable<FutexNode*>, public Magic<'NXTF'> {
 public:
     using HashTable = mxtl::HashTable<uintptr_t, FutexNode*>;
 

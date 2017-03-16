@@ -19,7 +19,7 @@
 class VmObject;
 class PortClient;
 
-class SocketDispatcher final : public Dispatcher {
+class SocketDispatcher final : public Dispatcher, public Magic<'DTKS'> {
 public:
     static status_t Create(uint32_t flags, mxtl::RefPtr<Dispatcher>* dispatcher0,
                            mxtl::RefPtr<Dispatcher>* dispatcher1, mx_rights_t* rights);

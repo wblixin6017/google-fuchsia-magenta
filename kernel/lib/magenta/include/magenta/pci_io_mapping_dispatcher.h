@@ -12,7 +12,7 @@
 #include <sys/types.h>
 
 class PciDeviceDispatcher;
-class PciIoMappingDispatcher final : public IoMappingDispatcher {
+class PciIoMappingDispatcher final : public IoMappingDispatcher, public Magic<'DOIP'> {
 public:
     static status_t Create(const mxtl::RefPtr<PciDeviceDispatcher::PciDeviceWrapper>& device,
                            const char* dbg_tag,

@@ -13,10 +13,11 @@
 #include <magenta/state_observer.h>
 #include <magenta/types.h>
 #include <mxtl/intrusive_double_list.h>
+#include <mxtl/magic.h>
 
 class Handle;
 
-class StateTracker {
+class StateTracker : public Magic<'KRTS'> {
 public:
     StateTracker(mx_signals_t signals = 0u) : signals_(signals) { }
 

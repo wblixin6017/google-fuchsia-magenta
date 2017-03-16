@@ -11,7 +11,7 @@
 #include <mxtl/intrusive_wavl_tree.h>
 #include <sys/types.h>
 
-class InterruptEventDispatcher final : public InterruptDispatcher {
+class InterruptEventDispatcher final : public InterruptDispatcher, public Magic<'DVEI'> {
 public:
     static status_t Create(uint32_t vector,
                            uint32_t flags,

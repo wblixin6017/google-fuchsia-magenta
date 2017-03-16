@@ -19,6 +19,7 @@
 #include <mxtl/ref_counted.h>
 #include <mxtl/ref_ptr.h>
 #include <mxtl/unique_ptr.h>
+#include <mxtl/magic.h>
 
 template <typename T> struct DispatchTag;
 

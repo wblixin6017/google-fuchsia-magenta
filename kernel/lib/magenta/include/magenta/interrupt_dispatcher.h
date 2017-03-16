@@ -20,7 +20,7 @@
 //   to allow userspace to set bits for "virtual" interrupts
 // - return state via out param on sys_interrupt_wait
 
-class InterruptDispatcher : public Dispatcher {
+class InterruptDispatcher : public Dispatcher, public Magic<'DTNI'> {
 public:
     InterruptDispatcher& operator=(const InterruptDispatcher &) = delete;
 

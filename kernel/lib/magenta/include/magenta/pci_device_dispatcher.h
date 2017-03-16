@@ -21,7 +21,7 @@
 
 class PciInterruptDispatcher;
 
-class PciDeviceDispatcher final : public Dispatcher {
+class PciDeviceDispatcher final : public Dispatcher, public Magic<'DDCP'> {
 public:
     // TODO(johngro) : merge this into PcieDevice (or whatever it ends up being called)
     // when the PCIe bus driver finishes converting to C++

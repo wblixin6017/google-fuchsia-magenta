@@ -9,11 +9,12 @@
 #include <magenta/types.h>
 
 #include <mxtl/intrusive_double_list.h>
+#include <mxtl/magic.h>
 
 class Handle;
 
 // Observer base class for state maintained by StateTracker.
-class StateObserver {
+class StateObserver : public Magic<'SBOS'> {
 public:
     // Optional initial counts. Each object might have a different idea of them
     // and currently we assume at most two. The state observers will iterate on
