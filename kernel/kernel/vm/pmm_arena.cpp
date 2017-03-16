@@ -19,6 +19,19 @@ PmmArena::PmmArena(const pmm_arena_info_t* info)
 
 PmmArena::~PmmArena() {}
 
+void PmmArena::EnforceFill() {
+    DEBUG_ASSERT(!enforce_fill_);
+
+    vm_page_t* page;
+    list_for_every_entry (&free_list_, page, vm_page_t, free.node) {
+        paddr_t paddr = page_address_from_arena(page);
+        void* kvaddr = paddr_to_kvaddr(paddr);
+        memset(kvaddr, 0x42, PAGE_SIZE);
+    }
+
+    enforce_fill_ = true;
+}
+
 void PmmArena::BootAllocArray() {
     /* allocate an array of pages to back this one */
     size_t page_count = size() / PAGE_SIZE;
@@ -54,6 +67,11 @@ vm_page_t* PmmArena::AllocPage(paddr_t* pa) {
     DEBUG_ASSERT(page_is_free(page));
 
     page->state = VM_PAGE_STATE_ALLOC;
+    paddr_t paddr = page_address_from_arena(page);
+    void* kvaddr = paddr_to_kvaddr(paddr);
+    for (size_t j = 0; j < PAGE_SIZE / 8; ++j) {
+        DEBUG_ASSERT(!enforce_fill_ || *(uint64_t*)((uintptr_t)kvaddr + 8 * j) == 0x4242424242424242ull);
+    }
 
     if (pa) {
         /* compute the physical address of the page based on its offset into the arena */
@@ -106,6 +124,12 @@ size_t PmmArena::AllocPages(size_t count, list_node* list) {
         free_count_--;
 
         DEBUG_ASSERT(page_is_free(page));
+
+        paddr_t paddr = page_address_from_arena(page);
+        void* kvaddr = paddr_to_kvaddr(paddr);
+        for (size_t i = 0; i < PAGE_SIZE / 8; ++i) {
+            DEBUG_ASSERT(!enforce_fill_ || *(uint64_t*)((uintptr_t)kvaddr + 8 * i) == 0x4242424242424242ull);
+        }
 
         page->state = VM_PAGE_STATE_ALLOC;
         list_add_tail(list, &page->free.node);
@@ -164,6 +188,12 @@ retry:
 
             free_count_--;
 
+            paddr_t paddr = page_address_from_arena(p);
+            void* kvaddr = paddr_to_kvaddr(paddr);
+            for (size_t j = 0; j < PAGE_SIZE / 8; ++j) {
+                DEBUG_ASSERT(!enforce_fill_ || *(uint64_t*)((uintptr_t)kvaddr + 8 * j) == 0x4242424242424242ull);
+            }
+
             if (list)
                 list_add_tail(list, &p->free.node);
         }
@@ -181,6 +211,10 @@ status_t PmmArena::FreePage(vm_page_t* page) {
     LTRACEF("page %p\n", page);
     if (!page_belongs_to_arena(page))
         return ERR_NOT_FOUND;
+
+    paddr_t paddr = page_address_from_arena(page);
+    void* kvaddr = paddr_to_kvaddr(paddr);
+    memset(kvaddr, 0x42, PAGE_SIZE);
 
     page->state = VM_PAGE_STATE_FREE;
 
