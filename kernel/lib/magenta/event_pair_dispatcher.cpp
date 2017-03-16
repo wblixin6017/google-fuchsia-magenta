@@ -45,6 +45,7 @@ status_t EventPairDispatcher::Create(mxtl::RefPtr<Dispatcher>* dispatcher0,
 EventPairDispatcher::~EventPairDispatcher() {}
 
 void EventPairDispatcher::on_zero_handles() {
+    AssertMagic();
     AutoLock locker(&lock_);
     DEBUG_ASSERT(other_);
 
@@ -53,6 +54,7 @@ void EventPairDispatcher::on_zero_handles() {
 }
 
 status_t EventPairDispatcher::user_signal(uint32_t clear_mask, uint32_t set_mask, bool peer) {
+    AssertMagic();
     if ((set_mask & ~kUserSignalMask) || (clear_mask & ~kUserSignalMask))
         return ERR_INVALID_ARGS;
 
@@ -76,6 +78,7 @@ EventPairDispatcher::EventPairDispatcher()
 // This is called before either EventPairDispatcher is accessible from threads other than the one
 // initializing the event pair, so it does not need locking.
 void EventPairDispatcher::Init(EventPairDispatcher* other) TA_NO_THREAD_SAFETY_ANALYSIS {
+    AssertMagic();
     DEBUG_ASSERT(other);
     // No need to take |lock_| here.
     DEBUG_ASSERT(!other_);

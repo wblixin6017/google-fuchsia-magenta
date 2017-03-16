@@ -45,6 +45,7 @@ void IoMappingDispatcher::Close() {
 }
 
 void IoMappingDispatcher::Cleanup() {
+    AssertMagic();
     if (mapping_) {
         mapping_->Destroy();
     }
@@ -61,6 +62,7 @@ bool IoMappingDispatcher::closed() const {
 status_t IoMappingDispatcher::Init(const char* dbg_name,
                                    paddr_t paddr, size_t size,
                                    uint vmm_flags, uint arch_mmu_flags) {
+    AssertMagic();
     DEBUG_ASSERT(closed());
 
     // TODO(teisenbe): Remove vmm_flags

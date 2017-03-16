@@ -47,6 +47,7 @@ PortObserver::PortObserver(uint32_t type, Handle* handle, mxtl::RefPtr<PortDispa
 
 bool PortObserver::OnInitialize(mx_signals_t initial_state,
                                 const StateObserver::CountInfo* cinfo) {
+    AssertMagic();
     uint64_t count = 1u;
 
     if (cinfo) {
@@ -62,11 +63,13 @@ bool PortObserver::OnInitialize(mx_signals_t initial_state,
 }
 
 bool PortObserver::OnStateChange(mx_signals_t new_state) {
+    AssertMagic();
     MaybeQueue(new_state, 1u);
     return false;
 }
 
 bool PortObserver::OnCancel(Handle* handle) {
+    AssertMagic();
     if (handle_ == handle)
         remove_ = true;
     return false;
@@ -79,11 +82,13 @@ bool PortObserver::OnCancelByKey(Handle* handle, uint64_t key) {
 }
 
 void PortObserver::OnRemoved() {
+    AssertMagic();
     if (port_->CanReap(this, &packet_))
         delete this;
 }
 
 void PortObserver::MaybeQueue(mx_signals_t new_state, uint64_t count) {
+    AssertMagic();
     // Always called with the object state lock being held.
     if ((trigger_ & new_state) == 0u)
         return;

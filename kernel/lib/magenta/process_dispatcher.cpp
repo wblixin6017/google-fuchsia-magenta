@@ -132,11 +132,13 @@ ProcessDispatcher::~ProcessDispatcher() {
 }
 
 void ProcessDispatcher::get_name(char out_name[MX_MAX_NAME_LEN]) const {
+    AssertMagic();
     AutoSpinLock lock(name_lock_);
     memcpy(out_name, name_, MX_MAX_NAME_LEN);
 }
 
 status_t ProcessDispatcher::set_name(const char* name, size_t len) {
+    AssertMagic();
     if (len >= MX_MAX_NAME_LEN)
         len = MX_MAX_NAME_LEN - 1;
 
@@ -147,6 +149,7 @@ status_t ProcessDispatcher::set_name(const char* name, size_t len) {
 }
 
 status_t ProcessDispatcher::Initialize() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&state_lock_);
@@ -164,6 +167,7 @@ status_t ProcessDispatcher::Initialize() {
 }
 
 void ProcessDispatcher::Exit(int retcode) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     DEBUG_ASSERT(ProcessDispatcher::GetCurrent() == this);
@@ -185,6 +189,7 @@ void ProcessDispatcher::Exit(int retcode) {
 }
 
 void ProcessDispatcher::Kill() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&state_lock_);
@@ -211,6 +216,7 @@ void ProcessDispatcher::Kill() {
 }
 
 void ProcessDispatcher::KillAllThreadsLocked() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     for (auto& thread : thread_list_) {
@@ -220,6 +226,7 @@ void ProcessDispatcher::KillAllThreadsLocked() {
 }
 
 status_t ProcessDispatcher::AddThread(UserThread* t, bool initial_thread) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock state_lock(&state_lock_);
@@ -249,6 +256,7 @@ status_t ProcessDispatcher::AddThread(UserThread* t, bool initial_thread) {
 // This is called within thread T's context when it is exiting.
 
 void ProcessDispatcher::RemoveThread(UserThread* t) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     {
@@ -273,6 +281,7 @@ void ProcessDispatcher::RemoveThread(UserThread* t) {
 
 
 void ProcessDispatcher::on_zero_handles() TA_NO_THREAD_SAFETY_ANALYSIS {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     // check that we're not already entering a dead state
@@ -292,6 +301,7 @@ mx_koid_t ProcessDispatcher::get_related_koid() const {
 }
 
 ProcessDispatcher::State ProcessDispatcher::state() const {
+    AssertMagic();
     AutoLock lock(&state_lock_);
     return state_;
 }
@@ -301,6 +311,7 @@ mxtl::RefPtr<JobDispatcher> ProcessDispatcher::job() {
 }
 
 void ProcessDispatcher::SetStateLocked(State s) {
+    AssertMagic();
     LTRACEF("process %p: state %u (%s)\n", this, static_cast<unsigned int>(s), StateToString(s));
 
     DEBUG_ASSERT(state_lock_.IsHeld());
@@ -370,14 +381,17 @@ void ProcessDispatcher::SetStateLocked(State s) {
 
 // process handle manipulation routines
 mx_handle_t ProcessDispatcher::MapHandleToValue(const Handle* handle) const {
+    AssertMagic();
     return map_handle_to_value(handle, handle_rand_);
 }
 
 mx_handle_t ProcessDispatcher::MapHandleToValue(const HandleOwner& handle) const {
+    AssertMagic();
     return map_handle_to_value(handle.get(), handle_rand_);
 }
 
 Handle* ProcessDispatcher::GetHandleLocked(mx_handle_t handle_value) {
+    AssertMagic();
     auto handle = map_value_to_handle(handle_value, handle_rand_);
     if (!handle)
         return nullptr;
@@ -385,21 +399,25 @@ Handle* ProcessDispatcher::GetHandleLocked(mx_handle_t handle_value) {
 }
 
 void ProcessDispatcher::AddHandle(HandleOwner handle) {
+    AssertMagic();
     AutoLock lock(&handle_table_lock_);
     AddHandleLocked(mxtl::move(handle));
 }
 
 void ProcessDispatcher::AddHandleLocked(HandleOwner handle) {
+    AssertMagic();
     handle->set_process_id(get_koid());
     handles_.push_front(handle.release());
 }
 
 HandleOwner ProcessDispatcher::RemoveHandle(mx_handle_t handle_value) {
+    AssertMagic();
     AutoLock lock(&handle_table_lock_);
     return RemoveHandleLocked(handle_value);
 }
 
 HandleOwner ProcessDispatcher::RemoveHandleLocked(mx_handle_t handle_value) {
+    AssertMagic();
     auto handle = GetHandleLocked(handle_value);
     if (!handle)
         return nullptr;
@@ -411,6 +429,7 @@ HandleOwner ProcessDispatcher::RemoveHandleLocked(mx_handle_t handle_value) {
 }
 
 void ProcessDispatcher::UndoRemoveHandleLocked(mx_handle_t handle_value) {
+    AssertMagic();
     auto handle = map_value_to_handle(handle_value, handle_rand_);
     AddHandleLocked(HandleOwner(handle));
 }
@@ -418,6 +437,7 @@ void ProcessDispatcher::UndoRemoveHandleLocked(mx_handle_t handle_value) {
 mx_status_t ProcessDispatcher::GetDispatcherInternal(mx_handle_t handle_value,
                                                      mxtl::RefPtr<Dispatcher>* dispatcher,
                                                      mx_rights_t* rights) {
+    AssertMagic();
     AutoLock lock(&handle_table_lock_);
     Handle* handle = GetHandleLocked(handle_value);
     if (!handle)
@@ -432,6 +452,7 @@ mx_status_t ProcessDispatcher::GetDispatcherInternal(mx_handle_t handle_value,
 mx_status_t ProcessDispatcher::GetDispatcherWithRightsInternal(mx_handle_t handle_value,
                                                                mx_rights_t desired_rights,
                                                                mxtl::RefPtr<Dispatcher>* dispatcher_out) {
+    AssertMagic();
     AutoLock lock(&handle_table_lock_);
     Handle* handle = GetHandleLocked(handle_value);
     if (!handle)
@@ -445,6 +466,7 @@ mx_status_t ProcessDispatcher::GetDispatcherWithRightsInternal(mx_handle_t handl
 }
 
 status_t ProcessDispatcher::GetInfo(mx_info_process_t* info) {
+    AssertMagic();
     // retcode_ depends on the state: make sure they're consistent.
     state_lock_.Acquire();
     int retcode = retcode_;
@@ -476,6 +498,7 @@ status_t ProcessDispatcher::GetInfo(mx_info_process_t* info) {
 }
 
 status_t ProcessDispatcher::CreateUserThread(mxtl::StringPiece name, uint32_t flags, mxtl::RefPtr<UserThread>* user_thread) {
+    AssertMagic();
     AllocChecker ac;
     auto ut = mxtl::AdoptRef(new (&ac) UserThread(mxtl::WrapRefPtr(this),
                                                   flags));
@@ -495,6 +518,7 @@ status_t ProcessDispatcher::CreateUserThread(mxtl::StringPiece name, uint32_t fl
 // Return the actual number of threads, which may be more than |num_info_threads|.
 
 status_t ProcessDispatcher::GetThreads(mxtl::Array<mx_koid_t>* out_threads) {
+    AssertMagic();
     AutoLock lock(&state_lock_);
     size_t n = thread_list_.size_slow();
     mxtl::Array<mx_koid_t> threads;
@@ -513,6 +537,7 @@ status_t ProcessDispatcher::GetThreads(mxtl::Array<mx_koid_t>* out_threads) {
 }
 
 status_t ProcessDispatcher::SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport) {
+    AssertMagic();
     bool debugger = false;
     switch (eport->type()) {
     case ExceptionPort::Type::DEBUGGER:
@@ -546,6 +571,7 @@ status_t ProcessDispatcher::SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport) 
 }
 
 bool ProcessDispatcher::ResetExceptionPort(bool debugger, bool quietly) {
+    AssertMagic();
     mxtl::RefPtr<ExceptionPort> eport;
 
     // Remove the exception handler first. As we resume threads we don't
@@ -593,11 +619,13 @@ bool ProcessDispatcher::ResetExceptionPort(bool debugger, bool quietly) {
 }
 
 mxtl::RefPtr<ExceptionPort> ProcessDispatcher::exception_port() {
+    AssertMagic();
     AutoLock lock(&exception_lock_);
     return exception_port_;
 }
 
 mxtl::RefPtr<ExceptionPort> ProcessDispatcher::debugger_exception_port() {
+    AssertMagic();
     AutoLock lock(&exception_lock_);
     return debugger_exception_port_;
 }
@@ -639,6 +667,7 @@ mxtl::RefPtr<ProcessDispatcher> ProcessDispatcher::LookupProcessById(mx_koid_t k
 }
 
 mxtl::RefPtr<UserThread> ProcessDispatcher::LookupThreadById(mx_koid_t koid) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&state_lock_);
 
@@ -647,6 +676,7 @@ mxtl::RefPtr<UserThread> ProcessDispatcher::LookupThreadById(mx_koid_t koid) {
 }
 
 mx_status_t ProcessDispatcher::set_bad_handle_policy(uint32_t new_policy) {
+    AssertMagic();
     if (new_policy > MX_POLICY_BAD_HANDLE_EXIT)
         return ERR_NOT_SUPPORTED;
     bad_handle_policy_ = new_policy;
@@ -654,11 +684,13 @@ mx_status_t ProcessDispatcher::set_bad_handle_policy(uint32_t new_policy) {
 }
 
 uintptr_t ProcessDispatcher::get_debug_addr() const {
+    AssertMagic();
     AutoLock lock(&state_lock_);
     return debug_addr_;
 }
 
 mx_status_t ProcessDispatcher::set_debug_addr(uintptr_t addr) {
+    AssertMagic();
     if (addr == 0u)
         return ERR_INVALID_ARGS;
     AutoLock lock(&state_lock_);
@@ -690,6 +722,7 @@ bool ProcessDispatcher::IsHandleValid(mx_handle_t handle_value) {
 
 mx_status_t ProcessDispatcher::BadHandle(mx_handle_t handle_value,
                                          mx_status_t error) {
+    AssertMagic();
     // TODO(mcgrathr): Maybe treat other errors the same?
     // This also gets ERR_WRONG_TYPE and ERR_ACCESS_DENIED (for rights checks).
     if (error != ERR_BAD_HANDLE)
@@ -706,6 +739,7 @@ mx_status_t ProcessDispatcher::BadHandle(mx_handle_t handle_value,
 }
 
 mx_koid_t ProcessDispatcher::GetKoidForHandle(mx_handle_t handle_value) {
+    AssertMagic();
     mxtl::RefPtr<Dispatcher> dispatcher;
     auto status = GetDispatcherInternal(handle_value, &dispatcher, nullptr);
     if (status != NO_ERROR)

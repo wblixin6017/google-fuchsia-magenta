@@ -14,7 +14,7 @@
 
 class PciDeviceDispatcher;
 
-class PciInterruptDispatcher final : public InterruptDispatcher, public Magic<'DICP'> {
+class PciInterruptDispatcher final : public InterruptDispatcher {
 public:
     static status_t Create(const mxtl::RefPtr<PciDeviceDispatcher::PciDeviceWrapper>& device,
                            uint32_t irq_id,

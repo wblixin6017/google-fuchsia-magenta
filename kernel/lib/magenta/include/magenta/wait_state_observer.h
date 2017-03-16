@@ -16,7 +16,7 @@
 
 class WaitEvent;
 
-class WaitStateObserver final : public StateObserver, public Magic<' OSW'> {
+class WaitStateObserver final : public StateObserver {
 public:
     WaitStateObserver() : StateObserver() { }
     ~WaitStateObserver();

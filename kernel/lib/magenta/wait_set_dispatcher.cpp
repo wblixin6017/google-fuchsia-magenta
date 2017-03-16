@@ -225,6 +225,7 @@ WaitSetDispatcher::~WaitSetDispatcher() {
 }
 
 status_t WaitSetDispatcher::AddEntry(mxtl::unique_ptr<Entry> entry, Handle* handle) {
+    AssertMagic();
     if (!handle->dispatcher()->get_state_tracker())
         return ERR_NOT_SUPPORTED;
 
@@ -253,6 +254,7 @@ status_t WaitSetDispatcher::AddEntry(mxtl::unique_ptr<Entry> entry, Handle* hand
 }
 
 status_t WaitSetDispatcher::RemoveEntry(uint64_t cookie) {
+    AssertMagic();
     mxtl::unique_ptr<Entry> entry;
     mxtl::RefPtr<Dispatcher> dispatcher;
     {
@@ -292,6 +294,7 @@ status_t WaitSetDispatcher::Wait(mx_time_t timeout,
                                  mx_waitset_result_t* results,
                                  uint32_t* max_results) {
 
+    AssertMagic();
     lk_time_t lk_timeout = mx_time_to_lk(timeout);
     status_t result = event_wait_timeout(&event_, lk_timeout, true);
 
@@ -353,6 +356,7 @@ bool WaitSetDispatcher::OnInitialize(mx_signals_t initial_state,
 bool WaitSetDispatcher::OnStateChange(mx_signals_t new_state) { return false; }
 
 bool WaitSetDispatcher::OnCancel(Handle* handle) {
+    AssertMagic();
     AutoLock lock(&mutex_);
     cancelled_ = true;
     return event_signal(&event_, false) > 0;

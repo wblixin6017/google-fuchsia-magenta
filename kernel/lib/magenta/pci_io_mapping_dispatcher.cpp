@@ -126,6 +126,7 @@ PciIoMappingDispatcher::~PciIoMappingDispatcher() {
 }
 
 void PciIoMappingDispatcher::Close() {
+    AssertMagic();
     // Close the underlying mapping; this will unmap the range from the user's process.
     IoMappingDispatcher::Close();
 

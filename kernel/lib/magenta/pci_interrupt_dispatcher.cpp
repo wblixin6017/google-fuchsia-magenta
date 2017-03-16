@@ -84,6 +84,7 @@ status_t PciInterruptDispatcher::Create(
 }
 
 status_t PciInterruptDispatcher::InterruptComplete() {
+    AssertMagic();
     DEBUG_ASSERT(device_ != nullptr);
     unsignal();
 
@@ -94,6 +95,7 @@ status_t PciInterruptDispatcher::InterruptComplete() {
 }
 
 status_t PciInterruptDispatcher::UserSignal() {
+    AssertMagic();
     DEBUG_ASSERT(device_ != nullptr);
 
     if (maskable_)

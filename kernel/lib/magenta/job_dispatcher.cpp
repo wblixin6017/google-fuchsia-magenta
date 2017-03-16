@@ -56,13 +56,16 @@ JobDispatcher::~JobDispatcher() {
 }
 
 void JobDispatcher::on_zero_handles() {
+    AssertMagic();
 }
 
 mx_koid_t JobDispatcher::get_related_koid() const {
+    AssertMagic();
     return parent_? parent_->get_koid() : 0u;
 }
 
 bool JobDispatcher::AddChildProcess(ProcessDispatcher* process) {
+    AssertMagic();
     AutoLock lock(&lock_);
     if (state_ != State::READY)
         return false;
@@ -73,6 +76,7 @@ bool JobDispatcher::AddChildProcess(ProcessDispatcher* process) {
 }
 
 bool JobDispatcher::AddChildJob(JobDispatcher* job) {
+    AssertMagic();
     AutoLock lock(&lock_);
     if (state_ != State::READY)
         return false;
@@ -83,6 +87,7 @@ bool JobDispatcher::AddChildJob(JobDispatcher* job) {
 }
 
 void JobDispatcher::RemoveChildProcess(ProcessDispatcher* process) {
+    AssertMagic();
     AutoLock lock(&lock_);
     // The process dispatcher can call us in its destructor or in Kill().
     if (!ProcessDispatcher::JobListTraitsWeak::node_state(*process).InContainer())
@@ -93,6 +98,7 @@ void JobDispatcher::RemoveChildProcess(ProcessDispatcher* process) {
 }
 
 void JobDispatcher::RemoveChildJob(JobDispatcher* job) {
+    AssertMagic();
     AutoLock lock(&lock_);
     if (!JobDispatcher::ListTraitsWeak::node_state(*job).InContainer())
         return;
@@ -102,6 +108,7 @@ void JobDispatcher::RemoveChildJob(JobDispatcher* job) {
 }
 
 void JobDispatcher::UpdateSignalsDecrementLocked() {
+    AssertMagic();
     DEBUG_ASSERT(lock_.IsHeld());
     // removing jobs or processes.
     mx_signals_t set = 0u;
@@ -123,6 +130,7 @@ void JobDispatcher::UpdateSignalsDecrementLocked() {
 }
 
 void JobDispatcher::UpdateSignalsIncrementLocked() {
+    AssertMagic();
     DEBUG_ASSERT(lock_.IsHeld());
     // Adding jobs or processes.
     mx_signals_t clear = 0u;
@@ -138,6 +146,7 @@ void JobDispatcher::UpdateSignalsIncrementLocked() {
 }
 
 void JobDispatcher::Kill() {
+    AssertMagic();
     JobList jobs_to_kill;
     ProcessList procs_to_kill;
 
@@ -176,6 +185,7 @@ void JobDispatcher::Kill() {
 }
 
 bool JobDispatcher::EnumerateChildren(JobEnumerator* je) {
+    AssertMagic();
     AutoLock lock(&lock_);
 
     uint32_t proc_index = 0u;
@@ -205,6 +215,7 @@ bool JobDispatcher::EnumerateChildren(JobEnumerator* je) {
 }
 
 mxtl::RefPtr<ProcessDispatcher> JobDispatcher::LookupProcessById(mx_koid_t koid) {
+    AssertMagic();
     AutoLock lock(&lock_);
     for (auto& proc : procs_) {
         if (proc.get_koid() == koid)
@@ -214,6 +225,7 @@ mxtl::RefPtr<ProcessDispatcher> JobDispatcher::LookupProcessById(mx_koid_t koid)
 }
 
 mxtl::RefPtr<JobDispatcher> JobDispatcher::LookupJobById(mx_koid_t koid) {
+    AssertMagic();
     AutoLock lock(&lock_);
     for (auto& job : jobs_) {
         if (job.get_koid() == koid) {
@@ -224,11 +236,13 @@ mxtl::RefPtr<JobDispatcher> JobDispatcher::LookupJobById(mx_koid_t koid) {
 }
 
 void JobDispatcher::get_name(char out_name[MX_MAX_NAME_LEN]) const {
+    AssertMagic();
     AutoSpinLock lock(name_lock_);
     memcpy(out_name, name_, MX_MAX_NAME_LEN);
 }
 
 status_t JobDispatcher::set_name(const char* name, size_t len) {
+    AssertMagic();
     if (len >= MX_MAX_NAME_LEN)
         len = MX_MAX_NAME_LEN - 1;
 

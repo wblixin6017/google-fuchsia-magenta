@@ -47,6 +47,7 @@ ThreadDispatcher::~ThreadDispatcher() {
 }
 
 status_t ThreadDispatcher::GetInfo(mx_info_thread_t* info) {
+    AssertMagic();
     memset(info, 0, sizeof(*info));
     ExceptionPort::Type excp_port_type;
     if (thread_->InException(&excp_port_type)) {
@@ -76,29 +77,36 @@ status_t ThreadDispatcher::GetInfo(mx_info_thread_t* info) {
 }
 
 status_t ThreadDispatcher::GetExceptionReport(mx_exception_report_t* report) {
+    AssertMagic();
     return thread_->GetExceptionReport(report);
 }
 
 StateTracker* ThreadDispatcher::get_state_tracker() {
+    AssertMagic();
     return thread_->state_tracker();
 }
 
 mx_koid_t ThreadDispatcher::get_related_koid() const {
+    AssertMagic();
     return thread_->process()->get_koid();
 }
 
 status_t ThreadDispatcher::SetExceptionPort(mxtl::RefPtr<ExceptionPort> eport) {
+    AssertMagic();
     return thread_->SetExceptionPort(this, eport);
 }
 
 bool ThreadDispatcher::ResetExceptionPort(bool quietly) {
+    AssertMagic();
     return thread_->ResetExceptionPort(quietly);
 }
 
 void ThreadDispatcher::get_name(char out_name[MX_MAX_NAME_LEN]) const {
+    AssertMagic();
     thread_->get_name(out_name);
 }
 
 status_t ThreadDispatcher::set_name(const char* name, size_t len) {
+    AssertMagic();
     return thread_->set_name(name, len);
 }

@@ -71,6 +71,7 @@ PciDeviceDispatcher::~PciDeviceDispatcher() {
 }
 
 status_t PciDeviceDispatcher::ClaimDevice() {
+    AssertMagic();
     status_t result;
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
@@ -85,6 +86,7 @@ status_t PciDeviceDispatcher::ClaimDevice() {
 }
 
 status_t PciDeviceDispatcher::EnableBusMaster(bool enable) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -96,6 +98,7 @@ status_t PciDeviceDispatcher::EnableBusMaster(bool enable) {
 }
 
 status_t PciDeviceDispatcher::EnablePio(bool enable) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -107,6 +110,7 @@ status_t PciDeviceDispatcher::EnablePio(bool enable) {
 }
 
 status_t PciDeviceDispatcher::ResetDevice() {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -117,6 +121,7 @@ status_t PciDeviceDispatcher::ResetDevice() {
 
 status_t PciDeviceDispatcher::MapConfig(mxtl::RefPtr<Dispatcher>* out_mapping,
                                         mx_rights_t* out_rights) {
+    AssertMagic();
     AutoLock lock(&lock_);
     return PciIoMappingDispatcher::Create(device_,
                                          "cfg",
@@ -134,6 +139,7 @@ status_t PciDeviceDispatcher::MapMmio(uint32_t bar_num,
                                       uint32_t cache_policy,
                                       mxtl::RefPtr<Dispatcher>* out_mapping,
                                       mx_rights_t* out_rights) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -157,6 +163,7 @@ status_t PciDeviceDispatcher::MapMmio(uint32_t bar_num,
 status_t PciDeviceDispatcher::MapInterrupt(int32_t which_irq,
                                            mxtl::RefPtr<Dispatcher>* interrupt_dispatcher,
                                            mx_rights_t* rights) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -186,6 +193,7 @@ static_assert(static_cast<uint>(MX_PCIE_IRQ_MODE_MSI_X) ==
               static_cast<uint>(PCIE_IRQ_MODE_MSI_X),
               "Mode mismatch, MX_PCIE_IRQ_MODE_MSI_X != PCIE_IRQ_MODE_MSI_X");
 status_t PciDeviceDispatcher::QueryIrqModeCaps(mx_pci_irq_mode_t mode, uint32_t* out_max_irqs) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
@@ -198,6 +206,7 @@ status_t PciDeviceDispatcher::QueryIrqModeCaps(mx_pci_irq_mode_t mode, uint32_t*
 }
 
 status_t PciDeviceDispatcher::SetIrqMode(mx_pci_irq_mode_t mode, uint32_t requested_irq_count) {
+    AssertMagic();
     AutoLock lock(&lock_);
     DEBUG_ASSERT(device_ && device_->device());
 
