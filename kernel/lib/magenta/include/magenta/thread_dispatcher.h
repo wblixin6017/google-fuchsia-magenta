@@ -11,7 +11,7 @@
 #include <magenta/user_thread.h>
 #include <sys/types.h>
 
-class ThreadDispatcher : public Dispatcher {
+class ThreadDispatcher : public Dispatcher, public Magic<'DRHT'> {
 public:
     static status_t Create(mxtl::RefPtr<UserThread> thread, mxtl::RefPtr<Dispatcher>* dispatcher,
                            mx_rights_t* rights);

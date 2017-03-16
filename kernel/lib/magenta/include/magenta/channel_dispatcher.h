@@ -20,7 +20,7 @@ class PortClient;
 class MessageWaiter;
 class MessagePacket;
 
-class ChannelDispatcher final : public Dispatcher {
+class ChannelDispatcher final : public Dispatcher, public Magic<'NAHC'> {
 public:
     static status_t Create(uint32_t flags, mxtl::RefPtr<Dispatcher>* dispatcher0,
                            mxtl::RefPtr<Dispatcher>* dispatcher1, mx_rights_t* rights);

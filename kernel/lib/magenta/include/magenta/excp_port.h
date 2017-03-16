@@ -19,7 +19,7 @@ class PortDispatcher;
 // (system/process/thread). Multiple ExceptionPorts may exist for a
 // single underlying PortDispatcher.
 class ExceptionPort : public mxtl::DoublyLinkedListable<mxtl::RefPtr<ExceptionPort>>
-                    , public mxtl::RefCounted<ExceptionPort> {
+                    , public mxtl::RefCounted<ExceptionPort>, public Magic<'TPXE'> {
 public:
     enum class Type { DEBUGGER, THREAD, PROCESS, SYSTEM };
 

@@ -12,7 +12,7 @@
 #include <mxtl/ref_ptr.h>
 #include <sys/types.h>
 
-class EventPairDispatcher final : public Dispatcher {
+class EventPairDispatcher final : public Dispatcher, public Magic<'EVPD'> {
 public:
     static status_t Create(mxtl::RefPtr<Dispatcher>* dispatcher0,
                            mxtl::RefPtr<Dispatcher>* dispatcher1,

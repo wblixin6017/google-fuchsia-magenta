@@ -11,7 +11,7 @@
 
 #include <sys/types.h>
 
-class EventDispatcher final : public Dispatcher {
+class EventDispatcher final : public Dispatcher, public Magic<'DTVE'> {
 public:
     static status_t Create(uint32_t options, mxtl::RefPtr<Dispatcher>* dispatcher,
                            mx_rights_t* rights);

@@ -11,11 +11,12 @@
 #include <magenta/types.h>
 
 #include <mxtl/ref_ptr.h>
+#include <mxtl/magic.h>
 
 class PortDispatcher;
 class Mutex;
 
-class PortClient {
+class PortClient : public Magic<'LCTP'> {
 public:
     PortClient(mxtl::RefPtr<PortDispatcher> port, uint64_t key, mx_signals_t signals);
     ~PortClient();

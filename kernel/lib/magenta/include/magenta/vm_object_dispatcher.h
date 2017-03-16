@@ -16,7 +16,7 @@
 class VmObject;
 class VmAspace;
 
-class VmObjectDispatcher : public Dispatcher {
+class VmObjectDispatcher : public Dispatcher, public Magic<'DOMV'> {
 public:
     static status_t Create(mxtl::RefPtr<VmObject> vmo, mxtl::RefPtr<Dispatcher>* dispatcher,
                            mx_rights_t* rights);

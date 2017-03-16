@@ -70,7 +70,7 @@ struct IOP_Signal : public IOP_Packet {
 //                           +------>at_zero_ <-----+
 //
 
-class PortDispatcher final : public Dispatcher {
+class PortDispatcher final : public Dispatcher, public Magic<'DTRP'> {
 public:
     static status_t Create(uint32_t options,
                            mxtl::RefPtr<Dispatcher>* dispatcher,

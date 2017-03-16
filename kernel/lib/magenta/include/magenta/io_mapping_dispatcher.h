@@ -10,7 +10,7 @@
 #include <magenta/dispatcher.h>
 #include <sys/types.h>
 
-class IoMappingDispatcher : public Dispatcher {
+class IoMappingDispatcher : public Dispatcher, public Magic<'DMOI'> {
 public:
     static status_t Create(const char* dbg_name,
                            paddr_t paddr, size_t size,

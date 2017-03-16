@@ -11,10 +11,11 @@
 #include <magenta/types.h>
 #include <mxtl/intrusive_double_list.h>
 #include <mxtl/unique_ptr.h>
+#include <mxtl/magic.h>
 
 class Handle;
 
-class MessagePacket : public mxtl::DoublyLinkedListable<mxtl::unique_ptr<MessagePacket>> {
+class MessagePacket : public mxtl::DoublyLinkedListable<mxtl::unique_ptr<MessagePacket>>, public Magic<'TKPM'> {
 public:
     // Creates a message packet.
     static mx_status_t Create(uint32_t data_size, uint32_t num_handles,

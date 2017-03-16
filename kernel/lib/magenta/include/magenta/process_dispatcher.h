@@ -28,7 +28,7 @@
 
 class JobDispatcher;
 
-class ProcessDispatcher : public Dispatcher {
+class ProcessDispatcher : public Dispatcher, public Magic<'DORP'> {
 public:
     static mx_status_t Create(
         mxtl::RefPtr<JobDispatcher> job, mxtl::StringPiece name, uint32_t flags,

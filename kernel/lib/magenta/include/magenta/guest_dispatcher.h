@@ -8,7 +8,7 @@
 
 #include <magenta/hypervisor_dispatcher.h>
 
-class GuestDispatcher final : public Dispatcher {
+class GuestDispatcher final : public Dispatcher, public Magic<'DTSG'> {
 public:
     static mx_status_t Create(mxtl::RefPtr<HypervisorDispatcher> hypervisor,
                               mxtl::RefPtr<Dispatcher>* dispatcher,

@@ -28,7 +28,7 @@ public:
     virtual bool OnProcess(ProcessDispatcher* proc, uint32_t index) = 0;
 };
 
-class JobDispatcher final : public Dispatcher {
+class JobDispatcher final : public Dispatcher, public Magic<'DBOJ'> {
 public:
     // Traits to belong to the parent's weak job list.
     struct ListTraitsWeak {

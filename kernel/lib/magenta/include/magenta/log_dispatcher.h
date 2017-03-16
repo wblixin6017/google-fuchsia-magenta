@@ -12,7 +12,7 @@
 #include <magenta/state_tracker.h>
 #include <magenta/wait_event.h>
 
-class LogDispatcher final : public Dispatcher {
+class LogDispatcher final : public Dispatcher, public Magic<'DGOL'> {
 public:
     static status_t Create(uint32_t flags, mxtl::RefPtr<Dispatcher>* dispatcher, mx_rights_t* rights);
 

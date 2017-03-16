@@ -121,7 +121,7 @@ private:
     PortPacket packet_;
 };
 
-class PortDispatcherV2 final : public Dispatcher {
+class PortDispatcherV2 final : public Dispatcher, public Magic<'2DTP'> {
 public:
     static status_t Create(uint32_t options,
                            mxtl::RefPtr<Dispatcher>* dispatcher,

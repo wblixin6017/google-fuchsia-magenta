@@ -14,7 +14,7 @@ class VmAddressRegion;
 class VmMapping;
 class VmObject;
 
-class VmAddressRegionDispatcher final : public Dispatcher {
+class VmAddressRegionDispatcher final : public Dispatcher, public Magic<'DRAV'> {
 public:
     static status_t Create(mxtl::RefPtr<VmAddressRegion> vmar,
                            mxtl::RefPtr<Dispatcher>* dispatcher,

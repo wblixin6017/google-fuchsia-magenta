@@ -16,7 +16,7 @@
 
 #include <mxtl/ref_counted.h>
 
-class FifoDispatcher final : public Dispatcher {
+class FifoDispatcher final : public Dispatcher, public Magic<'OFIF'> {
 public:
     static status_t Create(uint32_t elem_count, uint32_t elem_size, uint32_t options,
                            mxtl::RefPtr<Dispatcher>* dispatcher0,
