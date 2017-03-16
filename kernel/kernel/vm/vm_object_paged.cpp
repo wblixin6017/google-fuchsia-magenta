@@ -594,6 +594,8 @@ status_t VmObjectPaged::WriteUser(user_ptr<const void> ptr, uint64_t offset, siz
 status_t VmObjectPaged::Lookup(uint64_t offset, uint64_t len, user_ptr<paddr_t> buffer, size_t buffer_size) {
     DEBUG_ASSERT(magic_ == MAGIC);
 
+    LTRACEF("offset %#" PRIx64 " len %#" PRIx64 "\n", offset, len);
+
     if (unlikely(len == 0))
         return ERR_INVALID_ARGS;
 
@@ -619,6 +621,8 @@ status_t VmObjectPaged::Lookup(uint64_t offset, uint64_t len, user_ptr<paddr_t> 
         auto status = GetPageLocked(off, 0, nullptr, &pa);
         if (status < 0)
             return ERR_NO_MEMORY;
+
+        LTRACEF("offset %#" PRIx64 " index %zu pa %#" PRIxPTR "\n", off, index, pa);
 
         // copy it out into user space
         status = buffer.element_offset(index).copy_to_user(pa);

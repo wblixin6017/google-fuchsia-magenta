@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdlib.h>
 #include <ddk/io-buffer.h>
 #include <ddk/driver.h>
 #include <magenta/process.h>
 #include <magenta/syscalls.h>
 #include <limits.h>
 #include <stdio.h>
+
+#define ROUNDUP(a, b) (((a)+ ((b)-1)) & ~((b)-1))
 
 static mx_status_t io_buffer_init_common(io_buffer_t* buffer, mx_handle_t vmo_handle, size_t size,
                                          mx_off_t offset, uint32_t flags) {
@@ -20,19 +23,37 @@ static mx_status_t io_buffer_init_common(io_buffer_t* buffer, mx_handle_t vmo_ha
         return status;
     }
 
-    mx_paddr_t phys;
-    status = mx_vmo_op_range(vmo_handle, MX_VMO_OP_LOOKUP, 0, PAGE_SIZE, &phys, sizeof(phys));
+    size_t paddr_array_size = ROUNDUP(size, PAGE_SIZE) / PAGE_SIZE * sizeof(mx_paddr_t);
+    mx_paddr_t *phys = calloc(1, paddr_array_size);
+
+    status = mx_vmo_op_range(vmo_handle, MX_VMO_OP_LOOKUP, 0, size, phys, paddr_array_size);
     if (status != NO_ERROR) {
         printf("io_buffer: mx_vmo_op_range failed %d size: %zu\n", status, size);
+        mx_vmar_unmap(mx_vmar_root_self(), virt, size);
         mx_handle_close(vmo_handle);
+        free(phys);
         return status;
+    }
+
+    // validate that the physical addresses are contiguous
+    mx_paddr_t last = phys[0];
+    for (size_t i = 1; i < paddr_array_size / sizeof(mx_paddr_t); i++) {
+        if (phys[i] != last + PAGE_SIZE) {
+            printf("io_buffer: vmo's physical pages aren't contiguous!\n");
+            mx_vmar_unmap(mx_vmar_root_self(), virt, size);
+            mx_handle_close(vmo_handle);
+            free(phys);
+            return ERR_INVALID_ARGS;
+        }
+        last = phys[i];
     }
 
     buffer->vmo_handle = vmo_handle;
     buffer->size = size;
     buffer->offset = offset;
     buffer->virt = (void *)virt;
-    buffer->phys = phys;
+    buffer->phys = phys[0];
+    free(phys);
     return NO_ERROR;
 }
 
