@@ -78,11 +78,15 @@ UserThread::~UserThread() {
     }
 
     // free the kernel stack
+    kstack_mapping_->Unmap(kstack_mapping_->base(), kstack_mapping_->size());
     kstack_mapping_.reset();
+    // XXX debugging: leak the vmar so the aspace doesn't get recycled
+#if 0
     if (kstack_vmar_) {
         kstack_vmar_->Destroy();
         kstack_vmar_.reset();
     }
+#endif
 
     cond_destroy(&exception_wait_cond_);
 }
