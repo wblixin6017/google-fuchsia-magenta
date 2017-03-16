@@ -103,6 +103,7 @@ ChannelDispatcher::ChannelDispatcher(uint32_t flags)
 // This is called before either ChannelDispatcher is accessible from threads other than the one
 // initializing the channel, so it does not need locking.
 void ChannelDispatcher::Init(mxtl::RefPtr<ChannelDispatcher> other) TA_NO_THREAD_SAFETY_ANALYSIS {
+    AssertMagic();
     other_ = mxtl::move(other);
     other_koid_ = other_->get_koid();
 }
@@ -118,6 +119,7 @@ ChannelDispatcher::~ChannelDispatcher() {
 }
 
 mx_status_t ChannelDispatcher::add_observer(StateObserver* observer) {
+    AssertMagic();
     AutoLock lock(&lock_);
     StateObserver::CountInfo cinfo =
         {{{messages_.size_slow(), MX_CHANNEL_READABLE}, {0u, 0u}}};
@@ -129,6 +131,7 @@ mx_status_t ChannelDispatcher::add_observer(StateObserver* observer) {
 // |lock_| after it knows there are no other references from other threads. See comment on last
 // statement.
 void ChannelDispatcher::on_zero_handles() TA_NO_THREAD_SAFETY_ANALYSIS {
+    AssertMagic();
     // Detach other endpoint
     mxtl::RefPtr<ChannelDispatcher> other;
     {
@@ -151,6 +154,7 @@ void ChannelDispatcher::on_zero_handles() TA_NO_THREAD_SAFETY_ANALYSIS {
 }
 
 void ChannelDispatcher::OnPeerZeroHandles() {
+    AssertMagic();
     AutoLock lock(&lock_);
     other_.reset();
     state_tracker_.UpdateState(MX_CHANNEL_WRITABLE, MX_CHANNEL_PEER_CLOSED);
@@ -171,6 +175,7 @@ status_t ChannelDispatcher::Read(uint32_t* msg_size,
                                  uint32_t* msg_handle_count,
                                  mxtl::unique_ptr<MessagePacket>* msg,
                                  bool may_discard) {
+    AssertMagic();
     auto max_size = *msg_size;
     auto max_handle_count = *msg_handle_count;
 
@@ -197,6 +202,7 @@ status_t ChannelDispatcher::Read(uint32_t* msg_size,
 }
 
 status_t ChannelDispatcher::Write(mxtl::unique_ptr<MessagePacket> msg) {
+    AssertMagic();
     mxtl::RefPtr<ChannelDispatcher> other;
     {
         AutoLock lock(&lock_);
@@ -218,6 +224,7 @@ status_t ChannelDispatcher::Write(mxtl::unique_ptr<MessagePacket> msg) {
 status_t ChannelDispatcher::Call(mxtl::unique_ptr<MessagePacket> msg,
                                  mx_time_t timeout, bool* return_handles,
                                  mxtl::unique_ptr<MessagePacket>* reply) {
+    AssertMagic();
 
     MessageWaiter waiter(msg->get_txid());
 
@@ -267,6 +274,7 @@ status_t ChannelDispatcher::Call(mxtl::unique_ptr<MessagePacket> msg,
 }
 
 int ChannelDispatcher::WriteSelf(mxtl::unique_ptr<MessagePacket> msg) {
+    AssertMagic();
     AutoLock lock(&lock_);
     auto size = msg->data_size();
 
@@ -294,6 +302,7 @@ int ChannelDispatcher::WriteSelf(mxtl::unique_ptr<MessagePacket> msg) {
 }
 
 status_t ChannelDispatcher::set_port_client(mxtl::unique_ptr<PortClient> client) {
+    AssertMagic();
     AutoLock lock(&lock_);
     if (iopc_)
         return ERR_BAD_STATE;
@@ -312,6 +321,7 @@ status_t ChannelDispatcher::set_port_client(mxtl::unique_ptr<PortClient> client)
 }
 
 status_t ChannelDispatcher::user_signal(uint32_t clear_mask, uint32_t set_mask, bool peer) {
+    AssertMagic();
     if ((set_mask & ~MX_USER_SIGNAL_ALL) || (clear_mask & ~MX_USER_SIGNAL_ALL))
         return ERR_INVALID_ARGS;
 
@@ -332,6 +342,7 @@ status_t ChannelDispatcher::user_signal(uint32_t clear_mask, uint32_t set_mask, 
 }
 
 status_t ChannelDispatcher::UserSignalSelf(uint32_t clear_mask, uint32_t set_mask) {
+    AssertMagic();
     AutoLock lock(&lock_);
 
     if (iopc_) {

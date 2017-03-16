@@ -122,6 +122,7 @@ mx_status_t VmAddressRegionDispatcher::Allocate(
     size_t offset, size_t size, uint32_t flags,
     mxtl::RefPtr<VmAddressRegionDispatcher>* new_dispatcher,
     mx_rights_t* new_rights) {
+    AssertMagic();
 
     uint32_t vmar_flags;
     uint arch_mmu_flags;
@@ -153,6 +154,7 @@ mx_status_t VmAddressRegionDispatcher::Allocate(
 }
 
 mx_status_t VmAddressRegionDispatcher::Destroy() {
+    AssertMagic();
     return vmar_->Destroy();
 }
 
@@ -160,6 +162,7 @@ mx_status_t VmAddressRegionDispatcher::Map(size_t vmar_offset, mxtl::RefPtr<VmOb
                                            uint64_t vmo_offset, size_t len, uint32_t flags,
                                            mxtl::RefPtr<VmMapping>* out) {
 
+    AssertMagic();
     if (!is_valid_mapping_protection(flags))
         return ERR_INVALID_ARGS;
 
@@ -184,6 +187,7 @@ mx_status_t VmAddressRegionDispatcher::Map(size_t vmar_offset, mxtl::RefPtr<VmOb
 }
 
 mx_status_t VmAddressRegionDispatcher::Protect(vaddr_t base, size_t len, uint32_t flags) {
+    AssertMagic();
     if (!IS_PAGE_ALIGNED(base)) {
         return ERR_INVALID_ARGS;
     }
@@ -205,6 +209,7 @@ mx_status_t VmAddressRegionDispatcher::Protect(vaddr_t base, size_t len, uint32_
 }
 
 mx_status_t VmAddressRegionDispatcher::Unmap(vaddr_t base, size_t len) {
+    AssertMagic();
     if (!IS_PAGE_ALIGNED(base)) {
         return ERR_INVALID_ARGS;
     }

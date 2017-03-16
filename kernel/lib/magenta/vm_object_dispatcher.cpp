@@ -42,6 +42,7 @@ mx_status_t VmObjectDispatcher::Read(user_ptr<void> user_data,
                                      size_t length,
                                      uint64_t offset,
                                      size_t* bytes_read) {
+    AssertMagic();
     return vmo_->ReadUser(user_data, offset, length, bytes_read);
 }
 
@@ -50,14 +51,17 @@ mx_status_t VmObjectDispatcher::Write(user_ptr<const void> user_data,
                                       uint64_t offset,
                                       size_t* bytes_written) {
 
+    AssertMagic();
     return vmo_->WriteUser(user_data, offset, length, bytes_written);
 }
 
 mx_status_t VmObjectDispatcher::SetSize(uint64_t size) {
+    AssertMagic();
     return vmo_->Resize(size);
 }
 
 mx_status_t VmObjectDispatcher::GetSize(uint64_t* size) {
+    AssertMagic();
     *size = vmo_->size();
 
     return NO_ERROR;
@@ -65,6 +69,7 @@ mx_status_t VmObjectDispatcher::GetSize(uint64_t* size) {
 
 mx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t size,
                                         user_ptr<void> buffer, size_t buffer_size) {
+    AssertMagic();
     LTRACEF("op %u offset %#" PRIx64 " size %#" PRIx64
             " buffer %p buffer_size %zu\n",
             op, offset, size, buffer.get(), buffer_size);

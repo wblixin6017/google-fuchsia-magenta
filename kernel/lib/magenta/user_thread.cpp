@@ -49,6 +49,7 @@ UserThread::UserThread(mxtl::RefPtr<ProcessDispatcher> process,
 // See UserThread::DispatcherClosed.
 
 void UserThread::set_dispatcher(ThreadDispatcher* dispatcher) {
+    AssertMagic();
     dispatcher_ = dispatcher;
     koid_ = dispatcher->get_koid();
  }
@@ -80,6 +81,7 @@ UserThread::~UserThread() {
 
 // complete initialization of the thread object outside of the constructor
 status_t UserThread::Initialize(const char* name, size_t len) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&state_lock_);
@@ -125,6 +127,7 @@ status_t UserThread::Initialize(const char* name, size_t len) {
 }
 
 status_t UserThread::set_name(const char* name, size_t len) {
+    AssertMagic();
     if (len >= MX_MAX_NAME_LEN)
         len = MX_MAX_NAME_LEN - 1;
 
@@ -135,6 +138,7 @@ status_t UserThread::set_name(const char* name, size_t len) {
 }
 
 void UserThread::get_name(char out_name[MX_MAX_NAME_LEN]) {
+    AssertMagic();
     AutoSpinLock lock(name_lock_);
     memcpy(out_name, thread_.name, MX_MAX_NAME_LEN);
 }
@@ -143,6 +147,7 @@ void UserThread::get_name(char out_name[MX_MAX_NAME_LEN]) {
 status_t UserThread::Start(uintptr_t entry, uintptr_t sp,
                            uintptr_t arg1, uintptr_t arg2,
                            bool initial_thread) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&state_lock_);
@@ -173,6 +178,7 @@ status_t UserThread::Start(uintptr_t entry, uintptr_t sp,
 
 // called in the context of our thread
 void UserThread::Exit() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     // only valid to call this on the current thread
@@ -194,6 +200,7 @@ void UserThread::Exit() {
 }
 
 void UserThread::Kill() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&state_lock_);
@@ -220,6 +227,7 @@ void UserThread::Kill() {
 }
 
 void UserThread::DispatcherClosed() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     dispatcher_ = nullptr;
     Kill();
@@ -235,6 +243,7 @@ static void ThreadCleanupDpc(dpc_t *d) {
 }
 
 void UserThread::Exiting() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     // signal any waiters
@@ -323,6 +332,7 @@ int UserThread::StartRoutine(void* arg) {
 }
 
 void UserThread::SetState(State state) {
+    AssertMagic();
     LTRACEF("thread %p: state %u (%s)\n", this, static_cast<unsigned int>(state), StateToString(state));
 
     DEBUG_ASSERT(state_lock_.IsHeld());
@@ -331,6 +341,7 @@ void UserThread::SetState(State state) {
 }
 
 status_t UserThread::SetExceptionPort(ThreadDispatcher* td, mxtl::RefPtr<ExceptionPort> eport) {
+    AssertMagic();
     DEBUG_ASSERT(eport->type() == ExceptionPort::Type::THREAD);
 
     // Lock both |state_lock_| and |exception_lock_| to ensure the thread
@@ -347,6 +358,7 @@ status_t UserThread::SetExceptionPort(ThreadDispatcher* td, mxtl::RefPtr<Excepti
 }
 
 bool UserThread::ResetExceptionPort(bool quietly) {
+    AssertMagic();
     mxtl::RefPtr<ExceptionPort> eport;
 
     // Remove the exception handler first. If the thread resumes execution
@@ -386,6 +398,7 @@ bool UserThread::ResetExceptionPort(bool quietly) {
 }
 
 mxtl::RefPtr<ExceptionPort> UserThread::exception_port() {
+    AssertMagic();
     AutoLock lock(&exception_lock_);
     return exception_port_;
 }
@@ -398,6 +411,7 @@ status_t UserThread::ExceptionHandlerExchange(
         const mx_exception_report_t* report,
         const arch_exception_context_t* arch_context,
         ExceptionStatus *out_estatus) TA_NO_THREAD_SAFETY_ANALYSIS {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&exception_wait_lock_);
 
@@ -455,6 +469,7 @@ status_t UserThread::ExceptionHandlerExchange(
 
 status_t UserThread::MarkExceptionHandled(ExceptionStatus estatus) {
     LTRACEF("%s: obj %p, estatus %d\n", __FUNC__, this, static_cast<int>(estatus));
+    AssertMagic();
     AutoLock lock(&exception_wait_lock_);
     if (!InExceptionLocked())
         return ERR_BAD_STATE;
@@ -465,6 +480,7 @@ status_t UserThread::MarkExceptionHandled(ExceptionStatus estatus) {
 }
 
 void UserThread::OnExceptionPortRemoval(const mxtl::RefPtr<ExceptionPort>& eport) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&exception_wait_lock_);
     if (!InExceptionLocked())
@@ -477,12 +493,14 @@ void UserThread::OnExceptionPortRemoval(const mxtl::RefPtr<ExceptionPort>& eport
 }
 
 bool UserThread::InExceptionLocked() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     DEBUG_ASSERT(exception_wait_lock_.IsHeld());
     return thread_stopped_in_exception(&thread_);
 }
 
 bool UserThread::InException(ExceptionPort::Type* type) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&exception_wait_lock_);
     if (!InExceptionLocked())
@@ -493,6 +511,7 @@ bool UserThread::InException(ExceptionPort::Type* type) {
 }
 
 status_t UserThread::GetExceptionReport(mx_exception_report_t* report) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&exception_wait_lock_);
     if (!InExceptionLocked())
@@ -509,6 +528,7 @@ uint32_t UserThread::get_num_state_kinds() const {
 // Note: buffer must be sufficiently aligned
 
 status_t UserThread::ReadState(uint32_t state_kind, void* buffer, uint32_t* buffer_len) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&exception_wait_lock_);
@@ -528,6 +548,7 @@ status_t UserThread::ReadState(uint32_t state_kind, void* buffer, uint32_t* buff
 // Note: buffer must be sufficiently aligned
 
 status_t UserThread::WriteState(uint32_t state_kind, const void* buffer, uint32_t buffer_len, bool priv) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
 
     AutoLock lock(&exception_wait_lock_);

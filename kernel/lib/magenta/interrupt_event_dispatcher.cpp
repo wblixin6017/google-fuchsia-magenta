@@ -77,12 +77,14 @@ InterruptEventDispatcher::~InterruptEventDispatcher() {
 }
 
 status_t InterruptEventDispatcher::InterruptComplete() {
+    AssertMagic();
     unsignal();
     unmask_interrupt(vector_);
     return NO_ERROR;
 }
 
 status_t InterruptEventDispatcher::UserSignal() {
+    AssertMagic();
     mask_interrupt(vector_);
     signal(true);
     return NO_ERROR;

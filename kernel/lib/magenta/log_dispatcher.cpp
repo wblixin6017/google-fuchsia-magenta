@@ -39,6 +39,7 @@ LogDispatcher::~LogDispatcher() {
 }
 
 void LogDispatcher::Signal() {
+    AssertMagic();
     AutoLock lock(&lock_);
     state_tracker_.UpdateState(0, MX_CHANNEL_READABLE);
 }
@@ -50,10 +51,12 @@ void LogDispatcher::Notify(void* cookie) {
 }
 
 status_t LogDispatcher::Write(uint32_t flags, const void* ptr, size_t len) {
+    AssertMagic();
     return dlog_write(flags_, ptr, len);
 }
 
 status_t LogDispatcher::Read(uint32_t flags, void* ptr, size_t len, size_t* actual) {
+    AssertMagic();
     if (!(flags_ & MX_LOG_FLAG_READABLE))
         return ERR_BAD_STATE;
 

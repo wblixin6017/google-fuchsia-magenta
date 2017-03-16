@@ -38,10 +38,12 @@ PortClient::PortClient(mxtl::RefPtr<PortDispatcher> port,
 PortClient::~PortClient() {}
 
 bool PortClient::Signal(mx_signals_t signals, const Mutex* mutex) {
+    AssertMagic();
     return Signal(signals, 0u, mutex);
 }
 
 bool PortClient::Signal(mx_signals_t signal, size_t count, const Mutex* mutex) {
+    AssertMagic();
     DEBUG_ASSERT(signal);
     DEBUG_ASSERT(mutex->IsHeld());
     if ((signal & signals_) == 0)

@@ -59,6 +59,7 @@ ExceptionPort::~ExceptionPort() {
 }
 
 void ExceptionPort::SetSystemTarget() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&lock_);
     DEBUG_ASSERT_MSG(type_ == Type::SYSTEM,
@@ -69,6 +70,7 @@ void ExceptionPort::SetSystemTarget() {
 }
 
 void ExceptionPort::SetTarget(const mxtl::RefPtr<ProcessDispatcher>& target) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&lock_);
     DEBUG_ASSERT_MSG(type_ == Type::DEBUGGER || type_ == Type::PROCESS,
@@ -80,6 +82,7 @@ void ExceptionPort::SetTarget(const mxtl::RefPtr<ProcessDispatcher>& target) {
 }
 
 void ExceptionPort::SetTarget(const mxtl::RefPtr<ThreadDispatcher>& target) {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     AutoLock lock(&lock_);
     DEBUG_ASSERT_MSG(type_ == Type::THREAD,
@@ -92,6 +95,7 @@ void ExceptionPort::SetTarget(const mxtl::RefPtr<ThreadDispatcher>& target) {
 
 // Called by PortDispatcher after unlinking us from its eport list.
 void ExceptionPort::OnPortZeroHandles() {
+    AssertMagic();
     // TODO(dje): Add a way to mark specific ports as unbinding quietly
     // when auto-unbinding.
     static const bool default_quietness = false;
@@ -153,6 +157,7 @@ void ExceptionPort::OnPortZeroHandles() {
 }
 
 void ExceptionPort::OnTargetUnbind() {
+    AssertMagic();
     LTRACE_ENTRY_OBJ;
     mxtl::RefPtr<PortDispatcher> port;
     {
@@ -184,6 +189,7 @@ void ExceptionPort::OnTargetUnbind() {
 }
 
 mx_status_t ExceptionPort::SendReport(const mx_exception_report_t* report) {
+    AssertMagic();
     AutoLock lock(&lock_);
     LTRACEF("%s, type %u, pid %" PRIu64 ", tid %" PRIu64 "\n",
             port_ == nullptr ? "Not sending exception report on unbound port"
@@ -203,6 +209,7 @@ mx_status_t ExceptionPort::SendReport(const mx_exception_report_t* report) {
 
 void ExceptionPort::BuildReport(mx_exception_report_t* report, uint32_t type,
                                 mx_koid_t pid, mx_koid_t tid) {
+    AssertMagic();
     memset(report, 0, sizeof(*report));
     report->header.size = sizeof(*report);
     report->header.type = type;
@@ -211,6 +218,7 @@ void ExceptionPort::BuildReport(mx_exception_report_t* report, uint32_t type,
 }
 
 void ExceptionPort::OnThreadStart(UserThread* thread) {
+    AssertMagic();
     mx_koid_t pid = thread->process()->get_koid();
     mx_koid_t tid = thread->get_koid();
     LTRACEF("thread %" PRIu64 ".%" PRIu64 " started\n", pid, tid);
@@ -234,6 +242,7 @@ void ExceptionPort::OnThreadStart(UserThread* thread) {
 // have a bound process or debugger exception export.
 
 void ExceptionPort::OnProcessExit(ProcessDispatcher* process) {
+    AssertMagic();
     mx_koid_t pid = process->get_koid();
     LTRACEF("process %" PRIu64 " gone\n", pid);
     mx_exception_report_t report;
@@ -246,6 +255,7 @@ void ExceptionPort::OnProcessExit(ProcessDispatcher* process) {
 // have a thread-specific exception handler.
 
 void ExceptionPort::OnThreadExit(UserThread* thread) {
+    AssertMagic();
     mx_koid_t pid = thread->process()->get_koid();
     mx_koid_t tid = thread->get_koid();
     LTRACEF("thread %" PRIu64 ".%" PRIu64 " gone\n", pid, tid);
@@ -259,6 +269,7 @@ void ExceptionPort::OnThreadExit(UserThread* thread) {
 // is attached.
 
 void ExceptionPort::OnThreadExitForDebugger(UserThread* thread) {
+    AssertMagic();
     mx_koid_t pid = thread->process()->get_koid();
     mx_koid_t tid = thread->get_koid();
     LTRACEF("thread %" PRIu64 ".%" PRIu64 " exited\n", pid, tid);

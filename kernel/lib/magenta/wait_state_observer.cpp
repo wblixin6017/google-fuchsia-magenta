@@ -20,6 +20,7 @@ WaitStateObserver::~WaitStateObserver() {
 mx_status_t WaitStateObserver::Begin(WaitEvent* event,
                                      Handle* handle,
                                      mx_signals_t watched_signals) {
+    AssertMagic();
     DEBUG_ASSERT(!dispatcher_);
 
     event_ = event;
@@ -37,6 +38,7 @@ mx_status_t WaitStateObserver::Begin(WaitEvent* event,
 }
 
 mx_signals_t WaitStateObserver::End() {
+    AssertMagic();
     DEBUG_ASSERT(dispatcher_);
 
     auto tracker = dispatcher_->get_state_tracker();
@@ -52,6 +54,7 @@ mx_signals_t WaitStateObserver::End() {
 
 bool WaitStateObserver::OnInitialize(mx_signals_t initial_state,
                                      const StateObserver::CountInfo* cinfo) {
+    AssertMagic();
     // Record the initial state of the state tracker as our wakeup reason.  If
     // we are going to become immediately signaled, the reason is contained
     // somewhere in this initial state.
@@ -64,6 +67,7 @@ bool WaitStateObserver::OnInitialize(mx_signals_t initial_state,
 }
 
 bool WaitStateObserver::OnStateChange(mx_signals_t new_state) {
+    AssertMagic();
     // If we are still on our StateTracker's list of observers, and the
     // StateTracker's state has changed, accumulate the reasons that we may have
     // woken up.  In particular any satisfied bits which have become set
@@ -77,6 +81,7 @@ bool WaitStateObserver::OnStateChange(mx_signals_t new_state) {
 }
 
 bool WaitStateObserver::OnCancel(Handle* handle) {
+    AssertMagic();
     if (handle == handle_) {
         wakeup_reasons_ |= MX_SIGNAL_HANDLE_CLOSED;
         return event_->Signal(ERR_CANCELED) > 0;
