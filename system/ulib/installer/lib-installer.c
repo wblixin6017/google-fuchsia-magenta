@@ -26,9 +26,9 @@ mx_status_t find_partition_entries(gpt_partition_t** gpt_table,
                                    const uint8_t* guid,
                                    uint16_t table_size,
                                    uint16_t* part_id_out) {
-    DEBUG_ASSERT(gpt_table != NULL);
-    DEBUG_ASSERT(guid != NULL);
-    DEBUG_ASSERT(part_id_out != NULL);
+    MX_DEBUG_ASSERT(gpt_table != NULL);
+    MX_DEBUG_ASSERT(guid != NULL);
+    MX_DEBUG_ASSERT(part_id_out != NULL);
 
     for (uint16_t idx = 0; idx < table_size && gpt_table[idx] != NULL; idx++) {
         uint8_t* type_ptr = gpt_table[idx]->type;
@@ -48,9 +48,9 @@ bool check_partition_size(const gpt_partition_t* partition,
                           const uint64_t min_size,
                           const uint64_t block_size,
                           const char* partition_name) {
-    DEBUG_ASSERT(partition != NULL);
-    DEBUG_ASSERT(partition->last >= partition->first);
-    DEBUG_ASSERT(partition->name != NULL);
+    MX_DEBUG_ASSERT(partition != NULL);
+    MX_DEBUG_ASSERT(partition->last >= partition->first);
+    MX_DEBUG_ASSERT(partition->name != NULL);
 
     uint64_t block_count = partition->last - partition->first + 1;
     uint64_t partition_size =
@@ -110,7 +110,7 @@ mx_status_t find_partition(gpt_partition_t** gpt_table,
                 break;
             case NO_ERROR:
                 partition = gpt_table[*part_index_out];
-                DEBUG_ASSERT(partition->last >= partition->first);
+                MX_DEBUG_ASSERT(partition->last >= partition->first);
 
                 if (check_partition_size(partition, min_size, block_size,
                                          part_name)) {
@@ -192,8 +192,8 @@ gpt_partition_t** sort_partitions(gpt_partition_t** parts, uint16_t count) {
 void find_available_space(gpt_device_t* device, size_t blocks_req,
                           size_t block_count, size_t block_size,
                           part_location_t* result_out) {
-    DEBUG_ASSERT(result_out != NULL);
-    DEBUG_ASSERT(device != NULL);
+    MX_DEBUG_ASSERT(result_out != NULL);
+    MX_DEBUG_ASSERT(device != NULL);
 
     gpt_partition_t** sorted_parts;
     // 17K is reserved at the front and back of the disk for the protected MBR

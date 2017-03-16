@@ -83,7 +83,7 @@ static const uint8_t guid_efi_part[GPT_GUID_LEN] = GUID_EFI_VALUE;
  */
 static ssize_t get_next_file_path(
     DIR* dfd, size_t max_name_len, char* name_out) {
-    DEBUG_ASSERT(name_out != NULL);
+    MX_DEBUG_ASSERT(name_out != NULL);
     struct dirent* entry;
 
     // skip and '.' or '..' entries
@@ -96,7 +96,7 @@ static ssize_t get_next_file_path(
         size_t len_d_name = strlen(entry->d_name);
         ssize_t overrun = len_d_name - max_name_len + 1;
         if (overrun > 0) {
-            ASSERT(overrun <= SSIZE_MAX);
+            MX_ASSERT(overrun <= SSIZE_MAX);
             return overrun;
         } else {
             // copy the string, including the null terminator
@@ -107,7 +107,7 @@ static ssize_t get_next_file_path(
 }
 
 static uint16_t count_partitions(gpt_device_t* device) {
-    DEBUG_ASSERT(device != NULL);
+    MX_DEBUG_ASSERT(device != NULL);
 
     if (device == NULL) {
         return 0;
@@ -138,7 +138,7 @@ static int open_device_ro(const char* dev_path) {
  * returned.
  */
 static gpt_device_t* read_gpt(int fd, uint64_t* blocksize_out) {
-    DEBUG_ASSERT(blocksize_out != NULL);
+    MX_DEBUG_ASSERT(blocksize_out != NULL);
     ssize_t rc = ioctl_block_get_blocksize(fd, blocksize_out);
     if (rc < 0) {
         fprintf(stderr, "error getting block size, ioctl result code: %zd\n",
@@ -279,8 +279,8 @@ static partition_flags find_install_partitions(gpt_device_t* gpt_data,
                                                partition_flags part_flags,
                                                size_t max_path_len,
                                                char* part_paths_out[]) {
-    DEBUG_ASSERT(gpt_data != NULL);
-    DEBUG_ASSERT(gpt_data->valid);
+    MX_DEBUG_ASSERT(gpt_data != NULL);
+    MX_DEBUG_ASSERT(gpt_data->valid);
     static_assert(NUM_INSTALL_PARTS == 2,
                   "Install partition count is unexpected, expected 2.");
 
@@ -1317,7 +1317,7 @@ static bool ask_for_space(void) {
     DIR* dev_dir;
     char dev_path[PATH_MAX] = PATH_BLOCKDEVS;
     size_t base_len = strlen(dev_path);
-    DEBUG_ASSERT(base_len > 0);
+    MX_DEBUG_ASSERT(base_len > 0);
     dev_path[base_len] = '/';
     dev_path[++base_len] = '\0';
 
