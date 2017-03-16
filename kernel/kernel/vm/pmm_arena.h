@@ -20,6 +20,7 @@ public:
 
     // set up the per page structures, allocated out of the boot time allocator
     void BootAllocArray();
+    void EnforceFill();
 
     void Dump(bool dump_pages);
 
@@ -63,6 +64,7 @@ public:
 
 private:
     const pmm_arena_info_t* info_ = nullptr;
+    bool enforce_fill_ = false;
 
     vm_page_t* page_array_ = nullptr;
 
