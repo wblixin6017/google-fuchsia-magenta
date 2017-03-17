@@ -769,6 +769,14 @@ void *cmpct_alloc(size_t size)
     void *result =
         create_allocation_header(head, 0, head->header.size, head->header.left);
 #ifdef CMPCT_DEBUG
+    for (size_t i = 16; i < size; ++i) {
+        uint8_t byte = ((uint8_t*)result)[i];
+        if (byte != FREE_FILL) {
+            printf("fill was %02x, offset %lu\n", byte, i);
+            hexdump8(result, size);
+            while (1);
+        }
+    }
     memset(result, ALLOC_FILL, size);
     memset(((char *)result) + size, PADDING_FILL, rounded_up - size - sizeof(header_t));
 #endif
@@ -882,6 +890,7 @@ static ssize_t heap_grow(size_t size, free_t **bucket)
         return ERR_NO_MEMORY;
 
     theheap.size += size;
+    memset(ptr, FREE_FILL, size);
 
     LTRACEF("growing heap by 0x%zx bytes, new ptr %p\n", size, ptr);
     add_to_heap(ptr, size, bucket);
