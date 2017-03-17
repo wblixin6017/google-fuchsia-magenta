@@ -187,9 +187,9 @@ __UNUSED static const struct timer_reg_procs cntps_procs = {
 };
 
 #if (TIMER_ARM_GENERIC_SELECTED == CNTV)
-static const struct timer_reg_procs* reg_procs = &cntv_procs;
+static volatile const struct timer_reg_procs* reg_procs = &cntv_procs;
 #else
-static const struct timer_reg_procs* reg_procs = &cntp_procs;
+static volatile const struct timer_reg_procs* reg_procs = &cntp_procs;
 #endif
 
 static inline void write_ctl(uint32_t val) {
