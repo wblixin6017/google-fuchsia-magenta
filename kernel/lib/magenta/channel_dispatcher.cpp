@@ -270,6 +270,8 @@ status_t ChannelDispatcher::Call(mxtl::unique_ptr<MessagePacket> msg,
             waiters_.erase(waiter);
     }
 
+    DEBUG_ASSERT(!waiter.InContainer());
+
     return status;
 }
 
