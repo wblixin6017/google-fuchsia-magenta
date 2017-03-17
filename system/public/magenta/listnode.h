@@ -29,6 +29,12 @@ static inline void list_initialize(list_node_t* list) {
 }
 
 static inline void list_clear_node(list_node_t* item) {
+    if (item->prev == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
+    if (item->next == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
     item->prev = item->next = 0;
 }
 
@@ -58,8 +64,20 @@ static inline void list_add_tail(list_node_t* list, list_node_t* item) {
 #define list_add_before(entry, new_entry) list_add_tail(entry, new_entry)
 
 static inline void list_delete(list_node_t* item) {
+    if (item->next->prev == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
+    if (item->prev->next == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
     item->next->prev = item->prev;
     item->prev->next = item->next;
+    if (item->prev == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
+    if (item->next == (list_node_t*)0x7777777777777777ul) {
+        __builtin_trap();
+    }
     item->prev = item->next = 0;
 }
 

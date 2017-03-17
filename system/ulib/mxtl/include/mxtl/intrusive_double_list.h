@@ -510,6 +510,9 @@ private:
                        : PtrTraits::IsSentinel(before) ? NodeTraits::node_state(*tail()).next_
                                                        : NodeTraits::node_state(*tgt_prev).next_;
 
+        DEBUG_ASSERT((uintptr_t)tgt_prev != (uintptr_t)0x7777777777777777ul);
+        DEBUG_ASSERT((uintptr_t)PtrTraits::GetRaw(tgt_next) != (uintptr_t)0x7777777777777777ul);
+        DEBUG_ASSERT((uintptr_t)PtrTraits::GetRaw(ptr) != (uintptr_t)0x7777777777777777ul);
         // Update the prev pointers.
         ptr_ns.prev_ = tgt_prev;
         tgt_prev     = PtrTraits::GetRaw(ptr);
@@ -525,6 +528,8 @@ private:
 
         auto& node_ns = NodeTraits::node_state(*node);
         DEBUG_ASSERT((node_ns.prev_ != nullptr) && (node_ns.next_ != nullptr));
+        DEBUG_ASSERT(((uintptr_t)node_ns.prev_ != (uintptr_t)0x7777777777777777ul) &&
+                     ((uintptr_t)PtrTraits::GetRaw(node_ns.next_) != (uintptr_t)0x7777777777777777ul));
 
         // Find the prev pointer we need to update.  If we are removing the tail
         // of the list, the prev pointer is head_'s prev pointer.  Otherwise, it
@@ -544,7 +549,9 @@ private:
         node_ns.prev_ = nullptr;
 
         PtrTraits::Swap(tgt_next, node_ns.next_);
-        return PtrTraits::Take(node_ns.next_);
+        PtrType foo = PtrTraits::Take(node_ns.next_);
+        DEBUG_ASSERT((uintptr_t)PtrTraits::GetRaw(foo) != (uintptr_t)0x7777777777777777ul);
+        return foo;
     }
 
     RawPtrType tail() const {

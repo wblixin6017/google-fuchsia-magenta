@@ -193,6 +193,7 @@ status_t ChannelDispatcher::Read(uint32_t* msg_size,
         rv = ERR_BUFFER_TOO_SMALL;
     }
 
+    DEBUG_ASSERT(&messages_.front() != (MessagePacket*)0x7777777777777777ull);
     *msg = messages_.pop_front();
 
     if (messages_.is_empty())

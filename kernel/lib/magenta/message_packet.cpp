@@ -10,6 +10,7 @@
 #include <magenta/handle_reaper.h>
 #include <magenta/magenta.h>
 #include <magenta/message_packet.h>
+#include <trace.h>
 
 constexpr uint32_t kMaxMessageSize = 65536u;
 constexpr uint32_t kMaxMessageHandles = 1024u;
@@ -35,10 +36,12 @@ mx_status_t MessagePacket::Create(uint32_t data_size, uint32_t num_handles,
     // fill these arrays immediately after creation of the object.
     msg->reset(new (ptr) MessagePacket(data_size, num_handles,
                                        reinterpret_cast<Handle**>(ptr + sizeof(MessagePacket))));
+    DEBUG_ASSERT(msg->get() != (MessagePacket*)0x7777777777777777ull);
     return NO_ERROR;
 }
 
 MessagePacket::~MessagePacket() {
+    DEBUG_ASSERT(this != (MessagePacket*)0x7777777777777777ull);
     if (owns_handles_) {
         // Delete handles out-of-band to avoid the worst case recursive
         // destruction behavior.

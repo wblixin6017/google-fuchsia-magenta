@@ -25,6 +25,7 @@ public:
     explicit unique_ptr(T* t) : ptr_(t) { }
 
     ~unique_ptr() {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         recycle(ptr_);
     }
 
@@ -57,30 +58,39 @@ public:
     T* release() {
         T* t = ptr_;
         ptr_ = nullptr;
+        DEBUG_ASSERT((uintptr_t)t != (uintptr_t)0x7777777777777777ul);
         return t;
     }
     void reset(T* t = nullptr) {
         recycle(ptr_);
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         ptr_ = t;
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
     }
     void swap(unique_ptr& other) {
         T* t = ptr_;
         ptr_ = other.ptr_;
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         other.ptr_ = t;
+        DEBUG_ASSERT((uintptr_t)t != (uintptr_t)0x7777777777777777ul);
     }
 
     T* get() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return ptr_;
     }
 
     explicit operator bool() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return static_cast<bool>(ptr_);
     }
 
     T& operator*() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return *ptr_;
     }
     T* operator->() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return ptr_;
     }
 
@@ -137,6 +147,7 @@ public:
     unique_ptr(unique_ptr&& other) : ptr_(other.release()) {}
 
     ~unique_ptr() {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         enum { type_must_be_complete = sizeof(T) };
         if (ptr_) delete[] ptr_;
     }
@@ -163,28 +174,36 @@ public:
 
     T* release() {
         T* t = ptr_;
+        DEBUG_ASSERT((uintptr_t)t != (uintptr_t)0x7777777777777777ul);
         ptr_ = nullptr;
         return t;
     }
     void reset(T* t = nullptr) {
         enum { type_must_be_complete = sizeof(T) };
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         if (ptr_) delete[] ptr_;
         ptr_ = t;
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
     }
     void swap(unique_ptr& other) {
         T* t = ptr_;
         ptr_ = other.ptr_;
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
+        DEBUG_ASSERT((uintptr_t)t != (uintptr_t)0x7777777777777777ul);
         other.ptr_ = t;
     }
 
     T* get() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return ptr_;
     }
 
     explicit operator bool() const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return static_cast<bool>(ptr_);
     }
     T& operator[](size_t i) const {
+        DEBUG_ASSERT((uintptr_t)ptr_ != (uintptr_t)0x7777777777777777ul);
         return ptr_[i];
     }
 

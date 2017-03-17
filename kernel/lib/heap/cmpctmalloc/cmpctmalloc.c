@@ -785,6 +785,7 @@ void *cmpct_alloc(size_t size)
     memset(((char *)result) + size, PADDING_FILL, rounded_up - size - sizeof(header_t));
 #endif
     unlock();
+    //printf("Allocating [%p, %p) (sz %#lx) (c %p, cc %p)\n", result, result + size, size, __builtin_return_address(0), __builtin_return_address(1));
     return result;
 }
 
@@ -823,6 +824,7 @@ void cmpct_free(void *payload)
     header_t *header = (header_t *)payload - 1;
     DEBUG_ASSERT(!is_tagged_as_free(header));  // Double free!
     size_t size = header->size;
+    //printf("Freeing [%p, %p) (sz %#lx) (c %p, cc %p)\n", payload, payload + size, size, __builtin_return_address(0), __builtin_return_address(1));
     lock();
     header_t *left = header->left;
     if (left != NULL && is_tagged_as_free(left)) {
