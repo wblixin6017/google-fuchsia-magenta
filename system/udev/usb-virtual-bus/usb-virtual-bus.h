@@ -13,6 +13,7 @@ typedef enum {
     USB_VIRT_DISCONNECT,
     // Sent from either side to simulate packet send
     USB_VIRT_PACKET,
+    USB_VIRT_PACKET_RESP,
 
 } usb_virt_channel_cmd_t;
 
@@ -22,7 +23,12 @@ typedef enum {
 typedef struct {
     usb_virt_channel_cmd_t  cmd;
     // endpoint address for USB_VIRT_PACKET
+    size_t                  data_length;
+    mx_status_t             status;
+    uintptr_t               cookie;
     uint8_t                 ep_addr;
+    uint8_t                 padding[3]; // align data to 4 byte boundary
+    uint8_t                 data[0];    // variable length packet data
 } usb_virt_header_t;
 
 mx_handle_t usb_virt_get_host_channel(void);

@@ -135,18 +135,28 @@ static void usb_virtual_hci_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
         char    buffer[USB_VIRT_BUFFER_SIZE];
         usb_virt_header_t* header = (usb_virt_header_t *)buffer;
         header->cmd = USB_VIRT_PACKET;
+        header->cookie = (uintptr_t)txn;
         header->ep_addr = data->ep_address;
 
         if (data->ep_address == 0) {
-            memcpy(buffer + sizeof(*header), &data->setup, sizeof(data->setup));
-            txn->ops->copyfrom(txn, buffer + sizeof(usb_virt_channel_cmd_t) + sizeof(data->setup), txn->length, 0);
-            mx_channel_write(hci->channel_handle, 0, buffer, txn->length + sizeof(usb_virt_channel_cmd_t) + sizeof(data->setup),
-                             NULL, 0);
+            usb_setup_t* setup = (usb_setup_t *)header->data;
+            memcpy(setup, &data->setup, sizeof(usb_setup_t));
+            
+printf("sending type: 0x%02X req: %d value: %d index: %d length: %d\n",
+            setup->bmRequestType, setup->bRequest, le16toh(setup->wValue), le16toh(setup->wIndex), le16toh(setup->wLength));
+            
+            header->data_length = sizeof(usb_setup_t);
+            if (txn->length > 0 && (setup->bmRequestType & USB_DIR_MASK) == USB_DIR_OUT) {
+                header->data_length += txn->length;    
+                txn->ops->copyfrom(txn, &header->data[sizeof(usb_setup_t)], txn->length, 0);
+            }
         } else {
-            txn->ops->copyfrom(txn, buffer + sizeof(usb_virt_channel_cmd_t), txn->length, 0);
-            mx_channel_write(hci->channel_handle, 0, buffer, txn->length + sizeof(usb_virt_channel_cmd_t),
-                             NULL, 0);
+            // FIXME only for out direction
+            header->data_length = txn->length;
+            txn->ops->copyfrom(txn, header->data, txn->length, 0);
         }
+        mx_channel_write(hci->channel_handle, 0, buffer, sizeof(usb_virt_header_t) + header->data_length,
+                         NULL, 0);
     }
 }
 
@@ -202,7 +212,6 @@ printf("channel_thread\n");
         uint32_t actual;
         
         mx_status_t status = mx_object_wait_one(hci->channel_handle, MX_CHANNEL_READABLE, MX_TIME_INFINITE, NULL);
-printf("mx_object_wait_one returned %d\n", status);
         status = mx_channel_read(hci->channel_handle, 0, buffer, sizeof(buffer),
                                              &actual, NULL, 0, NULL);
         if (status != NO_ERROR) {
@@ -222,6 +231,16 @@ printf("mx_object_wait_one returned %d\n", status);
         case USB_VIRT_PACKET:
 printf("HCI: USB_VIRT_PACKET\n");
             break;
+        case USB_VIRT_PACKET_RESP: {
+printf("HCI: USB_VIRT_PACKET_RESP status %d length %zu\n", header->status, header->data_length);
+            iotxn_t* txn = (iotxn_t *)header->cookie;
+            if (header->data_length > 0) {
+printf("copyto header %p data %p length %zu\n", header, header->data, header->data_length);
+                txn->ops->copyto(txn, header->data, header->data_length, 0);
+            }
+            txn->ops->complete(txn, header->status, header->data_length);
+            break;
+        }
         default:
             printf("channel_thread bad command %d\n", header->cmd);
             break;

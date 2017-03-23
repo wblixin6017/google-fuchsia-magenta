@@ -26,13 +26,46 @@ typedef struct usb_virtual_client {
 } usb_virtual_client_t;
 #define dev_to_usb_virtual_client(dev) containerof(dev, usb_virtual_client_t, device)
 
-static void handle_packet(usb_virtual_client_t* client, uint8_t ep_addr, void* data, size_t length) {
-    if (ep_addr == 0 && length >= sizeof(usb_setup_t)) {
+static void handle_packet(usb_virtual_client_t* client, usb_virt_header_t* header) {
+printf("handle_packet length %zu\n", header->data_length);
+        char    response_buffer[USB_VIRT_BUFFER_SIZE];
+        usb_virt_header_t* response = (usb_virt_header_t *)response_buffer;
+
+    if (header->ep_addr == 0 && header->data_length >= sizeof(usb_setup_t)) {
+        mx_status_t status;
+
         if (client->callbacks) {
-            usb_setup_t* setup = (usb_setup_t *)data;
-            length -= sizeof(*setup);
-            client->callbacks->control(setup, (length > 0 ? setup + 1 : NULL), length, client->callbacks_cookie);
+            usb_setup_t* setup = (usb_setup_t *)header->data;
+
+    printf("handle_packet type: 0x%02X req: %d value: %d index: %d length: %d\n",
+            setup->bmRequestType, setup->bRequest, le16toh(setup->wValue), le16toh(setup->wIndex), le16toh(setup->wLength));
+            
+            void* buffer;
+            size_t length;
+            if ((setup->bmRequestType & USB_DIR_MASK) == USB_DIR_IN) {
+                buffer = response->data;
+                length = sizeof(response_buffer) - sizeof(usb_virt_header_t);
+            } else {
+                buffer = setup + 1;
+                length = header->data_length - sizeof(*setup);
+            }
+            status = client->callbacks->control(setup, buffer, length, client->callbacks_cookie);
+            printf("control returned %d\n", status);
+        } else {
+            status = ERR_UNAVAILABLE;
         }
+
+        // send response
+        printf("status %d write response\n", status);
+        response->cmd = USB_VIRT_PACKET_RESP;
+        response->cookie = header->cookie;
+        response->status = (status > 0 ? NO_ERROR : status);
+        response->data_length = (status < 0 ? 0 : status);
+        size_t packet_length = sizeof(usb_virt_header_t);
+        if (status > 0) packet_length += status;
+        mx_channel_write(client->channel_handle, 0, response, packet_length, NULL, 0);
+    } else {
+        printf("non ep0 not supported yet\n");
     }
 }
 
@@ -127,7 +160,7 @@ printf("mx_object_wait_one returned %d\n", status);
         switch (header->cmd) {
         case USB_VIRT_PACKET:
 printf("client got packet\n");
-            handle_packet(client, header->ep_addr, header + 1, actual - sizeof(*header));
+            handle_packet(client, header);
             break;
         default:
             printf("usb_virtual_client_thread bad command %d\n", header->cmd);
