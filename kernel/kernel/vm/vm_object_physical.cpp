@@ -121,3 +121,35 @@ status_t VmObjectPhysical::LookupUser(uint64_t offset, uint64_t len, user_ptr<pa
 
     return NO_ERROR;
 }
+
+status_t VmObjectPhysical::GetMappingCachePolicy(uint32_t* cache_policy) {
+    AutoLock l(&lock_);
+
+    if (!cache_policy) {
+        return ERR_INVALID_ARGS;
+    }
+
+    *cache_policy = mapping_cache_flags_;
+    return NO_ERROR;
+}
+
+status_t VmObjectPhysical::SetMappingCachePolicy(const uint32_t cache_policy) {
+    AutoLock l(&lock_);
+
+    if (mapping_cache_flags_set_) {
+        return ERR_ACCESS_DENIED;
+    }
+
+    if (cache_policy & ~ARCH_MMU_FLAG_CACHE_MASK) {
+        return ERR_INVALID_ARGS;
+    }
+
+    // If this VMO is mapped already it is not safe to allow its caching policy to change
+    if (!mapping_list_.is_empty()) {
+        return ERR_BAD_STATE;
+    }
+
+    mapping_cache_flags_ = cache_policy;
+    mapping_cache_flags_set_ = true;
+    return NO_ERROR;
+}

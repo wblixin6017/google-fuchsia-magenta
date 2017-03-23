@@ -110,6 +110,14 @@ public:
         return ERR_NOT_SUPPORTED;
     }
 
+    virtual status_t GetMappingCachePolicy(uint32_t* cache_policy) {
+        return ERR_NOT_SUPPORTED;
+    }
+
+    virtual status_t SetMappingCachePolicy(const uint32_t cache_policy) {
+        return ERR_NOT_SUPPORTED;
+    }
+
     // create a copy-on-write clone vmo at the page-aligned offset and length
     // note: it's okay to start or extend past the size of the parent
     virtual status_t CloneCOW(uint64_t offset, uint64_t size, mxtl::RefPtr<VmObject>* clone_vmo) {
@@ -210,7 +218,7 @@ public:
     status_t CleanInvalidateCache(const uint64_t offset, const uint64_t len) override;
     status_t SyncCache(const uint64_t offset, const uint64_t len) override;
 
-    status_t GetPageLocked(uint64_t offset, uint pf_flags, vm_page_t **, paddr_t *) override;
+    status_t GetPageLocked(uint64_t offset, uint pf_flags, vm_page_t**, paddr_t*) override;
 
     status_t CloneCOW(uint64_t offset, uint64_t size,
                           mxtl::RefPtr<VmObject>* clone_vmo) override;
@@ -272,7 +280,10 @@ public:
 
     void Dump(uint depth, bool verbose) override;
 
-    status_t GetPageLocked(uint64_t offset, uint pf_flags, vm_page_t **, paddr_t* pa) override;
+    status_t GetPageLocked(uint64_t offset, uint pf_flags, vm_page_t**, paddr_t* pa) override;
+
+    status_t GetMappingCachePolicy(uint32_t* cache_policy) override;
+    status_t SetMappingCachePolicy(uint32_t cache_policy) override;
 
 private:
     // private constructor (use Create())
@@ -287,4 +298,6 @@ private:
     // members
     const uint64_t size_ = 0;
     const paddr_t base_ = 0;
+    uint32_t mapping_cache_flags_ = 0;
+    bool mapping_cache_flags_set_ = false;
 };

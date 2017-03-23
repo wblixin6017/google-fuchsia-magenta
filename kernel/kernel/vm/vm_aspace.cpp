@@ -10,14 +10,14 @@
 #include <assert.h>
 #include <err.h>
 #include <inttypes.h>
-#include <lib/crypto/global_prng.h>
-#include <lib/crypto/prng.h>
 #include <kernel/auto_lock.h>
 #include <kernel/cmdline.h>
 #include <kernel/thread.h>
 #include <kernel/vm.h>
-#include <kernel/vm/vm_object.h>
 #include <kernel/vm/vm_address_region.h>
+#include <kernel/vm/vm_object.h>
+#include <lib/crypto/global_prng.h>
+#include <lib/crypto/prng.h>
 #include <mxtl/auto_call.h>
 #include <mxtl/intrusive_double_list.h>
 #include <mxtl/type_support.h>
@@ -371,7 +371,6 @@ status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, uint
     DEBUG_ASSERT(magic_ == MAGIC);
     LTRACEF("aspace %p name '%s' size %#zx ptr %p paddr %#" PRIxPTR " vmm_flags 0x%x arch_mmu_flags 0x%x\n",
             this, name, size, ptr ? *ptr : 0, paddr, vmm_flags, arch_mmu_flags);
-
     DEBUG_ASSERT(IS_PAGE_ALIGNED(paddr));
 
     if (size == 0)
@@ -389,6 +388,12 @@ status_t VmAspace::AllocPhysical(const char* name, size_t size, void** ptr, uint
     // force it to be mapped up front
     // TODO: add new flag to precisely mean pre-map
     vmm_flags |= VMM_FLAG_COMMIT;
+
+    // Lock the cache policy into the VMO.
+    uint32_t vmo_cache_flags = arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK;
+    arch_mmu_flags &= ~ARCH_MMU_FLAG_CACHE_MASK;
+    if (vmo->SetMappingCachePolicy(vmo_cache_flags) != NO_ERROR)
+        return ERR_INVALID_ARGS;
 
     return MapObject(mxtl::move(vmo), name, 0, size, ptr, align_pow2, min_alloc_gap, vmm_flags,
                      arch_mmu_flags);
