@@ -23,13 +23,19 @@ VMO using [vmar_map](../syscalls/vmar_map.md). Pages can be commited and decommi
 [vmo_op_range](../syscalls/vmo_op_range.md) with the *MX_VMO_OP_COMMIT* and *MX_VMO_OP_DECOMMIT*
 operations, but this should be considered a low level operation. [vmo_op_range](../syscalls/vmo_op_range.md) can also be used for cache and locking operations against pages a VMO holds.
 
+Processes with special purpose use cases involving cache policy can use
+[vmo_set_cache_policy](../syscalls/vmo_set_cache_policy.md) to change the policy of a given VMO.
+This use case typically applies to device drivers.
+
 ## SEE ALSO
 
 [vmo_create](../syscalls/vmo_create.md),
 [vmo_op_range](../syscalls/vmo_op_range.md),
+[vmo_set_cache_policy](../syscalls/vmo_set_cache_policy.md)
 [vmo_get_size](../syscalls/vmo_get_size.md),
 [vmo_set_size](../syscalls/vmo_set_size.md),
 [vmo_read](../syscalls/vmo_read.md),
 [vmo_write](../syscalls/vmo_write.md),
 [vmar_map](../syscalls/vmar_map.md),
 [vmar_unmap](../syscalls/vmar_unmap.md).
+

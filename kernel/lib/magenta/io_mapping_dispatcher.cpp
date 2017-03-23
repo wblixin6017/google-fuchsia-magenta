@@ -65,6 +65,7 @@ status_t IoMappingDispatcher::Init(const char* dbg_name,
                                    paddr_t paddr, size_t size,
                                    uint vmm_flags, uint arch_mmu_flags) {
     DEBUG_ASSERT(closed());
+    uint vmo_cache_flags = arch_mmu_flags & ARCH_MMU_FLAG_CACHE_MASK;
 
     // TODO(teisenbe): Remove vmm_flags
     DEBUG_ASSERT(!vmm_flags);
@@ -84,7 +85,11 @@ status_t IoMappingDispatcher::Init(const char* dbg_name,
         return ERR_NO_MEMORY;
 
     paddr_ = paddr;
-    size_  = size;
+    size_ = size;
+
+    arch_mmu_flags &= ~ARCH_MMU_FLAG_CACHE_MASK;
+    if (vmo->SetMappingCachePolicy(vmo_cache_flags) != NO_ERROR)
+        return ERR_INVALID_ARGS;
 
     auto root_vmar = aspace_->RootVmar();
     status_t res = root_vmar->CreateVmMapping(0, size, PAGE_SIZE_SHIFT, 0,

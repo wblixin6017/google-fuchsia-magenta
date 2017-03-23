@@ -158,3 +158,26 @@ mx_status_t sys_vmo_op_range(mx_handle_t handle, uint32_t op, uint64_t offset, u
 
     return vmo->RangeOp(op, offset, size, _buffer, buffer_size);
 }
+
+mx_status_t sys_vmo_set_cache_policy(mx_handle_t handle, uint32_t cache_policy) {
+    mxtl::RefPtr<VmObjectDispatcher> vmo;
+    mx_status_t status = NO_ERROR;
+    auto up = ProcessDispatcher::GetCurrent();
+    Handle* source = up->GetHandleLocked(handle);
+
+    // lookup the dispatcher from handle
+    status = up->GetDispatcher(handle, &vmo);
+    if (status != NO_ERROR) {
+        return status;
+    }
+
+    if (!magenta_rights_check(source, MX_RIGHT_MAP)) {
+        return ERR_ACCESS_DENIED;
+    }
+
+    if (cache_policy & ~MX_CACHE_POLICY_MASK) {
+        return ERR_INVALID_ARGS;
+    }
+
+    return vmo->SetMappingCachePolicy(cache_policy);
+}

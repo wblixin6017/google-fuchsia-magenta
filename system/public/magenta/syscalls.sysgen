@@ -332,6 +332,10 @@ syscall vmo_op_range
         buffer: any[buffer_size] INOUT, buffer_size: size_t)
     returns (mx_status_t);
 
+syscall vmo_set_cache_policy
+    (handle: mx_handle_t, cache_policy: uint32_t)
+    returns (mx_status_t);
+
 # Address space management
 
 syscall vmar_allocate
