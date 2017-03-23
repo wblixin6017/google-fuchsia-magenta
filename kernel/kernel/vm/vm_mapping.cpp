@@ -87,7 +87,6 @@ status_t VmMapping::Protect(vaddr_t base, size_t size, uint new_arch_mmu_flags) 
     return ProtectLocked(base, size, new_arch_mmu_flags);
 }
 
-
 status_t VmMapping::ProtectLocked(vaddr_t base, size_t size, uint new_arch_mmu_flags) {
     DEBUG_ASSERT(is_mutex_held(aspace_->lock()));
     DEBUG_ASSERT(size != 0 && IS_PAGE_ALIGNED(base) && IS_PAGE_ALIGNED(size));
@@ -514,7 +513,7 @@ status_t VmMapping::PageFault(vaddr_t va, const uint pf_flags) {
 
     // fault in or grab an existing page
     paddr_t new_pa;
-    vm_page_t *page;
+    vm_page_t* page;
     status_t status = object_->GetPageLocked(vmo_offset, pf_flags, &page, &new_pa);
     if (status < 0) {
         TRACEF("ERROR: failed to fault in or grab existing page\n");

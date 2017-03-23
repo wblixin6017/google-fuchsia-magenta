@@ -114,3 +114,10 @@ mx_status_t VmObjectDispatcher::RangeOp(uint32_t op, uint64_t offset, uint64_t s
             return ERR_INVALID_ARGS;
     }
 }
+
+mx_status_t VmObjectDispatcher::SetMappingCachePolicy(uint32_t cache_policy) {
+    // Userspace can only set a VMO's cache policy if it has not been set yet
+    return vmo_->SetMappingCachePolicy(cache_policy);
+}
+
+
