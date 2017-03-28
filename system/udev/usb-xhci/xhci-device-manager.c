@@ -310,27 +310,30 @@ static bool xhci_stop_endpoint(xhci_t* xhci, uint32_t slot_id, int ep_index) {
         printf("TRB_CMD_STOP_ENDPOINT failed cc: %d\n", cc);
     }
 
-    list_node_t list;
-    list_initialize(&list);
-    list_node_t* node;
+    list_node_t pending_copy;
+    list_node_t queued_copy;
+    list_initialize(&pending_copy);
+    list_initialize(&queued_copy);
 
     mtx_lock(&ep->lock);
 
-    // copy pending requests to a different list so we can complete them outside of the mutex
-    while ((node = list_remove_head(&ep->pending_requests)) != NULL) {
-        list_add_tail(&list, node);
-    }
+    // move pending_txns and queued_txns to a different list so we can complete them outside of the mutex
+    list_move(&ep->pending_txns, &pending_copy);
+    list_move(&ep->queued_txns, &queued_copy);
+
     ep->enabled = false;
 
     mtx_unlock(&ep->lock);
 
     // complete pending requests
     iotxn_t* txn;
-    while ((txn = list_remove_head_type(&list, iotxn_t, node)) != NULL) {
+    iotxn_t* temp;
+    list_for_every_entry_safe(&pending_copy, txn, temp, iotxn_t, node) {
         txn->ops->complete(txn, ERR_REMOTE_CLOSED, 0);
     }
-    // and any deferred requests
-    xhci_process_deferred_txns(xhci, ep, true);
+    list_for_every_entry_safe(&queued_copy, txn, temp, iotxn_t, node) {
+        txn->ops->complete(txn, ERR_REMOTE_CLOSED, 0);
+    }
     xhci_transfer_ring_free(transfer_ring);
 
     return true;

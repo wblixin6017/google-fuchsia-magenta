@@ -17,6 +17,8 @@ typedef struct usb_protocol_data {
     uint64_t frame;         // frame number for scheduling isochronous transfers
     uint32_t device_id;
     uint8_t ep_address;     // bEndpointAddress from endpoint descriptor
+
+    uint64_t controller_reserved[3];    // reserved for use by host controller driver
 } usb_protocol_data_t;
 
 typedef struct usb_protocol {
