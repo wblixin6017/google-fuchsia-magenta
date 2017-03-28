@@ -99,8 +99,22 @@ static mx_status_t intel_serialio_i2c_add_slave(
         goto fail2;
 
     const pci_config_t* pci_config;
+    mx_pci_resource_t pci_res;
     mx_handle_t config_handle;
-    status = pci->get_config(dev->parent, &pci_config, &config_handle);
+
+    status = pci->get_config_ex(dev->parent, &pci_res);
+    if (status != NO_ERROR) {
+        xprintf("i2c: error %d getting slave pci config\n", status);
+        goto fail2;
+    }
+    config_handle = pci_res.mmio_handle;
+
+    status = pci->map_resource(dev->parent, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE,
+            (void**)&pci_config);
+    if (status != NO_ERROR) {
+        xprintf("i2c: failed to map slave config vmo: %d\n", status);
+        goto fail1;
+    }
 
     if (status != NO_ERROR)
         goto fail2;
@@ -425,19 +439,38 @@ mx_status_t intel_serialio_bind_i2c(mx_driver_t* drv, mx_device_t* dev) {
     memset(&device->mutex, 0, sizeof(device->mutex));
 
     const pci_config_t* pci_config;
-    mx_handle_t config_handle;
-    status = pci->get_config(dev, &pci_config, &config_handle);
+    mx_pci_resource_t pci_res;
+    mx_handle_t config_handle = MX_HANDLE_INVALID;
+
+    status = pci->get_config_ex(dev, &pci_res);
     if (status != NO_ERROR) {
+        xprintf("i2c: error %d getting pci config\n", status);
+        goto fail;
+    }
+    config_handle = pci_res.mmio_handle;
+
+    status = pci->map_resource(dev, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE,
+            (void**)&pci_config);
+    if (status != NO_ERROR) {
+        xprintf("i2c: failed to map config vmo: %d\n", status);
+        goto fail;
+    }
+    printf("i2c: bound to %04x:%04x\n", pci_config->vendor_id, pci_config->device_id);
+
+    status = pci->get_bar(dev, 0, &pci_res);
+    if (status != NO_ERROR) {
+        xprintf("i2c: error %d mapping register window\n", status);
         goto fail;
     }
 
-    status = pci->map_mmio(
-        dev, 0, MX_CACHE_POLICY_UNCACHED_DEVICE,
-        (void**)&device->regs, &device->regs_size, &device->regs_handle);
+    status = pci->map_resource(dev, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE,
+            (void**)&device->regs);
     if (status != NO_ERROR) {
+        xprintf("i2c: error %d mapping bar 0\n", status);
         goto fail;
     }
-
+    device->regs_size = pci_res.size;
+    device->regs_handle = pci_res.mmio_handle;
     // Run the bus at standard speed by default.
     device->bus_freq = I2C_MAX_STANDARD_SPEED_HZ;
 

@@ -222,10 +222,13 @@ static mx_protocol_device_t xhci_device_proto = {
 };
 
 static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
+    mx_pci_resource_t pci_res;
+    pci_config_t* config;
     mx_handle_t irq_handle = MX_HANDLE_INVALID;
     mx_handle_t mmio_handle = MX_HANDLE_INVALID;
     mx_handle_t cfg_handle = MX_HANDLE_INVALID;
     xhci_t* xhci = NULL;
+    void* mmio = NULL;
     mx_status_t status;
 
     pci_protocol_t* pci_proto;
@@ -246,25 +249,34 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev, void** cook
         goto error_return;
     }
 
-    int bar = -1;
-    void* mmio;
-    uint64_t mmio_len;
-    /*
-     * TODO(cja): according to eXtensible Host Controller Interface revision 1.1, section 5, xhci
-     * should only use BARs 0 and 1. 0 for 32 bit addressing, and 0+1 for 64 bit addressing.
-     */
-    for (size_t i = 0; i < PCI_MAX_BAR_COUNT; i++) {
-        status = pci_proto->map_mmio(dev, i, MX_CACHE_POLICY_UNCACHED_DEVICE, &mmio, &mmio_len, &mmio_handle);
-        if (status == NO_ERROR) {
-            bar = i;
-            break;
-        }
-    }
-    if (bar == -1) {
-        printf("usb_xhci_bind could not find bar\n");
-        status = ERR_INTERNAL;
+    status = pci_proto->get_config_ex(dev, &pci_res);
+    if (status != NO_ERROR || pci_res.type != PCI_RESOURCE_TYPE_MMIO) {
+        printf("usb_xhci_bind could not get config: %d\n", status);
         goto error_return;
     }
+
+    status = pci_proto->map_resource(dev, &pci_res, PCI_CACHE_POLICY_BUS_DRIVER, (void**)&config);
+    if (status != NO_ERROR) {
+        printf("usb_xhci_bind could not map config: %d\n", status);
+        goto error_return;
+    }
+    cfg_handle = pci_res.mmio_handle;
+    /*
+     * eXtensible Host Controller Interface revision 1.1, section 5, xhci
+     * should only use BARs 0 and 1. 0 for 32 bit addressing, and 0+1 for 64 bit addressing.
+     */
+    status = pci_proto->get_bar(dev, 0, &pci_res);
+    if (status != NO_ERROR || pci_res.type != PCI_RESOURCE_TYPE_MMIO) {
+        printf("usb_xhci_bind could not get bar: %d\n", status);
+        goto error_return;
+    }
+
+    status = pci_proto->map_resource(dev, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE, &mmio);
+    if (status != NO_ERROR) {
+        printf("usb_xhci_bind could not map bar: %d\n", status);
+        return status;
+    }
+    mmio_handle = pci_res.mmio_handle;
 
     // enable bus master
     status = pci_proto->enable_bus_master(dev, true);
@@ -297,8 +309,6 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev, void** cook
 
     xhci->irq_handle = irq_handle;
     xhci->mmio_handle = mmio_handle;
-    xhci->cfg_handle = cfg_handle;
-    xhci->pci_proto = pci_proto;
 
     // stash this here for the startup thread to call device_add() with
     xhci->parent = dev;
