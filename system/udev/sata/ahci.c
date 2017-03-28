@@ -11,6 +11,7 @@
 #include <assert.h>
 #include <hexdump/hexdump.h>
 #include <magenta/listnode.h>
+#include <magenta/process.h>
 #include <magenta/syscalls.h>
 #include <magenta/types.h>
 #include <sync/completion.h>
@@ -691,6 +692,7 @@ fail:
 
 static mx_status_t ahci_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
     pci_protocol_t* pci;
+    mx_handle_t cfg_handle;
     if (device_get_protocol(dev, MX_PROTOCOL_PCI, (void**)&pci)) return ERR_NOT_SUPPORTED;
 
     mx_status_t status = pci->claim_device(dev);
@@ -708,28 +710,55 @@ static mx_status_t ahci_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) 
 
     device_init(&device->device, drv, "ahci", &ahci_device_proto);
 
-    // map register window
-    status = pci->map_mmio(dev, 5, MX_CACHE_POLICY_UNCACHED_DEVICE, (void*)&device->regs, &device->regs_size, &device->regs_handle);
+    mx_pci_resource_t pci_res;
+    const pci_config_t* config = NULL;
+
+    // Grab the config and bar
+    status = pci->get_config_vmo(dev, &pci_res);
+    if (status != NO_ERROR) {
+        xprintf("ahci: error %d getting pci config\n", status);
+        goto fail;
+    }
+    cfg_handle = pci_res.mmio_handle;
+
+    status = mx_vmar_map(mx_vmar_root_self(), 0, pci_res.mmio_handle, 0, pci_res.size,
+            MX_VM_FLAG_PERM_READ, (uintptr_t*)&config);
+    if (status != NO_ERROR) {
+        xprintf("ahci: failed to map config vmo: %d\n", status);
+        goto fail;
+    }
+
+    if (config->sub_class != 0x06 && config->base_class == 0x01) { // SATA
+        status = ERR_NOT_SUPPORTED;
+        xprintf("ahci: device class 0x%x unsupported!\n", config->sub_class);
+        mx_handle_close(cfg_handle);
+        goto fail;
+    }
+    printf("ahci: bound to %04x:%04x\n", config->vendor_id, config->device_id);
+
+    status = pci->get_bar(dev, 5, &pci_res);
     if (status != NO_ERROR) {
         xprintf("ahci: error %d mapping register window\n", status);
         goto fail;
     }
 
-    const pci_config_t* config;
-    mx_handle_t config_handle;
-    status = pci->get_config(dev, &config, &config_handle);
+    status = mx_vmo_set_cache_policy(pci_res.mmio_handle, MX_CACHE_POLICY_UNCACHED_DEVICE);
     if (status != NO_ERROR) {
-        xprintf("ahci: error %d getting pci config\n", status);
+        xprintf("ahci: error %d setting bar cache policy\n", status);
         goto fail;
     }
-    if (config->sub_class != 0x06 && config->base_class == 0x01) { // SATA
-        status = ERR_NOT_SUPPORTED;
-        xprintf("ahci: device class 0x%x unsupported!\n", config->sub_class);
-        mx_handle_close(config_handle);
+
+    status = mx_vmar_map(mx_vmar_root_self(), 0, pci_res.mmio_handle, 0, pci_res.size,
+            MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, (uintptr_t*)&device->regs);
+    if (status != NO_ERROR) {
+        xprintf("ahci: failed to map bar vmo: %d\n", status);
         goto fail;
     }
+    device->regs_size = pci_res.size;
+    device->regs_handle = pci_res.mmio_handle;
+
     // FIXME intel devices need to set SATA port enable at config + 0x92
-    mx_handle_close(config_handle);
+    mx_handle_close(cfg_handle);
 
     // save for interrupt handler
     device->pci = pci;
