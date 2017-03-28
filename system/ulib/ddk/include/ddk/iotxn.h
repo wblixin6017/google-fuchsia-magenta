@@ -114,6 +114,8 @@ mx_status_t iotxn_alloc_vmo(iotxn_t** out, mx_handle_t vmo_handle, size_t data_s
 // queue an iotxn against a device
 void iotxn_queue(mx_device_t* dev, iotxn_t* txn);
 
+// temporary hack
+void iotxn_get_vmo(iotxn_t* txn, mx_handle_t* out_handle, mx_off_t* out_offset);
 
 struct iotxn_ops {
     // complete() must be called by the processor when the io operation has
