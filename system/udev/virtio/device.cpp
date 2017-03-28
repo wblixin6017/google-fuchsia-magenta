@@ -40,6 +40,7 @@ mx_status_t Device::Bind(pci_protocol_t* pci,
     pci_ = pci;
     pci_config_handle_.reset(pci_config_handle);
     pci_config_ = pci_config;
+    mx_pci_resource_t pci_res;
 
     // detect if we're transitional or not
     if (pci_config_->device_id < 0x1040) {
@@ -85,7 +86,8 @@ mx_status_t Device::Bind(pci_protocol_t* pci,
         bar0_pio_base_ = pci_config->base_addresses[0];
         LTRACEF("BAR0 address %#x\n", bar0_pio_base_);
         if ((bar0_pio_base_ & 0x1) == 0) {
-            VIRTIO_ERROR("bar 0 does not appear to be PIO (address %#x, aborting\n", bar0_pio_base_);
+            VIRTIO_ERROR("bar 0 does not appear to be PIO (address %#x, aborting\n",
+                    bar0_pio_base_);
             return -1;
         }
 
@@ -97,20 +99,26 @@ mx_status_t Device::Bind(pci_protocol_t* pci,
             // map in the mmio space
             // XXX this seems to be broken right now
             uint64_t sz;
-            r = pci->map_mmio(bus_device_, 0, MX_CACHE_POLICY_UNCACHED_DEVICE,
-                              (void**)&bar0_mmio_base_, &sz, &tmp_handle);
+            r = pci->get_bar(bus_device_, 0, &pci_res);
             if (r != NO_ERROR) {
-                VIRTIO_ERROR("cannot mmap io %d\n", r);
+                VIRTIO_ERROR("virtio: error %d getting bar 4\n", r);
+                return r;;
+            }
+
+            r = pci->map_resource(bus_device_, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE,
+                    (void**)&bar0_mmio_base_);
+            if (r != NO_ERROR) {
+                VIRTIO_ERROR("error %d mapping bar 0\n", r);
                 return r;
             }
-            bar0_mmio_handle_.reset(tmp_handle);
-
+            bar0_mmio_handle_.reset(pci_res.mmio_handle);
             LTRACEF("bar0_mmio_base_ %p, sz %#" PRIx64 "\n", bar0_mmio_base_, sz);
         } else {
             // this is probably PIO
             r = mx_mmap_device_io(get_root_resource(), bar0_pio_base_, bar0_size_);
             if (r != NO_ERROR) {
-                VIRTIO_ERROR("failed to access PIO range %#x, length %#xw\n", bar0_pio_base_, bar0_size_);
+                VIRTIO_ERROR("failed to access PIO range %#x, length %#xw\n",
+                        bar0_pio_base_, bar0_size_);
                 return r;
             }
 
@@ -146,13 +154,20 @@ mx_status_t Device::Bind(pci_protocol_t* pci,
 
         // map bar 4
         uint64_t sz;
-        r = pci->map_mmio(bus_device_, 4, MX_CACHE_POLICY_UNCACHED_DEVICE,
-                          (void**)&bar4_mmio_base_, &sz, &tmp_handle);
+        r = pci->get_bar(bus_device_, 4, &pci_res);
         if (r != NO_ERROR) {
-            VIRTIO_ERROR("cannot map io %d\n", bar4_mmio_handle_.get());
+            VIRTIO_ERROR("error %d getting bar 4\n", r);
+            return r;;
+        }
+
+        r = pci->map_resource(bus_device_, &pci_res, MX_CACHE_POLICY_UNCACHED_DEVICE,
+                (void**)&bar4_mmio_base_);
+        if (r != NO_ERROR) {
+            VIRTIO_ERROR("error %d mapping bar 4\n", r);
             return r;
         }
-        bar4_mmio_handle_.reset(tmp_handle);
+
+        bar4_mmio_handle_.reset(pci_res.mmio_handle);
         LTRACEF("bar4_mmio_base_ %p, sz %#" PRIx64 "\n", bar4_mmio_base_, sz);
 
         // set up the mmio registers
