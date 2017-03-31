@@ -102,7 +102,7 @@ static mx_status_t intel_serialio_i2c_add_slave(
     mx_pci_resource_t pci_res;
     mx_handle_t config_handle;
 
-    status = pci->get_config_ex(dev->parent, &pci_res);
+    status = pci->get_config(dev->parent, &pci_res);
     if (status != NO_ERROR) {
         xprintf("i2c: error %d getting slave pci config\n", status);
         goto fail2;
@@ -442,7 +442,7 @@ mx_status_t intel_serialio_bind_i2c(mx_driver_t* drv, mx_device_t* dev) {
     mx_pci_resource_t pci_res;
     mx_handle_t config_handle = MX_HANDLE_INVALID;
 
-    status = pci->get_config_ex(dev, &pci_res);
+    status = pci->get_config(dev, &pci_res);
     if (status != NO_ERROR) {
         xprintf("i2c: error %d getting pci config\n", status);
         goto fail;
