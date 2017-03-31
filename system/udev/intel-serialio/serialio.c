@@ -31,7 +31,7 @@ static mx_status_t intel_serialio_bind(mx_driver_t* drv, mx_device_t* dev, void*
     }
 
     // Get the device config
-    res = pci->get_config_ex(dev, &pci_res);
+    res = pci->get_config(dev, &pci_res);
     if (res != NO_ERROR) {
         printf("serialio: error %d getting pci config\n", res);
         return res;

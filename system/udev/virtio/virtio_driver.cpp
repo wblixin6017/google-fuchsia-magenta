@@ -41,7 +41,7 @@ extern "C" mx_status_t virtio_bind(mx_driver_t* driver, mx_device_t* device, voi
     const pci_config_t* config;
 
     // Get the device config
-    status = pci->get_config_ex(device, &pci_res);
+    status = pci->get_config(device, &pci_res);
     if (status != NO_ERROR) {
         printf("virtio: error %d getting pci config\n", status);
         return status;

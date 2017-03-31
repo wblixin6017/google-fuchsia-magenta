@@ -249,7 +249,7 @@ static mx_status_t usb_xhci_bind(mx_driver_t* drv, mx_device_t* dev, void** cook
         goto error_return;
     }
 
-    status = pci_proto->get_config_ex(dev, &pci_res);
+    status = pci_proto->get_config(dev, &pci_res);
     if (status != NO_ERROR || pci_res.type != PCI_RESOURCE_TYPE_MMIO) {
         printf("usb_xhci_bind could not get config: %d\n", status);
         goto error_return;

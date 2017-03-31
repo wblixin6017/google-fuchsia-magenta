@@ -727,7 +727,7 @@ static mx_status_t ahci_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) 
     const pci_config_t* config = NULL;
 
     // Grab the config and bar
-    status = pci->get_config_ex(dev, &pci_res);
+    status = pci->get_config(dev, &pci_res);
     if (status != NO_ERROR) {
         xprintf("ahci: error %d getting pci config\n", status);
         goto fail;
