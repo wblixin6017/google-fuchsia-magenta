@@ -525,36 +525,19 @@ __NO_SAFESTACK static void unmap_library(struct dso* dso) {
     }
 }
 
-// TODO(mcgrathr): Temporary hack to avoid modifying the file VMO.
-// This will go away when we have copy-on-write.
+// create a copy-on-write clone of a range of the passed in vmo
 __NO_SAFESTACK static mx_status_t get_writable_vmo(mx_handle_t vmo,
                                                    size_t data_size,
                                                    size_t* off_start,
                                                    size_t* map_size,
                                                    mx_handle_t* writable_vmo) {
-    mx_status_t status = _mx_vmo_create(data_size, 0, writable_vmo);
+    mx_status_t status = mx_vmo_clone(vmo, MX_VMO_CLONE_COPY_ON_WRITE, *off_start, data_size, writable_vmo);
     if (status != NO_ERROR)
         return status;
-    uintptr_t window = 0;
-    status = _mx_vmar_map(__magenta_vmar_root_self, 0, vmo, *off_start,
-                          data_size, MX_VM_FLAG_PERM_READ, &window);
-    if (status != NO_ERROR) {
-        _mx_handle_close(*writable_vmo);
-        return status;
-    }
-    size_t n;
-    status = _mx_vmo_write(*writable_vmo, (void*)window, 0, data_size, &n);
-    _mx_vmar_unmap(__magenta_vmar_root_self, window, data_size);
-    if (status != NO_ERROR) {
-        _mx_handle_close(*writable_vmo);
-        return status;
-    }
-    if (n != data_size) {
-        _mx_handle_close(*writable_vmo);
-        return ERR_IO;
-    }
+
     *off_start = 0;
     *map_size = data_size;
+
     return NO_ERROR;
 }
 
