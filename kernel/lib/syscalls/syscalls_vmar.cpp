@@ -114,8 +114,9 @@ mx_status_t sys_vmar_map(mx_handle_t vmar_handle, size_t vmar_offset,
     if (!(vmo_rights & MX_RIGHT_MAP))
         return ERR_ACCESS_DENIED;
 
-    if (!VmAddressRegionDispatcher::is_valid_mapping_protection(map_flags))
+    if (!VmAddressRegionDispatcher::is_valid_mapping_protection(map_flags)) {
         return ERR_INVALID_ARGS;
+    }
 
     bool do_map_range = false;
     if (map_flags & MX_VM_FLAG_MAP_RANGE) {

@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <stdalign.h>
 #include <unistd.h>
@@ -12,8 +13,9 @@
 #include <magenta/syscalls.h>
 #include <magenta/syscalls/object.h>
 #include <magenta/syscalls/port.h>
-#include <unittest/unittest.h>
+#include <mini-process/mini-process.h>
 #include <sys/mman.h>
+#include <unittest/unittest.h>
 
 // These tests focus on the semantics of the VMARs themselves.  For heavier
 // testing of the mapping permissions, see the VMO tests.
@@ -1551,28 +1553,98 @@ bool protect_over_demand_paged_test() {
     END_TEST;
 }
 
+bool map_range_test() {
+    BEGIN_TEST;
+
+    bool found;
+
+    // Bootstrap our brainless child
+    const char* name = "vmar_map_range_test";
+    uint32_t name_len = sizeof(name);
+    mx_handle_t event, child_job, child_thrd, child_proc, child_vmar;
+    ASSERT_EQ(mx_event_create(0u, &event), NO_ERROR, "event");
+    ASSERT_EQ(mx_job_create(mx_job_default(), 0, &child_job), NO_ERROR, "");
+    ASSERT_EQ(mx_process_create(child_job, name, name_len, 0u, &child_proc, &child_vmar),
+            NO_ERROR, "");
+    ASSERT_EQ(mx_thread_create(child_proc, name, name_len, 0, &child_thrd), NO_ERROR, "");
+    ASSERT_EQ(start_mini_process_etc(child_proc, child_thrd, child_vmar, event),
+            NO_ERROR, "creating brainless child\n");
+
+    // Create the test VMO
+    size_t vmo_size = PAGE_SIZE * 8;
+    mx_handle_t vmo;
+
+    // Allocate the resources we need to give this a shot.
+    ASSERT_EQ(mx_vmo_create(vmo_size, 0, &vmo), NO_ERROR, "mx_vmo_create");
+    mx_info_maps_t map_info[16];
+    size_t cnt, avail;
+
+
+    // Map the VMO into the child process's VMAR then confirm that it exists in the mapping
+    // but has no pages committed to it.
+    uintptr_t ptr;
+    ASSERT_EQ(mx_vmar_map(child_vmar, 0, vmo, 0, vmo_size,
+                MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE, &ptr),
+                NO_ERROR, "map without commit");
+    ASSERT_EQ(mx_object_get_info(child_proc, MX_INFO_PROCESS_MAPS, map_info,
+            sizeof(map_info), &cnt, &avail), NO_ERROR, "get pre-info");
+    ASSERT_EQ(cnt, avail, "receiving all info records");
+
+    found = false;
+    for (auto mapping : map_info) {
+        if (mapping.base == ptr) {
+            ASSERT_EQ(mapping.u.mapping.committed_pages, 0, "Ensuring no pages committed");
+            found = true;
+        }
+    }
+    ASSERT_EQ(found, true, "Found the mapping\n");
+
+    // Unmap the VMO so we can map it again with MAP_RANGE
+    ASSERT_EQ(mx_vmar_unmap(child_vmar, ptr, vmo_size), NO_ERROR, "Unmapping vmo");
+
+    // Map the VMO in again, but this time with the MAP_RANGE flag
+    ASSERT_EQ(mx_vmar_map(child_vmar, 0, vmo, 0, vmo_size,
+                MX_VM_FLAG_PERM_READ | MX_VM_FLAG_PERM_WRITE | MX_VM_FLAG_MAP_RANGE, &ptr),
+                NO_ERROR, "map with commit");
+    ASSERT_EQ(mx_object_get_info(child_proc, MX_INFO_PROCESS_MAPS, map_info,
+            sizeof(map_info), &cnt, &avail), NO_ERROR, "get info");
+    ASSERT_EQ(cnt, avail, "receiving all info records");
+
+    found = false;
+    for (auto mapping : map_info) {
+        if (mapping.base == ptr) {
+            ASSERT_EQ(mapping.u.mapping.committed_pages, vmo_size / PAGE_SIZE, "Ensuring all committed");
+            found = true;
+        }
+    }
+    ASSERT_EQ(found, true, "Found the mapping after commit\n");
+
+    END_TEST;
 }
 
+} // namespace
+
 BEGIN_TEST_CASE(vmar_tests)
-RUN_TEST(destroy_root_test);
-RUN_TEST(basic_allocate_test);
 RUN_TEST(allocate_oob_test);
 RUN_TEST(allocate_unsatisfiable_test);
+RUN_TEST(basic_allocate_test);
+RUN_TEST(destroy_root_test);
 RUN_TEST(destroyed_vmar_test);
-RUN_TEST(map_over_destroyed_test);
-RUN_TEST(overmapping_test);
 RUN_TEST(invalid_args_test);
-RUN_TEST(unaligned_len_test);
-RUN_TEST(rights_drop_test);
-RUN_TEST(protect_test);
+RUN_TEST(map_over_destroyed_test);
+RUN_TEST(map_range_test);
+RUN_TEST(map_specific_overwrite_test);
 RUN_TEST(nested_region_perms_test);
 RUN_TEST(object_info_test);
-RUN_TEST(unmap_split_test);
-RUN_TEST(unmap_multiple_test);
-RUN_TEST(map_specific_overwrite_test);
-RUN_TEST(protect_split_test);
+RUN_TEST(overmapping_test);
 RUN_TEST(protect_multiple_test);
 RUN_TEST(protect_over_demand_paged_test);
+RUN_TEST(protect_split_test);
+RUN_TEST(protect_test);
+RUN_TEST(rights_drop_test);
+RUN_TEST(unaligned_len_test);
+RUN_TEST(unmap_multiple_test);
+RUN_TEST(unmap_split_test);
 END_TEST_CASE(vmar_tests)
 
 #ifndef BUILD_COMBINED_TESTS

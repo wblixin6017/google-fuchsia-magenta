@@ -14,6 +14,6 @@ MODULE_SRCS += \
 MODULE_NAME := vmar-test
 
 MODULE_LIBS := \
-    system/ulib/unittest system/ulib/mxio system/ulib/magenta system/ulib/c
+    system/ulib/unittest system/ulib/mxio system/ulib/magenta system/ulib/c system/ulib/mini-process
 
 include make/module.mk
