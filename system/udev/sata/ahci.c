@@ -264,13 +264,8 @@ static mx_status_t ahci_do_txn(ahci_device_t* dev, ahci_port_t* port, int slot, 
         completion_signal(&dev->worker_completion);
         return status;
     }
-    if (txn->phys_count != 1) {
-        printf("%s scatter/gather not implemented yet\n", __FUNCTION__);
-        iotxn_complete(txn, ERR_INVALID_ARGS, 0);
-        completion_signal(&dev->worker_completion);
-        return ERR_INVALID_ARGS;
-    }
-    mx_paddr_t phys = iotxn_phys(txn);
+    iotxn_phys_iter_t iter;
+    iotxn_phys_iter_init(&iter, txn, AHCI_PRD_MAX_SIZE);
 
     if (dev->cap & AHCI_CAP_NCQ) {
         if (pdata->cmd == SATA_CMD_READ_DMA_EXT) {
@@ -294,7 +289,6 @@ static mx_status_t ahci_do_txn(ahci_device_t* dev, ahci_port_t* port, int slot, 
     cl->prdtl_flags_cfl = 0;
     cl->cfl = 5; // 20 bytes
     cl->w = cmd_is_write(pdata->cmd) ? 1 : 0;
-    cl->prdtl = 1;
     cl->prdbc = 0;
     memset(port->ct[slot], 0, sizeof(ahci_ct_t));
 
@@ -328,16 +322,27 @@ static mx_status_t ahci_do_txn(ahci_device_t* dev, ahci_port_t* port, int slot, 
         cfis[13] = 0; // normal priority
     }
 
-    ahci_prd_t* prd = NULL;
-    uint64_t length = txn->length;
-    for (int i = 0; i < cl->prdtl; i++) {
-        // TODO split this transaction
-        prd = (ahci_prd_t*)((void*)port->ct[slot] + sizeof(ahci_ct_t)) + i;
-        prd->dba = LO32(phys);
-        prd->dbau = HI32(phys);
-        prd->dbc = ((length - 1) & 0x3fffff); // 0-based byte count
-        phys += AHCI_PRD_MAX_SIZE;
-        length -= AHCI_PRD_MAX_SIZE;
+    cl->prdtl = 0;
+    ahci_prd_t* prd = (ahci_prd_t*)((void*)port->ct[slot] + sizeof(ahci_ct_t));
+    size_t length;
+    mx_paddr_t paddr;
+    for (;;) {
+        length = iotxn_phys_iter_next(&iter, &paddr);
+        if (length == 0) {
+            break;
+        } else if (cl->prdtl == AHCI_MAX_PRDS) {
+            printf("ahci.%d: txn with more than %d chunks is unsupported\n", port->nr, cl->prdtl);
+            status = ERR_NOT_SUPPORTED;
+            iotxn_complete(txn, status, 0);
+            completion_signal(&dev->worker_completion);
+            return status;
+        }
+
+        prd->dba = LO32(paddr);
+        prd->dbau = HI32(paddr);
+        prd->dbc = ((length - 1) & (AHCI_PRD_MAX_SIZE - 1)); // 0-based byte count
+        cl->prdtl += 1;
+        prd += 1;
     }
 
     port->running |= (1 << slot);
