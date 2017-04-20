@@ -479,11 +479,21 @@ static mx_status_t ums_write(ums_block_dev_t* dev, iotxn_t* txn) {
 }
 
 static void ums_unbind(mx_device_t* device) {
+printf("ums_unbind\n");
     ums_t* ums = get_ums(device);
+
+    for (uint8_t lun = 0; lun <= ums->max_lun; lun++) {
+        ums_block_dev_t* dev = &ums->block_devs[lun];
+        if (dev->device_added) {
+            device_remove(&dev->device);
+        }
+    }
+
     device_remove(&ums->device);
 }
 
 static mx_status_t ums_release(mx_device_t* device) {
+printf("ums_release\n");
     ums_t* ums = get_ums(device);
 
     // terminate our worker thread
@@ -494,6 +504,7 @@ static mx_status_t ums_release(mx_device_t* device) {
 // FIXME only call if thread is started
 // maybe do this in unbind?
     thrd_join(ums->worker_thread, NULL);
+printf("thrd_join returned\n");
 
     if (ums->cbw_iotxn) {
         iotxn_release(ums->cbw_iotxn);
@@ -512,7 +523,7 @@ static mx_status_t ums_release(mx_device_t* device) {
     return NO_ERROR;
 }
 
-static void ums_block_dev_queue(ums_block_dev_t* dev, iotxn_t* txn) {
+static void ums_block_dev_do_queue(ums_block_dev_t* dev, iotxn_t* txn) {
     ums_t* ums = dev->ums;
 
     mx_status_t status = constrain_args(dev, txn->offset, txn->length);
@@ -528,12 +539,13 @@ static void ums_block_dev_queue(ums_block_dev_t* dev, iotxn_t* txn) {
     completion_signal(&ums->iotxn_completion);
 }
 
-static void ums_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
+static void ums_block_dev_queue(mx_device_t* device, iotxn_t* txn) {
     ums_block_dev_t* dev = get_block_dev(device);
-    ums_block_dev_queue(dev, txn);
+    ums_block_dev_do_queue(dev, txn);
 }
 
-static ssize_t ums_ioctl(mx_device_t* device, uint32_t op, const void* cmd, size_t cmdlen, void* reply, size_t max) {
+static ssize_t ums_block_dev_ioctl(mx_device_t* device, uint32_t op, const void* cmd, size_t cmdlen,
+                                   void* reply, size_t max) {
     ums_block_dev_t* dev = get_block_dev(device);
 
     // TODO implement other block ioctls
@@ -576,17 +588,15 @@ static ssize_t ums_ioctl(mx_device_t* device, uint32_t op, const void* cmd, size
     }
 }
 
-static mx_off_t ums_get_size(mx_device_t* device) {
+static mx_off_t ums_block_dev_get_size(mx_device_t* device) {
     ums_block_dev_t* dev = get_block_dev(device);
     return dev->block_size * dev->total_blocks;
 }
 
 static mx_protocol_device_t ums_block_dev_proto = {
-    .ioctl = ums_ioctl,
-//    .unbind = ums_unbind,
-//    .release = ums_release,
-    .iotxn_queue = ums_iotxn_queue,
-    .get_size = ums_get_size,
+    .iotxn_queue = ums_block_dev_queue,
+    .ioctl = ums_block_dev_ioctl,
+    .get_size = ums_block_dev_get_size,
 };
 
 static void ums_async_set_callbacks(mx_device_t* device, block_callbacks_t* cb) {
@@ -614,7 +624,7 @@ static void ums_async_read(mx_device_t* device, mx_handle_t vmo, uint64_t length
     txn->complete_cb = ums_async_complete;
     txn->cookie = cookie;
     txn->extra[0] = (uintptr_t)dev;
-    ums_block_dev_queue(dev, txn);
+    ums_block_dev_do_queue(dev, txn);
 }
 
 static void ums_async_write(mx_device_t* device, mx_handle_t vmo, uint64_t length,
@@ -631,7 +641,7 @@ static void ums_async_write(mx_device_t* device, mx_handle_t vmo, uint64_t lengt
     txn->complete_cb = ums_async_complete;
     txn->cookie = cookie;
     txn->extra[0] = (uintptr_t)dev;
-    ums_block_dev_queue(dev, txn);
+    ums_block_dev_do_queue(dev, txn);
 }
 
 static block_ops_t ums_block_ops = {
@@ -727,7 +737,6 @@ static mx_status_t ums_check_ready(ums_t* ums) {
 
     return status;
 }
-
 
 static mx_protocol_device_t ums_device_proto = {
     .unbind = ums_unbind,
