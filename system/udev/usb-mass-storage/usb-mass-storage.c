@@ -92,9 +92,10 @@ typedef struct ums_block_dev {
 
     uint64_t total_blocks;
     uint32_t block_size;
+    bool use_read_write_16; // use READ16 and WRITE16 if total_blocks > 0xFFFFFFFF
 
     uint8_t lun;
-    bool use_read_write_16; // use READ16 and WRITE16 if total_blocks > 0xFFFFFFFF
+    mtx_t lock;
     bool device_added;
 } ums_block_dev_t;
 #define get_block_dev(dev) containerof(dev, ums_block_dev_t, device)
@@ -484,7 +485,13 @@ printf("ums_unbind\n");
 
     for (uint8_t lun = 0; lun <= ums->max_lun; lun++) {
         ums_block_dev_t* dev = &ums->block_devs[lun];
-        if (dev->device_added) {
+
+        mtx_lock(&dev->lock);
+        bool device_added = dev->device_added;
+        dev->device_added = false;
+        mtx_unlock(&dev->lock);
+
+        if (device_added) {
             device_remove(&dev->device);
         }
     }
@@ -651,7 +658,6 @@ static block_ops_t ums_block_ops = {
 };
 
 static mx_status_t ums_add_block_device(ums_block_dev_t* dev) {
-    MX_DEBUG_ASSERT(!dev->device_added);
     ums_t* ums = dev->ums;
     uint8_t lun = dev->lun;
 
@@ -701,11 +707,17 @@ static mx_status_t ums_add_block_device(ums_block_dev_t* dev) {
 
     status = device_add(&dev->device, &ums->device);
     if (status == NO_ERROR) {
+        mtx_lock(&dev->lock);
         dev->device_added = true;
+        mtx_unlock(&dev->lock);
     } else {
         printf("UMS: device_add for block device failed %d\n", status);
     }
     return status;
+}
+
+
+static void ums_remove_block_device_locked(ums_block_dev_t* dev) {
 }
 
 static mx_status_t ums_check_ready(ums_t* ums) {
@@ -728,10 +740,22 @@ static mx_status_t ums_check_ready(ums_t* ums) {
             break;
         }
 
+        bool add_device = false;
+        bool remove_device = false;
+        mtx_lock(&dev->lock);
         if (ready && !dev->device_added) {
-            ums_add_block_device(dev);
+            add_device = true;
         } else if (!ready && dev->device_added) {
-//            ums_remove_block_device(dev);
+            remove_device = true;
+            dev->device_added = false;
+        }
+        mtx_unlock(&dev->lock);
+       
+        if (add_device) {
+            // this will set device_added if it succeeds
+            status = ums_add_block_device(dev);
+        } else if (remove_device) {
+            device_remove(&dev->device);
         }
     }
 
@@ -779,7 +803,7 @@ static int ums_worker_thread(void* arg) {
         mtx_lock(&ums->iotxn_lock);
         if (ums->dead) {
             mtx_unlock(&ums->iotxn_lock);
-            return 0;
+            break;
         }
         iotxn_t* txn = list_remove_head_type(&ums->queued_iotxns, iotxn_t, node);
         if (txn == NULL) {
@@ -822,23 +846,22 @@ static int ums_worker_thread(void* arg) {
             iotxn_complete(txn, status, 0);
         }
     }
+
+    // complete any pending txns
+    list_node_t txns = LIST_INITIAL_VALUE(txns);
+    mtx_lock(&ums->iotxn_lock);
+    list_move(&ums->queued_iotxns, &txns);
+    mtx_unlock(&ums->iotxn_lock);
+
+    iotxn_t* txn;
+    while ((txn = list_remove_head_type(&ums->queued_iotxns, iotxn_t, node)) != NULL) {
+        iotxn_complete(txn, ERR_PEER_CLOSED, 0);
+    }
+
     return NO_ERROR;
 
 fail:
     printf("ums_worker_thread failed\n");
-/*
-                        // complete any pending txns
-                        list_node_t txns = LIST_INITIAL_VALUE(txns);
-                        mtx_lock(&ums->iotxn_lock);
-                        list_move(&ums->queued_iotxns, &txns);
-                        mtx_unlock(&ums->iotxn_lock);
-
-
-
-    if (block_device_added) {
-        device_remove(&ums->device);
-    }
-*/
     ums_release(&ums->device);
     return status;
 }
@@ -909,6 +932,7 @@ static mx_status_t ums_bind(mx_driver_t* driver, mx_device_t* device, void** coo
     }
     for (uint8_t lun = 0; lun <= ums->max_lun; lun++) {
         ums_block_dev_t* dev = &ums->block_devs[lun];
+        mtx_init(&dev->lock, mtx_plain);
         dev->ums = ums;
         dev->lun = lun;
     }
