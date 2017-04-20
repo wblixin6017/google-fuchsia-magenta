@@ -343,8 +343,6 @@ static void ums_queue_data_transfer(ums_t* msd, iotxn_t* txn, uint8_t ep_address
         return;
     }
 
-    // stash msd in txn->context so we can get at it in clone_complete()
-    txn->context = msd;
     clone->complete_cb = clone_complete;
 
     ums_txn_extra_t* extra = (ums_txn_extra_t *)&clone->extra;
@@ -514,8 +512,7 @@ static mx_status_t ums_release(mx_device_t* device) {
     return NO_ERROR;
 }
 
-static void ums_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
-    ums_block_dev_t* dev = get_block_dev(device);
+static void ums_block_dev_queue(ums_block_dev_t* dev, iotxn_t* txn) {
     ums_t* msd = dev->msd;
 
     mx_status_t status = constrain_args(dev, txn->offset, txn->length);
@@ -524,10 +521,16 @@ static void ums_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
         return;
     }
 
+    txn->context = dev;
     mtx_lock(&msd->iotxn_lock);
     list_add_tail(&msd->queued_iotxns, &txn->node);
     mtx_unlock(&msd->iotxn_lock);
     completion_signal(&msd->iotxn_completion);
+}
+
+static void ums_iotxn_queue(mx_device_t* device, iotxn_t* txn) {
+    ums_block_dev_t* dev = get_block_dev(device);
+    ums_block_dev_queue(dev, txn);
 }
 
 static ssize_t ums_ioctl(mx_device_t* device, uint32_t op, const void* cmd, size_t cmdlen, void* reply, size_t max) {
@@ -611,7 +614,7 @@ static void ums_async_read(mx_device_t* device, mx_handle_t vmo, uint64_t length
     txn->complete_cb = ums_async_complete;
     txn->cookie = cookie;
     txn->extra[0] = (uintptr_t)dev;
-    ums_iotxn_queue(&dev->msd->device, txn);
+    ums_block_dev_queue(dev, txn);
 }
 
 static void ums_async_write(mx_device_t* device, mx_handle_t vmo, uint64_t length,
@@ -628,7 +631,7 @@ static void ums_async_write(mx_device_t* device, mx_handle_t vmo, uint64_t lengt
     txn->complete_cb = ums_async_complete;
     txn->cookie = cookie;
     txn->extra[0] = (uintptr_t)dev;
-    ums_iotxn_queue(&dev->msd->device, txn);
+    ums_block_dev_queue(dev, txn);
 }
 
 static block_ops_t ums_block_ops = {
@@ -678,14 +681,19 @@ static mx_status_t ums_add_block_device(ums_block_dev_t* dev) {
     DEBUG_PRINT(("UMS:total blocks is: %" PRId64 "\n", dev->total_blocks));
     DEBUG_PRINT(("UMS:total size is: %" PRId64 "\n", dev->total_blocks * dev->block_size));
 
-    device_init(&dev->device, msd->driver, "usb_mass_storage", &ums_block_dev_proto);
-    msd->device.protocol_id = MX_PROTOCOL_BLOCK_CORE;
-    msd->device.protocol_ops = &ums_block_ops;
+    char name[16];
+    snprintf(name, sizeof(name), "ums-lun-%02d", lun);
+
+    device_init(&dev->device, msd->driver, name, &ums_block_dev_proto);
+    dev->device.protocol_id = MX_PROTOCOL_BLOCK_CORE;
+    dev->device.protocol_ops = &ums_block_ops;
     dev->cb = NULL;
 
     status = device_add(&dev->device, &msd->device);
     if (status == NO_ERROR) {
         dev->device_added = true;
+    } else {
+        printf("UMS: device_add for block device failed %d\n", status);
     }
     return status;
 }
@@ -739,7 +747,8 @@ static int ums_worker_thread(void* arg) {
     }
 
     // Add root device, which will contain block devices for logical units
-    device_init(&msd->device, msd->driver, "usb_mass_storage", &ums_device_proto);
+    device_init(&msd->device, msd->driver, "ums", &ums_device_proto);
+    device_set_bindable(&msd->device, false);
     if (device_add(&msd->device, msd->usb_device) != NO_ERROR) {
         printf("ums device_add failed: %d\n", status);
         goto fail;
@@ -772,11 +781,13 @@ static int ums_worker_thread(void* arg) {
         msd->curr_txn = txn;
         mtx_unlock(&msd->iotxn_lock);
 
+        ums_block_dev_t* dev = txn->context;
+
         mx_status_t status;
         if (txn->opcode == IOTXN_OP_READ) {
-            status = ums_read(msd, txn);
+            status = ums_read(dev, txn);
         }else if (txn->opcode == IOTXN_OP_WRITE) {
-            status = ums_write(msd, txn);
+            status = ums_write(dev, txn);
         } else {
             status = ERR_INVALID_ARGS;
         }
