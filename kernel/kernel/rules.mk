@@ -21,6 +21,7 @@ MODULE_SRCS := \
 	$(LOCAL_DIR)/event.c \
 	$(LOCAL_DIR)/init.c \
 	$(LOCAL_DIR)/mutex.c \
+	$(LOCAL_DIR)/rwlock.c \
 	$(LOCAL_DIR)/sched.c \
 	$(LOCAL_DIR)/thread.c \
 	$(LOCAL_DIR)/timer.c \

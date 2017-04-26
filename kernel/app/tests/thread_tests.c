@@ -13,9 +13,10 @@
 #include <assert.h>
 #include <string.h>
 #include <app/tests.h>
-#include <kernel/thread.h>
-#include <kernel/mutex.h>
 #include <kernel/event.h>
+#include <kernel/mutex.h>
+#include <kernel/rwlock.h>
+#include <kernel/thread.h>
 #include <platform.h>
 
 static int sleep_thread(void *arg)
@@ -178,6 +179,116 @@ static void event_test(void)
     event_destroy(&e);
 
     printf("event tests done\n");
+}
+
+static volatile int readers = 0;
+static volatile int writers = 0;
+
+static const int reader_count = 4;
+static const size_t rwlock_reader_iters = 1000000;
+static const int writer_count = 4;
+static const size_t rwlock_writer_iters = 100000;
+
+static int rwlock_reader(void *arg)
+{
+    thread_sleep_relative(LK_MSEC(500));
+
+    printf("rwlock_reader %p starting, going for %d iterations\n",
+            get_current_thread(), rwlock_reader_iters);
+
+    rwlock_t *rw = (rwlock_t *)arg;
+
+    for (size_t i = 0; i < rwlock_reader_iters; i++) {
+        //printf("reader %p going to acquire\n", get_current_thread());
+        rwlock_acquire_read(rw);
+
+        //printf("reader %p writers %d readers %d\n", get_current_thread(), writers, readers);
+
+        int old_readers = atomic_add(&readers, 1);
+        DEBUG_ASSERT(old_readers < reader_count);
+        DEBUG_ASSERT(writers == 0);
+        atomic_add(&readers, -1);
+
+        //printf("reader %p going to release\n", get_current_thread());
+        rwlock_release_read(rw);
+    }
+
+    printf("rwlock_reader %p done\n", get_current_thread());
+    return 0;
+}
+
+static int rwlock_writer(void *arg)
+{
+    thread_sleep_relative(LK_MSEC(500));
+
+    printf("rwlock_writer %p starting, going for %d iterations\n",
+            get_current_thread(), rwlock_writer_iters);
+
+    rwlock_t *rw = (rwlock_t *)arg;
+
+    for (size_t i = 0; i < rwlock_writer_iters; i++) {
+        //printf("writer %p going to acquire\n", get_current_thread());
+        rwlock_acquire_write(rw);
+
+        int old_writers = atomic_add(&writers, 1);
+        //printf("writer %p writers %d readers %d\n", get_current_thread(), writers, readers);
+
+        DEBUG_ASSERT(old_writers == 0);
+        DEBUG_ASSERT(readers == 0);
+
+        atomic_add(&writers, -1);
+
+        //printf("writer %p going to release\n", get_current_thread());
+        rwlock_release_write(rw);
+    }
+
+    printf("rwlock_writer %p done\n", get_current_thread());
+    return 0;
+}
+
+
+static void rwlock_test(void)
+{
+    printf("rwlock tests starting\n");
+
+    rwlock_t rw;
+
+    rwlock_init(&rw);
+
+    printf("acquiring and releasing a lock for read\n");
+    rwlock_acquire_read(&rw);
+    rwlock_release_read(&rw);
+
+    printf("acquiring and releasing a lock for write\n");
+    rwlock_acquire_write(&rw);
+    rwlock_release_write(&rw);
+
+    // create a bunch of reader and writer threads
+    thread_t *read_threads[reader_count];
+    for (size_t i = 0; i < countof(read_threads); i++) {
+        read_threads[i] = thread_create("rwlock reader", &rwlock_reader, (void *)&rw,
+                DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    }
+
+    thread_t *write_threads[writer_count];
+    for (size_t i = 0; i < countof(write_threads); i++) {
+        write_threads[i] = thread_create("rwlock writer", &rwlock_writer, (void *)&rw,
+                DEFAULT_PRIORITY, DEFAULT_STACK_SIZE);
+    }
+
+    for (size_t i = 0; i < countof(read_threads); i++)
+        thread_resume(read_threads[i]);
+    for (size_t i = 0; i < countof(write_threads); i++)
+        thread_resume(write_threads[i]);
+
+    for (size_t i = 0; i < countof(read_threads); i++) {
+        thread_join(read_threads[i], NULL, INFINITE_TIME);
+    }
+    for (size_t i = 0; i < countof(write_threads); i++) {
+        thread_join(write_threads[i], NULL, INFINITE_TIME);
+    }
+
+    printf("rwlock tests done\n");
 }
 
 static int quantum_tester(void *arg)
@@ -603,6 +714,7 @@ int thread_tests(void)
 
     mutex_test();
     event_test();
+    rwlock_test();
 
     spinlock_test();
     atomic_test();
