@@ -46,68 +46,62 @@ typedef struct usb_hub {
     thrd_t thread;
     bool thread_done;
 
-    // bit field indicating which ports are enabled
-    uint8_t enabled_ports[128 / 8];
+    // port status values for our ports
+    // length is num_ports
+    uint16_t* port_status;
 } usb_hub_t;
 #define get_hub(dev) containerof(dev, usb_hub_t, device)
 
-inline bool usb_hub_is_port_enabled(usb_hub_t* hub, int port) {
-    return (hub->enabled_ports[port / 8] & (1 << (port % 8))) != 0;
-}
-
-inline void usb_hub_set_port_enabled(usb_hub_t* hub, int port, bool enabled) {
-    if (enabled) {
-        hub->enabled_ports[port / 8] |= (1 << (port % 8));
-    } else {
-        hub->enabled_ports[port / 8] &= ~(1 << (port % 8));
+static mx_status_t usb_hub_get_port_status(usb_hub_t* hub, int port, uint16_t* out_status) {
+    usb_port_status_t status;
+    
+    mx_status_t result = usb_get_status(hub->usb_device, USB_RECIP_PORT, port, &status, sizeof(status));
+    if (result != sizeof(status)) {
+        return result;
     }
-}
 
-static mx_status_t usb_hub_get_port_status(usb_hub_t* hub, int port, usb_port_status_t* status) {
-    mx_status_t result = usb_get_status(hub->usb_device, USB_RECIP_PORT, port, status, sizeof(*status));
-    if (result == sizeof(*status)) {
-        xprintf("usb_hub_get_port_status port %d ", port);
-        if (status->wPortChange & USB_C_PORT_CONNECTION) {
-            xprintf("USB_C_PORT_CONNECTION ");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_CONNECTION, port);
-        }
-        if (status->wPortChange & USB_C_PORT_ENABLE) {
-            xprintf("USB_C_PORT_ENABLE ");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_ENABLE, port);
-        }
-        if (status->wPortChange & USB_C_PORT_SUSPEND) {
-            xprintf("USB_C_PORT_SUSPEND ");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_SUSPEND, port);
-        }
-        if (status->wPortChange & USB_C_PORT_OVER_CURRENT) {
-            xprintf("USB_C_PORT_OVER_CURRENT ");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_OVER_CURRENT, port);
-        }
-        if (status->wPortChange & USB_C_PORT_RESET) {
-            xprintf("USB_C_PORT_RESET");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_RESET, port);
-        }
-        if (status->wPortChange & USB_C_BH_PORT_RESET) {
-            xprintf("USB_C_BH_PORT_RESET");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_BH_PORT_RESET, port);
-        }
-        if (status->wPortChange & USB_C_PORT_LINK_STATE) {
-            xprintf("USB_C_PORT_LINK_STATE");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_LINK_STATE, port);
-        }
-        if (status->wPortChange & USB_C_PORT_CONFIG_ERROR) {
-            xprintf("USB_C_PORT_CONFIG_ERROR");
-            usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_CONFIG_ERROR, port);
-        }
-        xprintf("\n");
+    xprintf("usb_hub_get_port_status port %d ", port);
 
-        return NO_ERROR;
-    } else {
-        return -1;
+    uint16_t port_change = status.wPortChange;
+    if (port_change & USB_C_PORT_CONNECTION) {
+        xprintf("USB_C_PORT_CONNECTION ");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_CONNECTION, port);
     }
+    if (port_change & USB_C_PORT_ENABLE) {
+        xprintf("USB_C_PORT_ENABLE ");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_ENABLE, port);
+    }
+    if (port_change & USB_C_PORT_SUSPEND) {
+        xprintf("USB_C_PORT_SUSPEND ");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_SUSPEND, port);
+    }
+    if (port_change & USB_C_PORT_OVER_CURRENT) {
+        xprintf("USB_C_PORT_OVER_CURRENT ");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_OVER_CURRENT, port);
+    }
+    if (port_change & USB_C_PORT_RESET) {
+        xprintf("USB_C_PORT_RESET");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_RESET, port);
+    }
+    if (port_change & USB_C_BH_PORT_RESET) {
+        xprintf("USB_C_BH_PORT_RESET");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_BH_PORT_RESET, port);
+    }
+    if (port_change & USB_C_PORT_LINK_STATE) {
+        xprintf("USB_C_PORT_LINK_STATE");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_LINK_STATE, port);
+    }
+    if (port_change & USB_C_PORT_CONFIG_ERROR) {
+        xprintf("USB_C_PORT_CONFIG_ERROR");
+        usb_clear_feature(hub->usb_device, USB_RECIP_PORT, USB_FEATURE_C_PORT_CONFIG_ERROR, port);
+    }
+    xprintf("\n");
+
+    *out_status = status.wPortStatus;
+    return NO_ERROR;
 }
 
-static mx_status_t usb_hub_wait_for_port(usb_hub_t* hub, int port, usb_port_status_t* status,
+static mx_status_t usb_hub_wait_for_port(usb_hub_t* hub, int port, uint16_t* out_status,
                                          uint16_t status_bits, uint16_t status_mask,
                                          mx_time_t stable_time) {
     const mx_time_t timeout = MX_SEC(2);        // 2 second total timeout
@@ -119,12 +113,12 @@ static mx_status_t usb_hub_wait_for_port(usb_hub_t* hub, int port, usb_port_stat
         mx_nanosleep(mx_deadline_after(poll_delay));
         total += poll_delay;
 
-        mx_status_t result = usb_hub_get_port_status(hub, port, status);
+        mx_status_t result = usb_hub_get_port_status(hub, port, out_status);
         if (result != NO_ERROR) {
             return result;
         }
 
-        if ((status->wPortStatus & status_mask) == status_bits) {
+        if ((*out_status & status_mask) == status_bits) {
             stable += poll_delay;
             if (stable >= stable_time) {
                 return NO_ERROR;
@@ -149,7 +143,7 @@ static void usb_hub_enable_port(usb_hub_t* hub, int port) {
 }
 
 static void usb_hub_port_enabled(usb_hub_t* hub, int port) {
-    usb_port_status_t status;
+    uint16_t status;
 
     xprintf("port %d usb_hub_port_enabled\n", port);
 
@@ -164,9 +158,9 @@ static void usb_hub_port_enabled(usb_hub_t* hub, int port) {
     usb_speed_t speed;
     if (hub->hub_speed == USB_SPEED_SUPER) {
         speed = USB_SPEED_SUPER;
-    } else if (status.wPortStatus & USB_PORT_LOW_SPEED) {
+    } else if (status & USB_PORT_LOW_SPEED) {
         speed = USB_SPEED_LOW;
-    } else if (status.wPortStatus & USB_PORT_HIGH_SPEED) {
+    } else if (status & USB_PORT_HIGH_SPEED) {
         speed = USB_SPEED_HIGH;
     } else {
         speed = USB_SPEED_FULL;
@@ -174,11 +168,10 @@ static void usb_hub_port_enabled(usb_hub_t* hub, int port) {
 
     xprintf("call hub_device_added for port %d\n", port);
     hub->bus_protocol->hub_device_added(hub->bus_device, hub->usb_device, port, speed);
-    usb_hub_set_port_enabled(hub, port, true);
 }
 
 static void usb_hub_port_connected(usb_hub_t* hub, int port) {
-    usb_port_status_t status;
+    uint16_t status;
 
     xprintf("port %d usb_hub_port_connected\n", port);
 
@@ -196,25 +189,27 @@ static void usb_hub_port_connected(usb_hub_t* hub, int port) {
 static void usb_hub_port_disconnected(usb_hub_t* hub, int port) {
     xprintf("port %d usb_hub_port_disconnected\n", port);
     hub->bus_protocol->hub_device_removed(hub->bus_device, hub->usb_device, port);
-    usb_hub_set_port_enabled(hub, port, false);
 }
 
-static void usb_hub_handle_port_status(usb_hub_t* hub, int port, usb_port_status_t* status) {
+static void usb_hub_handle_port_status(usb_hub_t* hub, int port, uint16_t status) {
     xprintf("usb_hub_handle_port_status port: %d status: %04X change: %04X\n", port,
             status->wPortStatus, status->wPortChange);
 
-    if (status->wPortChange & USB_C_PORT_CONNECTION) {
+    uint16_t old_status = hub->port_status[port];
+    hub->port_status[port] = status;
+
+    if ((status & USB_PORT_CONNECTION) != (old_status & USB_PORT_CONNECTION)) {
         // Handle race condition where device is quickly disconnected and reconnected.
         // This happens when Android devices switch USB configurations.
         // In this case, any change to the connect state should trigger a disconnect
         // before handling a connect event.
-        if (usb_hub_is_port_enabled(hub, port)) {
+        if (old_status & USB_PORT_ENABLE) {
             usb_hub_port_disconnected(hub, port);
         }
-        if (status->wPortStatus & USB_PORT_CONNECTION) {
+        if (status & USB_PORT_CONNECTION) {
             usb_hub_port_connected(hub, port);
         }
-    } else if (status->wPortStatus & USB_PORT_ENABLE && !usb_hub_is_port_enabled(hub, port)) {
+    } else if ((status & USB_PORT_ENABLE) && !(old_status & USB_PORT_ENABLE)) {
         usb_hub_port_enabled(hub, port);
     }
 }
@@ -222,9 +217,9 @@ static void usb_hub_handle_port_status(usb_hub_t* hub, int port, usb_port_status
 static void usb_hub_unbind(mx_device_t* device) {
     usb_hub_t* hub = get_hub(device);
 
-    for (int i = 1; i <= hub->num_ports; i++) {
-        if (usb_hub_is_port_enabled(hub, i)) {
-            usb_hub_port_disconnected(hub, i);
+    for (int port = 1; port <= hub->num_ports; port++) {
+        if (hub->port_status[port] & USB_PORT_ENABLE) {
+            usb_hub_port_disconnected(hub, port);
         }
     }
     device_remove(&hub->device);
@@ -232,6 +227,7 @@ static void usb_hub_unbind(mx_device_t* device) {
 
 static mx_status_t usb_hub_free(usb_hub_t* hub) {
     iotxn_release(hub->status_request);
+    free(hub->port_status);
     free(hub);
     return NO_ERROR;
 }
@@ -272,6 +268,11 @@ static int usb_hub_thread(void* arg) {
 
     int num_ports = desc.bNbrPorts;
     hub->num_ports = num_ports;
+    hub->port_status = calloc(num_ports, sizeof(uint16_t));
+    if (!hub->port_status) {
+        return ERR_NO_MEMORY;
+    }
+    
     // power on delay in microseconds
     hub->power_on_delay = desc.bPowerOn2PwrGood * 2 * 1000;
     if (hub->power_on_delay < 100 * 1000) {
@@ -317,10 +318,10 @@ static int usb_hub_thread(void* arg) {
         int bit = 1;
         while (bitmap < bitmap_end && port <= num_ports) {
             if (*bitmap & (1 << bit)) {
-                usb_port_status_t status;
+                uint16_t status;
                 mx_status_t result = usb_hub_get_port_status(hub, port, &status);
                 if (result == NO_ERROR) {
-                    usb_hub_handle_port_status(hub, port, &status);
+                    usb_hub_handle_port_status(hub, port, status);
                 }
             }
             port++;
