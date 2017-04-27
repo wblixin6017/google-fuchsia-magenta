@@ -261,7 +261,7 @@ fi
 case $ARCH in
     arm64)
         QEMU=${QEMUDIR}qemu-system-aarch64
-        ARGS+=" -machine virt -kernel $BUILDDIR/magenta.elf"
+        ARGS+=" -machine virt,gic_version=3 -kernel $BUILDDIR/magenta.elf"
         if [ $DO_KVM -ne 0 ]; then
           ARGS+=" -enable-kvm -cpu host"
         else
