@@ -121,12 +121,17 @@ static ssize_t hidctl_ioctl(mx_device_t* dev, uint32_t op,
     return ERR_NOT_SUPPORTED;
 }
 
+static void hidctl_unbind(mx_device_t* dev) {
+    hidctl_instance_t* inst = dev->ctx;
+    device_remove(inst->mxdev);
+}
+
 static mx_status_t hidctl_release(mx_device_t* dev) {
+    // TODO(tkilbourn): fix hidctl device lifecycle
     hidctl_instance_t* inst = dev->ctx;
     hid_release_device(&inst->hiddev);
     if (inst->hid_report_desc) {
         free(inst->hid_report_desc);
-        device_remove(&inst->hiddev.dev);
     }
     device_destroy(inst->mxdev);
     free(inst);
@@ -137,6 +142,7 @@ mx_protocol_device_t hidctl_instance_proto = {
     .read = hidctl_read,
     .write = hidctl_write,
     .ioctl = hidctl_ioctl,
+    .unbind = hidctl_unbind,
     .release = hidctl_release,
 };
 

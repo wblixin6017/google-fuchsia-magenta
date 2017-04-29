@@ -51,7 +51,7 @@ typedef struct hid_report_size {
 typedef struct hid_bus_ops hid_bus_ops_t;
 
 typedef struct mx_hid_device {
-    mx_device_t dev;
+    mx_device_t* mxdev;
     mx_driver_t* drv;
     hid_bus_ops_t* ops;
 

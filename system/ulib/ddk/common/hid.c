@@ -23,8 +23,6 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-#define to_hid_dev(d) containerof(d, mx_hid_device_t, dev)
-#define to_hid_instance(d) containerof(d, mx_hid_instance_t, dev);
 #define foreach_instance(root, instance) \
     list_for_every_entry(&root->instance_list, instance, mx_hid_instance_t, node)
 #define bits_to_bytes(n) (((n) + 7) / 8)
@@ -39,7 +37,7 @@
 #define BOOT_MOUSE_HACK 1
 
 typedef struct mx_hid_instance {
-    mx_device_t dev;
+    mx_device_t* mxdev;
     mx_hid_device_t* root;
 
     uint32_t flags;
@@ -187,11 +185,12 @@ static void hid_cleanup_instance(mx_hid_instance_t* dev) {
         list_delete(&dev->node);
         mtx_unlock(&dev->root->instance_lock);
     }
+    device_destroy(dev->mxdev);
     free(dev);
 }
 
 static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
-    mx_hid_instance_t* hid = to_hid_instance(dev);
+    mx_hid_instance_t* hid = dev->ctx;
 
     if (hid->flags & HID_FLAGS_DEAD) {
         return ERR_PEER_CLOSED;
@@ -224,7 +223,7 @@ static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_o
     r = mx_hid_fifo_read(&hid->fifo, buf, xfer);
     left = mx_hid_fifo_size(&hid->fifo);
     if (left == 0) {
-        device_state_clr(&hid->dev, DEV_STATE_READABLE);
+        device_state_clr(hid->mxdev, DEV_STATE_READABLE);
     }
     mtx_unlock(&hid->fifo.lock);
     return r ? r : (ssize_t)ERR_SHOULD_WAIT;
@@ -232,7 +231,7 @@ static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_o
 
 static ssize_t hid_ioctl_instance(mx_device_t* dev, uint32_t op,
         const void* in_buf, size_t in_len, void* out_buf, size_t out_len) {
-    mx_hid_instance_t* hid = to_hid_instance(dev);
+    mx_hid_instance_t* hid = dev->ctx;
     if (hid->flags & HID_FLAGS_DEAD) return ERR_PEER_CLOSED;
 
     switch (op) {
@@ -259,7 +258,7 @@ static ssize_t hid_ioctl_instance(mx_device_t* dev, uint32_t op,
 }
 
 static mx_status_t hid_release_instance(mx_device_t* dev) {
-    mx_hid_instance_t* hid = to_hid_instance(dev);
+    mx_hid_instance_t* hid = dev->ctx;
     hid_cleanup_instance(hid);
     return NO_ERROR;
 }
@@ -489,7 +488,7 @@ done:
         if (dev->dev_class == HID_DEV_CLASS_POINTER) {
             printf("hid: Applying boot mouse hack to hid device \"%s\".  "
                    "Altering report count (%zu -> 1)\n",
-                   dev->dev.name, dev->num_reports);
+                   device_get_name(dev->mxdev), dev->num_reports);
             dev->num_reports = 1;
             dev->sizes[0].id = 0;
             dev->sizes[0].in_size = 24;
@@ -573,10 +572,11 @@ void hid_release_device(mx_hid_device_t* dev) {
     }
 
     hid_release_reassembly_buffer(dev);
+    device_destroy(dev->mxdev);
 }
 
 static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
-    mx_hid_device_t* hid = to_hid_dev(dev);
+    mx_hid_device_t* hid = dev->ctx;
 
     mx_hid_instance_t* inst = NULL;
     mx_status_t status = hid_create_instance(&inst);
@@ -584,9 +584,13 @@ static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint
         return ERR_NO_MEMORY;
     }
 
-    device_init(&inst->dev, hid->drv, "hid", &hid_instance_proto);
-    device_set_protocol(&inst->dev, MX_PROTOCOL_INPUT, NULL);
-    status = device_add_instance(&inst->dev, dev);
+    status = device_create("hid", inst, &hid_instance_proto, hid->drv, &inst->mxdev);
+    if (status != NO_ERROR) {
+        hid_cleanup_instance(inst);
+        return status;
+    }
+    device_set_protocol(inst->mxdev, MX_PROTOCOL_INPUT, NULL);
+    status = device_add_instance(inst->mxdev, dev);
     if (status != NO_ERROR) {
         hid_cleanup_instance(inst);
         return status;
@@ -597,24 +601,24 @@ static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint
     list_add_tail(&hid->instance_list, &inst->node);
     mtx_unlock(&hid->instance_lock);
 
-    *dev_out = &inst->dev;
+    *dev_out = inst->mxdev;
     return NO_ERROR;
 }
 
 static void hid_unbind_device(mx_device_t* dev) {
-    mx_hid_device_t* hid = to_hid_dev(dev);
+    mx_hid_device_t* hid = dev->ctx;
     mtx_lock(&hid->instance_lock);
     mx_hid_instance_t* instance;
     foreach_instance(hid, instance) {
         instance->flags |= HID_FLAGS_DEAD;
-        device_state_set(&instance->dev, DEV_STATE_READABLE);
+        device_state_set(instance->mxdev, DEV_STATE_READABLE);
     }
     mtx_unlock(&hid->instance_lock);
-    device_remove(&hid->dev);
+    device_remove(hid->mxdev);
 }
 
 static mx_status_t hid_proto_release_device(mx_device_t* dev) {
-    mx_hid_device_t* hid = to_hid_dev(dev);
+    mx_hid_device_t* hid = dev->ctx;
     hid_release_device(hid);
     return NO_ERROR;
 }
@@ -668,7 +672,7 @@ void hid_io_queue(mx_hid_device_t* hid, const uint8_t* buf, size_t len) {
             // on track.
             if (!rpt_sz) {
                 printf("%s: failed to find input report size (report id %u)\n",
-                        hid->dev.name, buf[0]);
+                        device_get_name(hid->mxdev), buf[0]);
                 break;
             }
 
@@ -703,13 +707,13 @@ void hid_io_queue(mx_hid_device_t* hid, const uint8_t* buf, size_t len) {
             if (wrote <= 0) {
                 if (!(instance->flags & HID_FLAGS_WRITE_FAILED)) {
                     printf("%s: could not write to hid fifo (ret=%zd)\n",
-                            hid->dev.name, wrote);
+                            device_get_name(hid->mxdev), wrote);
                     instance->flags |= HID_FLAGS_WRITE_FAILED;
                 }
             } else {
                 instance->flags &= ~HID_FLAGS_WRITE_FAILED;
                 if (was_empty) {
-                    device_state_set(&instance->dev, DEV_STATE_READABLE);
+                    device_state_set(instance->mxdev, DEV_STATE_READABLE);
                 }
             }
             mtx_unlock(&instance->fifo.lock);
@@ -740,13 +744,16 @@ mx_status_t hid_add_device_etc(mx_driver_t* drv, mx_hid_device_t* dev, mx_device
         }
     }
 
-    char _name[sizeof(dev->dev.name)];
+    char _name[MX_DEVICE_NAME_MAX + 1];
     if (name == NULL) {
         snprintf(_name, sizeof(_name), "hid-device-%03d", dev->dev_num);
     } else {
         snprintf(_name, sizeof(_name), "%s", name);
     }
-    device_init(&dev->dev, drv, _name, &hid_device_proto);
+    status = device_create(_name, dev, &hid_device_proto, drv, &dev->mxdev);
+    if (status != NO_ERROR) {
+        return status;
+    }
 
     status = dev->ops->get_descriptor(dev, HID_DESC_TYPE_REPORT, (void**)&dev->hid_report_desc,
             &dev->hid_report_desc_len);
@@ -770,8 +777,8 @@ mx_status_t hid_add_device_etc(mx_driver_t* drv, mx_hid_device_t* dev, mx_device
         return status;
     }
 
-    device_set_protocol(&dev->dev, MX_PROTOCOL_INPUT, NULL);
-    status = device_add(&dev->dev, parent);
+    device_set_protocol(dev->mxdev, MX_PROTOCOL_INPUT, NULL);
+    status = device_add(dev->mxdev, parent);
     if (status != NO_ERROR) {
         printf("device_add failed for HID device: %d\n", status);
         hid_release_reassembly_buffer(dev);
