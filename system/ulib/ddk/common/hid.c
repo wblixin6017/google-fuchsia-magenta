@@ -189,8 +189,8 @@ static void hid_cleanup_instance(mx_hid_instance_t* dev) {
     free(dev);
 }
 
-static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
-    mx_hid_instance_t* hid = dev->ctx;
+static ssize_t hid_read_instance(void* ctx, void* buf, size_t count, mx_off_t off) {
+    mx_hid_instance_t* hid = ctx;
 
     if (hid->flags & HID_FLAGS_DEAD) {
         return ERR_PEER_CLOSED;
@@ -229,9 +229,9 @@ static ssize_t hid_read_instance(mx_device_t* dev, void* buf, size_t count, mx_o
     return r ? r : (ssize_t)ERR_SHOULD_WAIT;
 }
 
-static ssize_t hid_ioctl_instance(mx_device_t* dev, uint32_t op,
+static ssize_t hid_ioctl_instance(void* ctx, uint32_t op,
         const void* in_buf, size_t in_len, void* out_buf, size_t out_len) {
-    mx_hid_instance_t* hid = dev->ctx;
+    mx_hid_instance_t* hid = ctx;
     if (hid->flags & HID_FLAGS_DEAD) return ERR_PEER_CLOSED;
 
     switch (op) {
@@ -257,10 +257,9 @@ static ssize_t hid_ioctl_instance(mx_device_t* dev, uint32_t op,
     return ERR_NOT_SUPPORTED;
 }
 
-static mx_status_t hid_release_instance(mx_device_t* dev) {
-    mx_hid_instance_t* hid = dev->ctx;
+static void hid_release_instance(void* ctx) {
+    mx_hid_instance_t* hid = ctx;
     hid_cleanup_instance(hid);
-    return NO_ERROR;
 }
 
 mx_protocol_device_t hid_instance_proto = {
@@ -575,8 +574,8 @@ void hid_release_device(mx_hid_device_t* dev) {
     device_destroy(dev->mxdev);
 }
 
-static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
-    mx_hid_device_t* hid = dev->ctx;
+static mx_status_t hid_open_device(void* ctx, mx_device_t** dev_out, uint32_t flags) {
+    mx_hid_device_t* hid = ctx;
 
     mx_hid_instance_t* inst = NULL;
     mx_status_t status = hid_create_instance(&inst);
@@ -590,7 +589,7 @@ static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint
         return status;
     }
     device_set_protocol(inst->mxdev, MX_PROTOCOL_INPUT, NULL);
-    status = device_add_instance(inst->mxdev, dev);
+    status = device_add_instance(inst->mxdev, hid->mxdev);
     if (status != NO_ERROR) {
         hid_cleanup_instance(inst);
         return status;
@@ -605,8 +604,8 @@ static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint
     return NO_ERROR;
 }
 
-static void hid_unbind_device(mx_device_t* dev) {
-    mx_hid_device_t* hid = dev->ctx;
+static void hid_unbind_device(void* ctx) {
+    mx_hid_device_t* hid = ctx;
     mtx_lock(&hid->instance_lock);
     mx_hid_instance_t* instance;
     foreach_instance(hid, instance) {
@@ -617,10 +616,9 @@ static void hid_unbind_device(mx_device_t* dev) {
     device_remove(hid->mxdev);
 }
 
-static mx_status_t hid_proto_release_device(mx_device_t* dev) {
-    mx_hid_device_t* hid = dev->ctx;
+static void hid_proto_release_device(void* ctx) {
+    mx_hid_device_t* hid = ctx;
     hid_release_device(hid);
-    return NO_ERROR;
 }
 
 mx_protocol_device_t hid_device_proto = {

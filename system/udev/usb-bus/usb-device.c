@@ -70,9 +70,9 @@ static mx_status_t usb_device_set_configuration(usb_device_t* dev, int config) {
     return usb_device_add_interfaces(dev, config_desc);
 }
 
-static ssize_t usb_device_ioctl(mx_device_t* device, uint32_t op,
+static ssize_t usb_device_ioctl(void* ctx, uint32_t op,
         const void* in_buf, size_t in_len, void* out_buf, size_t out_len) {
-    usb_device_t* dev = device->ctx;
+    usb_device_t* dev = ctx;
 
     switch (op) {
     case IOCTL_USB_GET_DEVICE_TYPE: {
@@ -195,8 +195,8 @@ void usb_device_remove(usb_device_t* dev) {
     device_remove(dev->mxdev);
 }
 
-static mx_status_t usb_device_release(mx_device_t* device) {
-    usb_device_t* dev = device->ctx;
+static void usb_device_release(void* ctx) {
+    usb_device_t* dev = ctx;
 
     if (dev->config_descs) {
         int num_configurations = dev->device_desc.bNumConfigurations;
@@ -207,8 +207,6 @@ static mx_status_t usb_device_release(mx_device_t* device) {
     }
     device_destroy(dev->mxdev);
     free(dev);
-
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t usb_device_proto = {

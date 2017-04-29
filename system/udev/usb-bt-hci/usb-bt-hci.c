@@ -390,10 +390,10 @@ done:
     return 0;
 }
 
-static ssize_t hci_ioctl(mx_device_t* device, uint32_t op, const void* in_buf, size_t in_len,
+static ssize_t hci_ioctl(void* ctx, uint32_t op, const void* in_buf, size_t in_len,
                          void* out_buf, size_t out_len) {
     ssize_t result = ERR_NOT_SUPPORTED;
-    hci_t* hci = device->ctx;
+    hci_t* hci = ctx;
 
     mtx_lock(&hci->mutex);
 
@@ -483,8 +483,8 @@ done:
     return result;
 }
 
-static void hci_unbind(mx_device_t* device) {
-    hci_t* hci = device->ctx;
+static void hci_unbind(void* ctx) {
+    hci_t* hci = ctx;
 
     // Close the transport channels so that the host stack is notified of device removal.
     mtx_lock(&hci->mutex);
@@ -498,8 +498,8 @@ static void hci_unbind(mx_device_t* device) {
     device_remove(hci->mxdev);
 }
 
-static mx_status_t hci_release(mx_device_t* device) {
-    hci_t* hci = device->ctx;
+static void hci_release(void* ctx) {
+    hci_t* hci = ctx;
 
     mtx_lock(&hci->mutex);
 
@@ -518,8 +518,6 @@ static mx_status_t hci_release(mx_device_t* device) {
 
     device_destroy(hci->mxdev);
     free(hci);
-
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t hci_device_proto = {

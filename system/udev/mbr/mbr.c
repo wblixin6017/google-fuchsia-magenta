@@ -68,6 +68,7 @@ typedef struct __PACKED mbr {
 
 typedef struct mbrpart_device {
     mx_device_t* mxdev;
+    mx_device_t* parent;
     mbr_partition_entry_t partition;
     block_info_t info;
     atomic_int writercount;
@@ -88,9 +89,9 @@ static uint64_t getsize(mbrpart_device_t* dev) {
     return dev->partition.sector_partition_length * ((uint64_t) dev->info.block_size);
 }
 
-static ssize_t mbr_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
+static ssize_t mbr_ioctl(void* ctx, uint32_t op, const void* cmd,
                          size_t cmdlen, void* reply, size_t max) {
-    mbrpart_device_t* device = dev->ctx;
+    mbrpart_device_t* device = ctx;
     switch (op) {
     case IOCTL_BLOCK_GET_INFO: {
         block_info_t* info = reply;
@@ -119,12 +120,12 @@ static ssize_t mbr_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
     case IOCTL_BLOCK_GET_NAME: {
         char* name = reply;
         memset(name, 0, max);
-        strncpy(name, dev->name, max);
+        strncpy(name, device_get_name(device->mxdev), max);
         return strnlen(name, max);
     }
     case IOCTL_DEVICE_SYNC: {
         // Propagate sync to parent device
-        return device_op_ioctl(dev->parent, IOCTL_DEVICE_SYNC, NULL, 0, NULL, 0);
+        return device_op_ioctl(device->parent, IOCTL_DEVICE_SYNC, NULL, 0, NULL, 0);
     }
     default:
         return ERR_NOT_SUPPORTED;
@@ -132,10 +133,10 @@ static ssize_t mbr_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
     return 0;
 }
 
-static void mbr_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
+static void mbr_iotxn_queue(void* ctx, iotxn_t* txn) {
 
     // Sanity check to ensure that we're not writing past
-    mbrpart_device_t* device = dev->ctx;
+    mbrpart_device_t* device = ctx;
 
     const uint64_t off_lba = txn->offset / device->info.block_size;
     const uint64_t first = device->partition.start_sector_lba;
@@ -156,28 +157,27 @@ static void mbr_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     // Move the offset to the start of the partition when forwarding this
     // request to the block device.
     txn->offset = first * device->info.block_size + txn->offset;
-    iotxn_queue(dev->parent, txn);
+    iotxn_queue(device->parent, txn);
 }
 
-static mx_off_t mbr_getsize(mx_device_t* dev) {
-    return getsize(dev->ctx);
+static mx_off_t mbr_getsize(void* ctx) {
+    return getsize(ctx);
 }
 
-static void mbr_unbind(mx_device_t* dev) {
-    mbrpart_device_t* device = dev->ctx;
+static void mbr_unbind(void* ctx) {
+    mbrpart_device_t* device = ctx;
     device_remove(device->mxdev);
 }
 
-static mx_status_t mbr_release(mx_device_t* dev) {
-    mbrpart_device_t* device = dev->ctx;
+static void mbr_release(void* ctx) {
+    mbrpart_device_t* device = ctx;
     device_destroy(device->mxdev);
     free(device);
-    return NO_ERROR;
 }
 
-static mx_status_t mbr_open(mx_device_t* dev, mx_device_t** dev_out,
+static mx_status_t mbr_open(void* ctx, mx_device_t** dev_out,
                             uint32_t flags) {
-    mbrpart_device_t* device = dev->ctx;
+    mbrpart_device_t* device = ctx;
     mx_status_t status = NO_ERROR;
     if (is_writer(flags) && (atomic_exchange(&device->writercount, 1) == 1)) {
         xprintf("Partition cannot be opened as writable (open elsewhere)\n");
@@ -186,8 +186,8 @@ static mx_status_t mbr_open(mx_device_t* dev, mx_device_t** dev_out,
     return status;
 }
 
-static mx_status_t mbr_close(mx_device_t* dev, uint32_t flags) {
-    mbrpart_device_t* device = dev->ctx;
+static mx_status_t mbr_close(void* ctx, uint32_t flags) {
+    mbrpart_device_t* device = ctx;
     if (is_writer(flags)) {
         atomic_fetch_sub(&device->writercount, 1);
     }
@@ -288,6 +288,7 @@ static int mbr_bind_thread(void* arg) {
             xprintf("mbr: out of memory\n");
             goto unbind;
         }
+        pdev->parent = dev;
 
         char name[128];
         snprintf(name, sizeof(name), "%sp%u", dev->name, partition_count);

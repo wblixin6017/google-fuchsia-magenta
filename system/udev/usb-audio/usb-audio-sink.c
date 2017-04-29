@@ -94,16 +94,16 @@ static void usb_audio_sink_write_complete(iotxn_t* txn, void* cookie) {
     mtx_unlock(&sink->mutex);
 }
 
-static void usb_audio_sink_unbind(mx_device_t* dev) {
-    usb_audio_sink_t* sink = dev->ctx;
+static void usb_audio_sink_unbind(void* ctx) {
+    usb_audio_sink_t* sink = ctx;
     sink->dead = true;
     update_signals(sink);
     completion_signal(&sink->free_write_completion);
     device_remove(sink->mxdev);
 }
 
-static mx_status_t usb_audio_sink_release(mx_device_t* dev) {
-    usb_audio_sink_t* sink = dev->ctx;
+static void usb_audio_sink_release(void* ctx) {
+    usb_audio_sink_t* sink = ctx;
 
     iotxn_t* txn;
     while ((txn = list_remove_head_type(&sink->free_write_reqs, iotxn_t, node)) != NULL) {
@@ -112,7 +112,6 @@ static mx_status_t usb_audio_sink_release(mx_device_t* dev) {
     device_destroy(sink->mxdev);
     free(sink->sample_rates);
     free(sink);
-    return NO_ERROR;
 }
 
 static uint64_t get_usb_current_frame(usb_audio_sink_t* sink) {
@@ -172,8 +171,8 @@ out:
     return status;
 }
 
-static mx_status_t usb_audio_sink_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
-    usb_audio_sink_t* sink = dev->ctx;
+static mx_status_t usb_audio_sink_open(void* ctx, mx_device_t** dev_out, uint32_t flags) {
+    usb_audio_sink_t* sink = ctx;
     mx_status_t result;
 
     mtx_lock(&sink->mutex);
@@ -188,8 +187,8 @@ static mx_status_t usb_audio_sink_open(mx_device_t* dev, mx_device_t** dev_out, 
     return result;
 }
 
-static mx_status_t usb_audio_sink_close(mx_device_t* dev, uint32_t flags) {
-    usb_audio_sink_t* sink = dev->ctx;
+static mx_status_t usb_audio_sink_close(void* ctx, uint32_t flags) {
+    usb_audio_sink_t* sink = ctx;
 
     mtx_lock(&sink->mutex);
     sink->open = false;
@@ -199,9 +198,9 @@ static mx_status_t usb_audio_sink_close(mx_device_t* dev, uint32_t flags) {
     return NO_ERROR;
 }
 
-static ssize_t usb_audio_sink_write(mx_device_t* dev, const void* data, size_t length,
+static ssize_t usb_audio_sink_write(void* ctx, const void* data, size_t length,
                                     mx_off_t offset) {
-    usb_audio_sink_t* sink = dev->ctx;
+    usb_audio_sink_t* sink = ctx;
 
     if (sink->dead) {
         return ERR_PEER_CLOSED;
@@ -280,9 +279,9 @@ out:
     return status;
 }
 
-static ssize_t usb_audio_sink_ioctl(mx_device_t* dev, uint32_t op, const void* in_buf,
+static ssize_t usb_audio_sink_ioctl(void* ctx, uint32_t op, const void* in_buf,
                                     size_t in_len, void* out_buf, size_t out_len) {
-    usb_audio_sink_t* sink = dev->ctx;
+    usb_audio_sink_t* sink = ctx;
 
     switch (op) {
     case IOCTL_AUDIO_GET_DEVICE_TYPE: {

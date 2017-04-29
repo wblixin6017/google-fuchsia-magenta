@@ -11,12 +11,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-static ssize_t zero_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
+static ssize_t zero_read(void* ctx, void* buf, size_t count, mx_off_t off) {
     memset(buf, 0, count);
     return count;
 }
 
-static ssize_t zero_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
+static ssize_t zero_write(void* ctx, const void* buf, size_t count, mx_off_t off) {
     return ERR_NOT_SUPPORTED;
 }
 

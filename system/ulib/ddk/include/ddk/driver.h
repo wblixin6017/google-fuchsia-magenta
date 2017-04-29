@@ -81,7 +81,7 @@ mx_status_t device_add_with_props(mx_device_t* device, mx_device_t* parent,
 // unbound (or until after device_add fails).
 //
 mx_status_t device_add_instance(mx_device_t* device, mx_device_t* parent);
-void device_add_busdev(mx_device_t* device, mx_device_t* parent,
+mx_status_t device_add_busdev(mx_device_t* device, mx_device_t* parent,
                        mx_device_prop_t* props, uint32_t prop_count,
                        const char* args, mx_handle_t rsrc);
 mx_status_t device_remove(mx_device_t* device);

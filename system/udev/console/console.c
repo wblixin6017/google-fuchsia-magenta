@@ -17,6 +17,10 @@
 #define FIFOSIZE 256
 #define FIFOMASK (FIFOSIZE - 1)
 
+typedef struct console_ctx {
+    mx_device_t* mxdev;
+} console_device_t;
+
 static struct {
     uint8_t data[FIFOSIZE];
     uint32_t head;
@@ -59,7 +63,9 @@ static int debug_reader(void* arg) {
     return 0;
 }
 
-static ssize_t console_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
+static ssize_t console_read(void* ctx, void* buf, size_t count, mx_off_t off) {
+    console_device_t* console = ctx;
+
     uint8_t* data = buf;
     mtx_lock(&fifo.lock);
     while (count-- > 0) {
@@ -68,33 +74,51 @@ static ssize_t console_read(mx_device_t* dev, void* buf, size_t count, mx_off_t 
         data++;
     }
     if (fifo.head == fifo.tail) {
-        device_state_clr(dev, DEV_STATE_READABLE);
+        device_state_clr(console->mxdev, DEV_STATE_READABLE);
     }
     mtx_unlock(&fifo.lock);
     ssize_t actual = data - (uint8_t*)buf;
     return actual ? actual : (ssize_t)ERR_SHOULD_WAIT;
 }
 
-static ssize_t console_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
+static ssize_t console_write(void* ctx, const void* buf, size_t count, mx_off_t off) {
     return mx_debug_write(buf, count);
+}
+
+static void console_release(void* ctx) {
+    console_device_t* console = ctx;
+    device_destroy(console->mxdev);
+    free(console);
 }
 
 static mx_protocol_device_t console_device_proto = {
     .read = console_read,
     .write = console_write,
+    .release = console_release,
 };
 
 static mx_status_t console_bind(mx_driver_t* drv, mx_device_t* parent, void** cookie) {
-    mx_device_t* dev;
-    if (device_create("console", NULL, &console_device_proto, drv, &dev) == NO_ERROR) {
-        if (device_add(dev, parent) < 0) {
-            printf("console: device_add() failed\n");
-            free(dev);
-        } else {
-            thrd_t t;
-            thrd_create_with_name(&t, debug_reader, dev, "debug-reader");
-        }
+    console_device_t* console = malloc(sizeof(console_device_t));
+    if (!console) {
+        return ERR_NO_MEMORY;
     }
+
+    mx_status_t status;
+    if ((status = device_create("console", console, &console_device_proto, drv, &console->mxdev))
+                                != NO_ERROR) {
+        free(console);
+        return status;
+    }
+    if ((status = device_add(console->mxdev, parent)) != NO_ERROR) {
+        printf("console: device_add() failed: %d\n", status);
+        device_destroy(console->mxdev);
+        free(console);
+        return status;
+    }
+
+    thrd_t t;
+    thrd_create_with_name(&t, debug_reader, console->mxdev, "debug-reader");
+
     return NO_ERROR;
 }
 

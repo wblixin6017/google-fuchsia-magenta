@@ -65,8 +65,8 @@ static mx_display_protocol_t kaveri_disp_display_proto = {
 
 // implement device protocol
 
-static mx_status_t kaveri_disp_release(mx_device_t* dev) {
-    kaveri_disp_device_t* device = dev->ctx;
+static void kaveri_disp_release(void* ctx) {
+    kaveri_disp_device_t* device = ctx;
 
     if (device->regs) {
         mx_handle_close(device->regs_handle);
@@ -80,7 +80,6 @@ static mx_status_t kaveri_disp_release(mx_device_t* dev) {
 
     device_destroy(device->mxdev);
     free(device);
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t kaveri_disp_device_proto = {

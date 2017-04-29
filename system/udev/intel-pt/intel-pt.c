@@ -667,7 +667,7 @@ static mx_status_t x86_pt_cpu_mode_free(ipt_device_t* ipt_dev) {
 
 // The DDK interface
 
-static mx_status_t ipt_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
+static mx_status_t ipt_open(void* ctx, mx_device_t** dev_out, uint32_t flags) {
     // TODO(dje): For now we only support ToPA.
     if (!ipt_config_output_topa)
         return ERR_NOT_SUPPORTED;
@@ -675,7 +675,7 @@ static mx_status_t ipt_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t fl
     // TODO(dje): What's the best way to allow only one open at a time?
     // [We could allow multiple, but multiple clients trying to control
     // tracing is problematic so just punt for now..]
-    ipt_device_t* ipt_dev = dev->ctx;
+    ipt_device_t* ipt_dev = ctx;
     if (ipt_dev->opened)
         return ERR_ALREADY_BOUND;
 
@@ -697,8 +697,8 @@ static mx_status_t ipt_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t fl
     return NO_ERROR;
 }
 
-static mx_status_t ipt_close(mx_device_t* dev, uint32_t flags) {
-    ipt_device_t* ipt_dev = dev->ctx;
+static mx_status_t ipt_close(void* ctx, uint32_t flags) {
+    ipt_device_t* ipt_dev = ctx;
 
     ipt_dev->opened = false;
     return NO_ERROR;
@@ -897,10 +897,10 @@ static ssize_t ipt_ioctl1(ipt_device_t* ipt_dev, uint32_t op,
     }
 }
 
-static ssize_t ipt_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t ipt_ioctl(void* ctx, uint32_t op,
                          const void* cmd, size_t cmdlen,
                          void* reply, size_t max) {
-    ipt_device_t* ipt_dev = dev->ctx;
+    ipt_device_t* ipt_dev = ctx;
 
     // TODO(dje): Switch to c++ so that we can use AutoLock.
     mtx_lock(&ipt_dev->lock);
@@ -910,8 +910,8 @@ static ssize_t ipt_ioctl(mx_device_t* dev, uint32_t op,
     return result;
 }
 
-static mx_status_t ipt_release(mx_device_t* dev) {
-    ipt_device_t* ipt_dev = dev->ctx;
+static void ipt_release(void* ctx) {
+    ipt_device_t* ipt_dev = ctx;
 
     // TODO(dje): Neither of these should fail. What to do?
     // For now flag things as busted and prevent further use.
@@ -920,8 +920,6 @@ static mx_status_t ipt_release(mx_device_t* dev) {
 
     device_destroy(ipt_dev->mxdev);
     free(ipt_dev);
-
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t ipt_device_proto = {

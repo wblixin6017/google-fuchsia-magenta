@@ -311,7 +311,7 @@ static void sanitize_rtc(rtc_t* rtc) {
 }
 
 // Implement ioctl protocol.
-static ssize_t intel_rtc_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t intel_rtc_ioctl(void* ctx, uint32_t op,
                                const void* in_buf, size_t in_len,
                                void* out_buf, size_t out_len) {
     switch (op) {

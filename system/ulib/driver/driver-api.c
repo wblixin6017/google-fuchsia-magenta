@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include <magenta/compiler.h>
+#include <ddk/device.h>
 #include <driver/driver-api.h>
 
 static driver_api_t* API;
@@ -21,6 +22,23 @@ __EXPORT mx_status_t device_create(const char* name, void* ctx,
                                    mx_protocol_device_t* ops, mx_driver_t* driver,
                                    mx_device_t** out) {
     return API->device_create(name, ctx, ops, driver, out);
+}
+
+__EXPORT mx_status_t device_op_get_protocol(mx_device_t* dev, uint32_t proto_id,
+                                                 void** protocol) {
+    if (dev->ops->get_protocol) {
+        return dev->ops->get_protocol(dev->ctx, proto_id, protocol);
+    }
+
+    if (proto_id == MX_PROTOCOL_DEVICE) {
+        *protocol = dev->ops;
+        return NO_ERROR;
+    }
+    if ((proto_id == dev->protocol_id) && (dev->protocol_ops != NULL)) {
+        *protocol = dev->protocol_ops;
+        return NO_ERROR;
+    }
+    return ERR_NOT_SUPPORTED;
 }
 
 __EXPORT void device_set_protocol(mx_device_t* dev, uint32_t proto_id, void* proto_ops) {

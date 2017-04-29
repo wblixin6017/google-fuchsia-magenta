@@ -42,8 +42,8 @@ typedef struct acpi_battery_device {
     uint32_t capacity_remaining;
 } acpi_battery_device_t;
 
-static ssize_t acpi_battery_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
-    acpi_battery_device_t* device = dev->ctx;
+static ssize_t acpi_battery_read(void* ctx, void* buf, size_t count, mx_off_t off) {
+    acpi_battery_device_t* device = ctx;
     mtx_lock(&device->lock);
     ssize_t rc = 0;
     int pct;

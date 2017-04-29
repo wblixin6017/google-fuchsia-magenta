@@ -13,11 +13,11 @@
 
 // null is the /dev/null device.
 
-static ssize_t null_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
+static ssize_t null_read(void* ctx, void* buf, size_t count, mx_off_t off) {
     return 0;
 }
 
-static ssize_t null_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
+static ssize_t null_write(void* ctx, const void* buf, size_t count, mx_off_t off) {
     return count;
 }
 

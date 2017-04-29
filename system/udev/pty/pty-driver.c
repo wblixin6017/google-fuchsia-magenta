@@ -24,6 +24,10 @@ typedef struct pty_server_dev {
     pty_fifo_t fifo;
 } pty_server_dev_t;
 
+typedef struct pty_root_dev {
+    mx_device_t* mxdev;
+} pty_root_dev_t;
+
 #define psd_from_ps(ps) containerof(ps, pty_server_dev_t, srv)
 
 static mx_status_t psd_recv(pty_server_t* ps, const void* data, size_t len, size_t* actual) {
@@ -46,8 +50,8 @@ static mx_status_t psd_recv(pty_server_t* ps, const void* data, size_t len, size
     }
 }
 
-static ssize_t psd_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off) {
-    pty_server_dev_t* psd = dev->ctx;
+static ssize_t psd_read(void* ctx, void* buf, size_t count, mx_off_t off) {
+    pty_server_dev_t* psd = ctx;
 
     mtx_lock(&psd->srv.lock);
     bool was_full = pty_fifo_is_full(&psd->fifo);
@@ -67,8 +71,8 @@ static ssize_t psd_read(mx_device_t* dev, void* buf, size_t count, mx_off_t off)
     }
 }
 
-static ssize_t psd_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
-    pty_server_dev_t* psd = dev->ctx;
+static ssize_t psd_write(void* ctx, const void* buf, size_t count, mx_off_t off) {
+    pty_server_dev_t* psd = ctx;
     size_t actual;
     mx_status_t status;
 
@@ -79,10 +83,10 @@ static ssize_t psd_write(mx_device_t* dev, const void* buf, size_t count, mx_off
     }
 }
 
-static ssize_t psd_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t psd_ioctl(void* ctx, uint32_t op,
                   const void* in_buf, size_t in_len,
                   void* out_buf, size_t out_len) {
-    pty_server_dev_t* psd = dev->ctx;
+    pty_server_dev_t* psd = ctx;
 
     switch (op) {
     case IOCTL_PTY_SET_WINDOW_SIZE: {
@@ -113,7 +117,8 @@ static mx_protocol_device_t psd_ops = {
 
 // ptmx device - used to obtain the pty server of a new pty instance
 
-static mx_status_t ptmx_open(mx_device_t* dev, mx_device_t** out, uint32_t flags) {
+static mx_status_t ptmx_open(void* ctx, mx_device_t** out, uint32_t flags) {
+    pty_root_dev_t* dev = ctx;
     pty_server_dev_t* psd;
     if ((psd = calloc(1, sizeof(pty_server_dev_t))) == NULL) {
         return ERR_NO_MEMORY;
@@ -133,7 +138,7 @@ static mx_status_t ptmx_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
     psd->fifo.head = 0;
     psd->fifo.tail = 0;
 
-    status = device_add_instance(psd->srv.mxdev, dev);
+    status = device_add_instance(psd->srv.mxdev, dev->mxdev);
     if (status < 0) {
         device_destroy(psd->srv.mxdev);
         free(psd);
@@ -145,18 +150,30 @@ static mx_status_t ptmx_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
     return NO_ERROR;
 }
 
+static void ptmx_release(void* ctx) {
+    pty_root_dev_t* dev = ctx;
+    device_destroy(dev->mxdev);
+    free(dev);
+}
 
 static mx_protocol_device_t ptmx_ops = {
     .open = ptmx_open,
+    .release = ptmx_release,
 };
 
 static mx_status_t ptmx_bind(mx_driver_t* drv, mx_device_t* parent, void** cookie) {
-    mx_device_t* dev;
+    pty_root_dev_t* dev = calloc(1, sizeof(pty_root_dev_t));
+    if (!dev) {
+        return ERR_NO_MEMORY;
+    }
     mx_status_t status;
-    if ((status = device_create("ptmx", NULL, &ptmx_ops, drv, &dev)) < 0) {
+    if ((status = device_create("ptmx", dev, &ptmx_ops, drv, &dev->mxdev)) < 0) {
+        free(dev);
         return status;
     }
-    if ((status = device_add(dev, parent)) < 0) {
+    if ((status = device_add(dev->mxdev, parent)) < 0) {
+        device_destroy(dev->mxdev);
+        free(dev);
         return status;
     }
     return NO_ERROR;

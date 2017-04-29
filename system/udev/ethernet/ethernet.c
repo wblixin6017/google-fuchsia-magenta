@@ -410,11 +410,11 @@ static mx_status_t eth_stop_locked(ethdev_t* edev) {
     return NO_ERROR;
 }
 
-static ssize_t eth_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t eth_ioctl(void* ctx, uint32_t op,
                          const void* in_buf, size_t in_len,
                          void* out_buf, size_t out_len) {
 
-    ethdev_t* edev = dev->ctx;
+    ethdev_t* edev = ctx;
     mtx_lock(&edev->edev0->lock);
     mx_status_t status;
     if (edev->state & ETHDEV_DEAD) {
@@ -510,16 +510,15 @@ static void eth_kill_locked(ethdev_t* edev) {
     xprintf("eth: all resources released\n");
 }
 
-static mx_status_t eth_release(mx_device_t* dev) {
-    ethdev_t* edev = dev->ctx;
+static void eth_release(void* ctx) {
+    ethdev_t* edev = ctx;
     eth0_downref(edev->edev0);
     device_destroy(edev->mxdev);
     free(edev);
-    return ERR_NOT_SUPPORTED;
 }
 
-static mx_status_t eth_close(mx_device_t* dev, uint32_t flags) {
-    ethdev_t* edev = dev->ctx;
+static mx_status_t eth_close(void* ctx, uint32_t flags) {
+    ethdev_t* edev = ctx;
 
     mtx_lock(&edev->edev0->lock);
     eth_stop_locked(edev);
@@ -540,8 +539,8 @@ static ethernet_protocol_t ethernet_ops = {};
 
 mx_driver_t _driver_ethernet;
 
-static mx_status_t eth0_open(mx_device_t* dev, mx_device_t** out, uint32_t flags) {
-    ethdev0_t* edev0 = dev->ctx;
+static mx_status_t eth0_open(void* ctx, mx_device_t** out, uint32_t flags) {
+    ethdev0_t* edev0 = ctx;
 
     ethdev_t* edev;
     if ((edev = calloc(1, sizeof(ethdev_t))) == NULL) {
@@ -556,7 +555,7 @@ static mx_status_t eth0_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
     device_set_protocol(edev->mxdev, MX_PROTOCOL_ETHERNET, &ethernet_ops);
     edev->edev0 = edev0;
 
-    if ((status = device_add_instance(edev->mxdev, dev)) < 0) {
+    if ((status = device_add_instance(edev->mxdev, edev0->mxdev)) < 0) {
         device_destroy(edev->mxdev);
         free(edev);
         return status;
@@ -571,8 +570,8 @@ static mx_status_t eth0_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
     return NO_ERROR;
 }
 
-static void eth0_unbind(mx_device_t* dev) {
-    ethdev0_t* edev0 = dev->ctx;
+static void eth0_unbind(void* ctx) {
+    ethdev0_t* edev0 = ctx;
 
     mtx_lock(&edev0->lock);
 
@@ -588,13 +587,12 @@ static void eth0_unbind(mx_device_t* dev) {
 
     mtx_unlock(&edev0->lock);
 
-    device_remove(dev);
+    device_remove(edev0->mxdev);
 }
 
-static mx_status_t eth0_release(mx_device_t* dev) {
-    ethdev0_t* edev0 = dev->ctx;
+static void eth0_release(void* ctx) {
+    ethdev0_t* edev0 = ctx;
     eth0_downref(edev0);
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t ethdev0_ops = {

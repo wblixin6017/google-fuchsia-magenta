@@ -24,6 +24,7 @@
 
 typedef struct blkdev {
     mx_device_t* mxdev;
+    mx_device_t* parent;
     block_ops_t* blockops;
 
     mtx_t lock;
@@ -170,9 +171,9 @@ static ssize_t blkdev_fifo_close(blkdev_t* bdev) {
 
 // implement device protocol:
 
-static ssize_t blkdev_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
+static ssize_t blkdev_ioctl(void* ctx, uint32_t op, const void* cmd,
                             size_t cmdlen, void* reply, size_t max) {
-    blkdev_t* blkdev = dev->ctx;
+    blkdev_t* blkdev = ctx;
     switch (op) {
     case IOCTL_BLOCK_GET_FIFOS:
         return blkdev_get_fifos(blkdev, reply, max);
@@ -185,31 +186,31 @@ static ssize_t blkdev_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
     case IOCTL_BLOCK_FIFO_CLOSE:
         return blkdev_fifo_close(blkdev);
     default: {
-        mx_device_t* parent = dev->parent;
-        return device_op_ioctl(parent, op, cmd, cmdlen, reply, max);
+        return device_op_ioctl(blkdev->parent, op, cmd, cmdlen, reply, max);
     }
     }
 }
 
-static void blkdev_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
-    iotxn_queue(dev->parent, txn);
+static void blkdev_iotxn_queue(void* ctx, iotxn_t* txn) {
+    blkdev_t* blkdev = ctx;
+    iotxn_queue(blkdev->parent, txn);
 }
 
-static mx_off_t blkdev_get_size(mx_device_t* dev) {
-    mx_device_t* parent = dev->parent;
-    return device_op_get_size(parent);
+static mx_off_t blkdev_get_size(void* ctx) {
+    blkdev_t* blkdev = ctx;
+    return device_op_get_size(blkdev->parent);
 }
 
-static void blkdev_unbind(mx_device_t* dev) {
-    device_remove(dev);
+static void blkdev_unbind(void* ctx) {
+    blkdev_t* blkdev = ctx;
+    device_remove(blkdev->mxdev);
 }
 
-static mx_status_t blkdev_release(mx_device_t* dev) {
-    blkdev_t* blkdev = dev->ctx;
+static void blkdev_release(void* ctx) {
+    blkdev_t* blkdev = ctx;
     blkdev_fifo_close(blkdev);
     device_destroy(blkdev->mxdev);
     free(blkdev);
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t blkdev_ops = {
@@ -225,7 +226,7 @@ static mx_status_t block_driver_bind(mx_driver_t* drv, mx_device_t* dev, void** 
     if ((bdev = calloc(1, sizeof(blkdev_t))) == NULL) {
         return ERR_NO_MEMORY;
     }
-
+    bdev->parent = dev;
     mx_status_t status;
     if (device_op_get_protocol(dev, MX_PROTOCOL_BLOCK_CORE, (void**)&bdev->blockops)) {
         status = ERR_INTERNAL;

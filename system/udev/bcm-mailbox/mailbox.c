@@ -324,7 +324,7 @@ static mx_status_t bcm_get_clock_rate(const uint32_t clockid, uint32_t* res) {
     return ret;
 }
 
-static ssize_t mailbox_device_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t mailbox_device_ioctl(void* ctx, uint32_t op,
                                     const void* in_buf, size_t in_len,
                                     void* out_buf, size_t out_len) {
     bcm_fb_desc_t fbdesc;

@@ -281,8 +281,8 @@ out:
     return status;
 }
 
-static void ax88772b_unbind(mx_device_t* device) {
-    ax88772b_t* eth = get_ax88772b(device);
+static void ax88772b_unbind(void* ctx) {
+    ax88772b_t* eth = ctx;
 
     mtx_lock(&eth->mutex);
     eth->dead = true;
@@ -308,10 +308,9 @@ static void ax88772b_free(ax88772b_t* eth) {
     free(eth);
 }
 
-static mx_status_t ax88772b_release(mx_device_t* device) {
-    ax88772b_t* eth = get_ax88772b(device);
+static void ax88772b_release(void* ctx) {
+    ax88772b_t* eth = ctx;
     ax88772b_free(eth);
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t ax88772b_device_proto = {

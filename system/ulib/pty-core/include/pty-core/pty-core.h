@@ -75,7 +75,7 @@ void pty_server_set_window_size(pty_server_t* ps, uint32_t w, uint32_t h);
 
 // device ops for pty_server
 // the mx_device_t here must be the one embedded in pty_server_t
-mx_status_t pty_server_openat(mx_device_t* dev, mx_device_t** out, const char* path, uint32_t flags);
-mx_status_t pty_server_release(mx_device_t* dev);
+mx_status_t pty_server_openat(void* ctx, mx_device_t** out, const char* path, uint32_t flags);
+void pty_server_release(void* ctx);
 
 __END_CDECLS;

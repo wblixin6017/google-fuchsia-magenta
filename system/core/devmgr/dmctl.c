@@ -113,7 +113,7 @@ static mx_status_t devmgr_control(const char* cmd) {
 
 
 
-static ssize_t dmctl_write(mx_device_t* dev, const void* buf, size_t count, mx_off_t off) {
+static ssize_t dmctl_write(void* ctx, const void* buf, size_t count, mx_off_t off) {
     char cmd[1024];
     if (count < sizeof(cmd)) {
         memcpy(cmd, buf, count);
@@ -126,7 +126,7 @@ static ssize_t dmctl_write(mx_device_t* dev, const void* buf, size_t count, mx_o
 
 static mxio_multiloader_t* multiloader = NULL;
 
-static ssize_t dmctl_ioctl(mx_device_t* dev, uint32_t op,
+static ssize_t dmctl_ioctl(void* ctx, uint32_t op,
                            const void* in_buf, size_t in_len,
                            void* out_buf, size_t out_len) {
     switch (op) {

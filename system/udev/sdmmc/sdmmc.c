@@ -78,12 +78,12 @@ static mx_status_t sdmmc_do_command(mx_device_t* dev, const uint32_t cmd,
     return txn->status;
 }
 
-static mx_off_t sdmmc_get_size(mx_device_t* dev) {
-    sdmmc_t* sdmmc = dev->ctx;
+static mx_off_t sdmmc_get_size(void* ctx) {
+    sdmmc_t* sdmmc = ctx;
     return sdmmc->capacity;
 }
 
-static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
+static ssize_t sdmmc_ioctl(void* ctx, uint32_t op, const void* cmd,
                            size_t cmdlen, void* reply, size_t max) {
     switch (op) {
     case IOCTL_BLOCK_GET_INFO: {
@@ -94,7 +94,7 @@ static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
         // Since we only support SDHC cards, the blocksize must be the SDHC
         // blocksize.
         info->block_size = SDHC_BLOCK_SIZE;
-        info->block_count = sdmmc_get_size(dev) / SDHC_BLOCK_SIZE;
+        info->block_count = sdmmc_get_size(ctx) / SDHC_BLOCK_SIZE;
         return sizeof(*info);
     }
     case IOCTL_BLOCK_GET_NAME: {
@@ -109,19 +109,18 @@ static ssize_t sdmmc_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
     return 0;
 }
 
-static void sdmmc_unbind(mx_device_t* device) {
-    sdmmc_t* sdmmc = device->ctx;
+static void sdmmc_unbind(void* ctx) {
+    sdmmc_t* sdmmc = ctx;
     device_remove(sdmmc->mxdev);
 }
 
-static mx_status_t sdmmc_release(mx_device_t* device) {
-    sdmmc_t* sdmmc = device->ctx;
+static void sdmmc_release(void* ctx) {
+    sdmmc_t* sdmmc = ctx;
     device_destroy(sdmmc->mxdev);
     free(sdmmc);
-    return NO_ERROR;
 }
 
-static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
+static void sdmmc_iotxn_queue(void* ctx, iotxn_t* txn) {
     if (txn->offset % SDHC_BLOCK_SIZE) {
         xprintf("sdmmc: iotxn offset not aligned to block boundary, "
                 "offset =%" PRIu64 ", block size = %d\n",
@@ -139,7 +138,7 @@ static void sdmmc_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
     }
 
     iotxn_t* emmc_txn = NULL;
-    sdmmc_t* sdmmc = dev->ctx;
+    sdmmc_t* sdmmc = ctx;
     mx_device_t* sdmmc_mxdev = sdmmc->sdmmc_mxdev;
     uint32_t cmd = 0;
 

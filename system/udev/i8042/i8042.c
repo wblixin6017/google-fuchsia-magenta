@@ -707,11 +707,10 @@ static hidbus_protocol_t hidbus_ops = {
     .set_protocol = i8042_set_protocol,
 };
 
-static mx_status_t i8042_release(mx_device_t* dev) {
-    i8042_device_t* i8042 = dev->ctx;
+static void i8042_release(void* ctx) {
+    i8042_device_t* i8042 = ctx;
     device_destroy(i8042->mxdev);
     free(i8042);
-    return NO_ERROR;
 }
 
 static mx_protocol_device_t i8042_dev_proto = {

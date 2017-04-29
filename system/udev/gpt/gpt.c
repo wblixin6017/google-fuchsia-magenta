@@ -38,6 +38,7 @@
 
 typedef struct gptpart_device {
     mx_device_t* mxdev;
+    mx_device_t* parent;
 
     gpt_entry_t gpt_entry;
 
@@ -91,8 +92,8 @@ static bool prepare_txn(gptpart_device_t* dev, iotxn_t* txn) {
 
 // implement device protocol:
 
-static ssize_t gpt_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t cmdlen, void* reply, size_t max) {
-    gptpart_device_t* device = dev->ctx;
+static ssize_t gpt_ioctl(void* ctx, uint32_t op, const void* cmd, size_t cmdlen, void* reply, size_t max) {
+    gptpart_device_t* device = ctx;
     switch (op) {
     case IOCTL_BLOCK_GET_INFO: {
         block_info_t* info = reply;
@@ -122,45 +123,44 @@ static ssize_t gpt_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t 
     }
     case IOCTL_DEVICE_SYNC: {
         // Propagate sync to parent device
-        return device_op_ioctl(dev->parent, IOCTL_DEVICE_SYNC, NULL, 0, NULL, 0);
+        return device_op_ioctl(device->parent, IOCTL_DEVICE_SYNC, NULL, 0, NULL, 0);
     }
     default:
         return ERR_NOT_SUPPORTED;
     }
 }
 
-static void gpt_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
-    gptpart_device_t* device = dev->ctx;
+static void gpt_iotxn_queue(void* ctx, iotxn_t* txn) {
+    gptpart_device_t* device = ctx;
     if (!prepare_txn(device, txn)) {
         iotxn_complete(txn, NO_ERROR, 0);
     } else {
-        iotxn_queue(dev->parent, txn);
+        iotxn_queue(device->parent, txn);
     }
 }
 
-static mx_off_t gpt_getsize(mx_device_t* dev) {
-    gptpart_device_t* device = dev->ctx;
+static mx_off_t gpt_getsize(void* ctx) {
+    gptpart_device_t* device = ctx;
     return getsize(device);
 }
 
-static void gpt_unbind(mx_device_t* dev) {
-    gptpart_device_t* device = dev->ctx;
+static void gpt_unbind(void* ctx) {
+    gptpart_device_t* device = ctx;
     device_remove(device->mxdev);
 }
 
-static mx_status_t gpt_release(mx_device_t* dev) {
-    gptpart_device_t* device = dev->ctx;
+static void gpt_release(void* ctx) {
+    gptpart_device_t* device = ctx;
     device_destroy(device->mxdev);
     free(device);
-    return NO_ERROR;
 }
 
 static inline bool is_writer(uint32_t flags) {
     return (flags & O_RDWR || flags & O_WRONLY);
 }
 
-static mx_status_t gpt_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
-    gptpart_device_t* device = dev->ctx;
+static mx_status_t gpt_open(void* ctx, mx_device_t** dev_out, uint32_t flags) {
+    gptpart_device_t* device = ctx;
     mx_status_t status = NO_ERROR;
     if (is_writer(flags) && (atomic_exchange(&device->writercount, 1) == 1)) {
         printf("Partition cannot be opened as writable (open elsewhere)\n");
@@ -169,8 +169,8 @@ static mx_status_t gpt_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t fl
     return status;
 }
 
-static mx_status_t gpt_close(mx_device_t* dev, uint32_t flags) {
-    gptpart_device_t* device = dev->ctx;
+static mx_status_t gpt_close(void* ctx, uint32_t flags) {
+    gptpart_device_t* device = ctx;
     if (is_writer(flags)) {
         atomic_fetch_sub(&device->writercount, 1);
     }
@@ -224,7 +224,7 @@ static void gpt_block_read(mx_device_t* dev, mx_handle_t vmo, uint64_t length, u
         iotxn_release(txn);
         device->callbacks->complete(cookie, ERR_INVALID_ARGS);
     } else {
-        iotxn_queue(dev->parent, txn);
+        iotxn_queue(device->parent, txn);
     }
 }
 
@@ -248,7 +248,7 @@ static void gpt_block_write(mx_device_t* dev, mx_handle_t vmo, uint64_t length, 
         iotxn_release(txn);
         device->callbacks->complete(cookie, ERR_INVALID_ARGS);
     } else {
-        iotxn_queue(dev->parent, txn);
+        iotxn_queue(device->parent, txn);
     }
 }
 
@@ -380,6 +380,7 @@ static int gpt_bind_thread(void* arg) {
                 device->mxdev->name, type_guid, partition_guid, pname);
 
         device_set_protocol(device->mxdev, MX_PROTOCOL_BLOCK_CORE, &gpt_block_ops);
+        device->parent = dev;
         if (device_add(device->mxdev, dev) != NO_ERROR) {
             printf("gpt device_add failed\n");
             device_destroy(device->mxdev);

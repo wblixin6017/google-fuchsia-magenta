@@ -14,7 +14,7 @@
 
 mx_handle_t get_sysinfo_job_root(void);
 
-static ssize_t sysinfo_ioctl(mx_device_t* dev, uint32_t op, const void* cmd, size_t cmdlen,
+static ssize_t sysinfo_ioctl(void* ctx, uint32_t op, const void* cmd, size_t cmdlen,
                              void* reply, size_t max) {
     switch (op) {
     case IOCTL_SYSINFO_GET_ROOT_JOB: {
