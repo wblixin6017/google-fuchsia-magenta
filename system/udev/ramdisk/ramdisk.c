@@ -186,7 +186,6 @@ static mx_status_t ramdisk_release(mx_device_t* dev) {
         mx_vmar_unmap(mx_vmar_root_self(), ramdev->mapped_addr, sizebytes(ramdev));
         mx_handle_close(ramdev->vmo);
     }
-    device_destroy(ramdev->mxdev);
     free(ramdev);
     return NO_ERROR;
 }
@@ -244,7 +243,6 @@ static ssize_t ramctl_ioctl(mx_device_t* dev, uint32_t op, const void* cmd,
 
         device_set_protocol(ramdev->mxdev, MX_PROTOCOL_BLOCK_CORE, &ramdisk_block_ops);
         if ((status = device_add(ramdev->mxdev, ramdisk_ctl_dev)) != NO_ERROR) {
-            device_destroy(ramdev->mxdev);
             mx_vmar_unmap(mx_vmar_root_self(), ramdev->mapped_addr, sizebytes(ramdev));
             mx_handle_close(ramdev->vmo);
             free(ramdev);
@@ -261,15 +259,9 @@ static void ramctl_unbind(mx_device_t* dev) {
     device_remove(dev);
 }
 
-static mx_status_t ramctl_release(mx_device_t* dev) {
-    device_destroy(dev);
-    return NO_ERROR;
-}
-
 static mx_protocol_device_t ramctl_instance_proto = {
     .ioctl = ramctl_ioctl,
     .unbind = ramctl_unbind,
-    .release = ramctl_release,
 };
 
 static mx_status_t ramctl_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t flags) {
@@ -281,7 +273,6 @@ static mx_status_t ramctl_open(mx_device_t* dev, mx_device_t** dev_out, uint32_t
         return status;
     }
     if ((status = device_add_instance(instance_dev, dev)) != NO_ERROR) {
-        device_destroy(instance_dev);
         return status;
     }
     *dev_out = instance_dev;
@@ -296,7 +287,6 @@ static mx_status_t ramdisk_driver_bind(mx_driver_t* driver, mx_device_t* parent,
     if (device_create("ramctl", NULL, &ramdisk_ctl_proto, driver, &ramdisk_ctl_dev) == NO_ERROR) {
         mx_status_t status;
         if ((status = device_add(ramdisk_ctl_dev, parent)) < 0) {
-            device_destroy(ramdisk_ctl_dev);
             return status;
         }
     }

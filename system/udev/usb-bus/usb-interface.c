@@ -134,7 +134,6 @@ static mx_status_t usb_interface_release(mx_device_t* device) {
     usb_interface_t* intf = device->ctx;
 
     stop_callback_thread(intf);
-    device_destroy(intf->mxdev);
     free(intf->descriptor);
     free(intf);
 
@@ -269,7 +268,6 @@ mx_status_t usb_device_add_interface(usb_device_t* device,
 
     status = usb_interface_configure_endpoints(intf, interface_desc->bInterfaceNumber, 0);
     if (status != NO_ERROR) {
-        device_destroy(intf->mxdev);
         free(intf);
         return status;
     }
@@ -284,7 +282,6 @@ mx_status_t usb_device_add_interface(usb_device_t* device,
     if (status != NO_ERROR) {
         stop_callback_thread(intf);
         list_delete(&intf->node);
-        device_destroy(intf->mxdev);
         free(interface_desc);
         free(intf);
     }
@@ -359,7 +356,6 @@ mx_status_t usb_device_add_interface_association(usb_device_t* device,
     if (status != NO_ERROR) {
         stop_callback_thread(intf);
         list_delete(&intf->node);
-        device_destroy(intf->mxdev);
         free(assoc_desc);
         free(intf);
     }

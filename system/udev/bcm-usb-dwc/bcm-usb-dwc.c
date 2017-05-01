@@ -1777,7 +1777,7 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev, void** cooki
     if ((st = create_default_device(usb_dwc)) != NO_ERROR) {
         xprintf("usb_dwc_bind failed to create default device. retcode = %d\n",
                 st);
-        goto error_return_created;
+        goto error_return;
     }
 
     // Thread that responds to requests for the root hub.
@@ -1794,8 +1794,6 @@ static mx_status_t usb_dwc_bind(mx_driver_t* drv, mx_device_t* dev, void** cooki
     xprintf("usb_dwc_bind success!\n");
     return NO_ERROR;
 
-error_return_created:
-    device_destroy(usb_dwc->mxdev);
 error_return:
     if (usb_dwc)
         free(usb_dwc);

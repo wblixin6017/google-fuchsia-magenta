@@ -579,7 +579,6 @@ static void emmc_unbind(mx_device_t* device) {
 
 static mx_status_t emmmc_release(mx_device_t* device) {
     emmc_t* emmc = device->ctx;
-    device_destroy(emmc->mxdev);
     free(emmc);
     return NO_ERROR;
 }
@@ -773,14 +772,12 @@ static int emmc_bootstrap_thread(void *arg) {
 
     st = device_add(emmc->mxdev, emmc->parent);
     if (st != NO_ERROR) {
-        goto out_err_add;
+        goto out;
     }
 
     // Everything went okay, exit the bootstrap thread!
     return 0;
 
-out_err_add:
-    device_destroy(emmc->mxdev);
 out:
     if (emmc)
         free(emmc);

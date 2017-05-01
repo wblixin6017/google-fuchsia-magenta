@@ -324,7 +324,6 @@ static ssize_t intel_serialio_i2c_slave_ioctl(
 
 static mx_status_t intel_serialio_i2c_slave_release(mx_device_t* dev) {
     intel_serialio_i2c_slave_device_t* slave = dev->ctx;
-    device_destroy(slave->mxdev);
     free(slave);
     return NO_ERROR;
 }

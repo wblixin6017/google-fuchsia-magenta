@@ -131,13 +131,11 @@ mx_status_t fb_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie) {
                                 msm_framebuffer_size, disp_info.format,
                                 disp_info.width, disp_info.height, disp_info.stride);
     if (status != NO_ERROR) {
-        device_destroy(disp_device);
         return status;
     }
 
     status = device_add(disp_device, parent);
     if (status != NO_ERROR) {
-        device_destroy(disp_device);
         return status;
     }
 

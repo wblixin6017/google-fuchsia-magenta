@@ -170,7 +170,6 @@ static void mbr_unbind(mx_device_t* dev) {
 
 static mx_status_t mbr_release(mx_device_t* dev) {
     mbrpart_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -302,7 +301,6 @@ static int mbr_bind_thread(void* arg) {
         memcpy(&pdev->info, &block_info, sizeof(block_info));
         if ((st = device_add(pdev->mxdev, dev)) != NO_ERROR) {
             xprintf("mbr: device_add failed, retcode = %d\n", st);
-            device_destroy(pdev->mxdev);
             free(pdev);
             continue;
         }

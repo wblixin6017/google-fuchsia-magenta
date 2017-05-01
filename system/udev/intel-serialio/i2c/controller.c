@@ -294,7 +294,6 @@ static ssize_t intel_serialio_i2c_ioctl(
 
 static mx_status_t intel_serialio_i2c_release(mx_device_t* dev) {
     intel_serialio_i2c_device_t* cont = dev->ctx;
-    device_destroy(cont->mxdev);
     free(cont);
     return NO_ERROR;
 }
@@ -507,7 +506,6 @@ fail:
         mx_handle_close(device->regs_handle);
     if (config_handle)
         mx_handle_close(config_handle);
-    device_destroy(device->mxdev);
     free(device);
 
     return status;

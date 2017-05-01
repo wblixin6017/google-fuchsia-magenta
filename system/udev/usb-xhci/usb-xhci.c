@@ -182,7 +182,6 @@ static mx_status_t xhci_release(mx_device_t* device) {
      xhci_t* xhci = device->ctx;
 
    // FIXME(voydanoff) - there is a lot more work to do here
-    device_destroy(xhci->mxdev);
     free(xhci);
     return NO_ERROR;
 }

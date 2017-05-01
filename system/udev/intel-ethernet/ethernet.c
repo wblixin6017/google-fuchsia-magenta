@@ -229,7 +229,6 @@ fail:
         mx_handle_close(edev->irqh);
         mx_handle_close(edev->ioh);
     }
-    device_destroy(edev->mxdev);
     free(edev);
     return ERR_NOT_SUPPORTED;
 }

@@ -118,7 +118,6 @@ static mx_status_t test_device_release(mx_device_t* dev) {
     if (device->control != MX_HANDLE_INVALID) {
         mx_handle_close(device->control);
     }
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -162,7 +161,6 @@ static ssize_t test_ioctl(mx_device_t* dev, uint32_t op, const void* in, size_t 
     device_set_protocol(device->mxdev, MX_PROTOCOL_TEST, &test_test_proto);
 
     if ((status = device_add(device->mxdev, dev)) != NO_ERROR) {
-        device_destroy(device->mxdev);
         free(device);
         return status;
     }
@@ -170,14 +168,8 @@ static ssize_t test_ioctl(mx_device_t* dev, uint32_t op, const void* in, size_t 
     return snprintf(out, outlen,"%s/%s", DEV_TEST, devname) + 1;
 }
 
-static mx_status_t test_release(mx_device_t* dev) {
-    device_destroy(dev);
-    return NO_ERROR;
-}
-
 static mx_protocol_device_t test_root_proto = {
     .ioctl = test_ioctl,
-    .release = test_release,
 };
 
 static mx_status_t test_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
@@ -185,7 +177,6 @@ static mx_status_t test_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) 
     if (device_create("test", NULL, &test_root_proto, drv, &device) == NO_ERROR) {
         if (device_add(device, dev) < 0) {
             printf("test: device_add() failed\n");
-            device_destroy(device);
         }
     }
     return NO_ERROR;

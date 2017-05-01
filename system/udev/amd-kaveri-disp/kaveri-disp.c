@@ -78,7 +78,6 @@ static mx_status_t kaveri_disp_release(mx_device_t* dev) {
         device->framebuffer_handle = -1;
     }
 
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -139,7 +138,7 @@ static mx_status_t kaveri_disp_bind(mx_driver_t* drv, mx_device_t* dev, void** c
         di->stride = stride;
     } else {
         status = ERR_NOT_SUPPORTED;
-        goto fail_add;
+        goto fail;
     }
     di->flags = MX_DISPLAY_FLAG_HW_FRAMEBUFFER;
 
@@ -149,7 +148,7 @@ static mx_status_t kaveri_disp_bind(mx_driver_t* drv, mx_device_t* dev, void** c
     device_set_protocol(device->mxdev, MX_PROTOCOL_DISPLAY, &kaveri_disp_display_proto);
     status = device_add(device->mxdev, dev);
     if (status != NO_ERROR) {
-        goto fail_add;
+        goto fail;
     }
 
     printf("initialized amd kaveri R7 display driver, reg=%p regsize=0x%" PRIx64 " fb=%p fbsize=0x%" PRIx64 "\n",
@@ -159,8 +158,6 @@ static mx_status_t kaveri_disp_bind(mx_driver_t* drv, mx_device_t* dev, void** c
 
     return NO_ERROR;
 
-fail_add:
-    device_destroy(device->mxdev);
 fail:
     free(device);
     return status;

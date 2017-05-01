@@ -253,7 +253,6 @@ static int i2c_bootstrap_thread(void *arg) {
 
     if (status == NO_ERROR) return 0;
 
-    device_destroy(i2c_ctx->mxdev);
 i2c_err:
     if (i2c_ctx)
         free(i2c_ctx);

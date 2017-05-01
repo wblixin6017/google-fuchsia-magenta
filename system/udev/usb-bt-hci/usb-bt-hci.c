@@ -516,7 +516,6 @@ static mx_status_t hci_release(mx_device_t* device) {
 
     mtx_unlock(&hci->mutex);
 
-    device_destroy(hci->mxdev);
     free(hci);
 
     return NO_ERROR;

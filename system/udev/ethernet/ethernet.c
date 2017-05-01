@@ -62,7 +62,6 @@ static void eth0_downref(ethdev0_t* edev0) {
     edev0->refcount--;
     if (edev0->refcount == 0) {
         mtx_unlock(&edev0->lock);
-        device_destroy(edev0->mxdev);
         free(edev0);
     } else {
         mtx_unlock(&edev0->lock);
@@ -513,7 +512,6 @@ static void eth_kill_locked(ethdev_t* edev) {
 static mx_status_t eth_release(mx_device_t* dev) {
     ethdev_t* edev = dev->ctx;
     eth0_downref(edev->edev0);
-    device_destroy(edev->mxdev);
     free(edev);
     return ERR_NOT_SUPPORTED;
 }
@@ -557,7 +555,6 @@ static mx_status_t eth0_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
     edev->edev0 = edev0;
 
     if ((status = device_add_instance(edev->mxdev, dev)) < 0) {
-        device_destroy(edev->mxdev);
         free(edev);
         return status;
     }
@@ -645,13 +642,11 @@ static mx_status_t eth_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) {
     device_set_protocol(edev0->mxdev, MX_PROTOCOL_ETHERNET, NULL);
 
     if ((status = device_add(edev0->mxdev, dev)) < 0) {
-        goto fail_add;
+        goto fail;
     }
 
     return NO_ERROR;
 
-fail_add:
-    device_destroy(edev0->mxdev);
 fail:
     free(edev0);
     return status;

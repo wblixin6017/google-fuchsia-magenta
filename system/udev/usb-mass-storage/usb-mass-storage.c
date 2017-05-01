@@ -453,7 +453,6 @@ static mx_status_t ums_release(mx_device_t* device) {
         iotxn_release(ums->csw_iotxn);
     }
 
-    device_destroy(ums->mxdev);
     free(ums);
     return NO_ERROR;
 }

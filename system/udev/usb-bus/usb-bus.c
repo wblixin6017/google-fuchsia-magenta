@@ -95,7 +95,6 @@ static void usb_bus_unbind(mx_device_t* dev) {
 
 static mx_status_t usb_bus_release(mx_device_t* dev) {
     usb_bus_t* bus = dev->ctx;
-    device_destroy(bus->mxdev);
     free(bus->devices);
     free(bus);
     return NO_ERROR;
@@ -143,7 +142,6 @@ static mx_status_t usb_bus_bind(mx_driver_t* driver, mx_device_t* device, void**
     if (status == NO_ERROR) {
         hci_protocol->set_bus_device(device, bus->mxdev);
     } else {
-        device_destroy(bus->mxdev);
         free(bus->devices);
         free(bus);
     }

@@ -25,7 +25,6 @@
 static mx_status_t kpci_release(mx_device_t* dev) {
     kpci_device_t* device = dev->ctx;
     mx_handle_close(device->handle);
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -96,7 +95,6 @@ static mx_status_t kpci_drv_bind(mx_driver_t* drv, mx_device_t* parent, void** c
         return status;
     }
     if ((status = device_add(pcidev, parent)) < 0) {
-        device_destroy(pcidev);
         return status;
     }
     for (uint32_t index = 0;; index++) {

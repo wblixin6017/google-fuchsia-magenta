@@ -136,7 +136,6 @@ static void align_unbind(mx_device_t* dev) {
 
 static mx_status_t align_release(mx_device_t* dev) {
     align_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -165,14 +164,12 @@ static mx_status_t align_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie)
     block_info_t info;
     ssize_t rc = device_op_ioctl(dev, IOCTL_BLOCK_GET_INFO, NULL, 0, &info, sizeof(info));
     if (rc < 0) {
-        device_destroy(device->mxdev);
         free(device);
         return rc;
     }
     device->blksize = info.block_size;
     device_set_protocol(device->mxdev, MX_PROTOCOL_BLOCK, NULL);
     if ((status = device_add(device->mxdev, dev)) != NO_ERROR) {
-        device_destroy(device->mxdev);
         free(device);
         return status;
     }

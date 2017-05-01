@@ -349,7 +349,6 @@ static void hid_downref(hid_device_t* hid) {
         hid_release_reassembly_buffer(hid);
 
         mtx_unlock(&hid->lock);
-        device_destroy(hid->mxdev);
         free(hid);
     } else {
         mtx_unlock(&hid->lock);
@@ -359,7 +358,6 @@ static void hid_downref(hid_device_t* hid) {
 static mx_status_t hid_release_instance(mx_device_t* dev) {
     hid_instance_t* hid = dev->ctx;
     hid_downref(hid->base);
-    device_destroy(hid->mxdev);
     free(hid);
     return NO_ERROR;
 }
@@ -678,7 +676,6 @@ static mx_status_t hid_open_device(mx_device_t* dev, mx_device_t** dev_out, uint
     status = device_add_instance(inst->mxdev, dev);
     if (status != NO_ERROR) {
         printf("hid: error adding instance %d\n", status);
-        device_destroy(inst->mxdev);
         free(inst);
         return status;
     }
@@ -906,7 +903,6 @@ static mx_status_t hid_bind(mx_driver_t* driver, mx_device_t* parent, void** coo
 
 fail:
     hid_release_reassembly_buffer(hiddev);
-    device_destroy(hiddev->mxdev);
     free(hiddev);
     return status;
 }

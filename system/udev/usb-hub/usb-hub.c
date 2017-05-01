@@ -231,7 +231,6 @@ static void usb_hub_unbind(mx_device_t* device) {
 
 static mx_status_t usb_hub_free(usb_hub_t* hub) {
     iotxn_release(hub->status_request);
-    device_destroy(hub->mxdev);
     free(hub);
     return NO_ERROR;
 }

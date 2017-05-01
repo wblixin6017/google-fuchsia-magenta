@@ -173,7 +173,6 @@ mx_status_t BlockDevice::Init() {
     device_set_protocol(device_, MX_PROTOCOL_BLOCK, NULL);
     status = device_add(device_, bus_device_);
     if (status < 0) {
-        device_destroy(device_);
         device_ = nullptr;
         return status;
     }

@@ -116,7 +116,6 @@ static void sdmmc_unbind(mx_device_t* device) {
 
 static mx_status_t sdmmc_release(mx_device_t* device) {
     sdmmc_t* sdmmc = device->ctx;
-    device_destroy(sdmmc->mxdev);
     free(sdmmc);
     return NO_ERROR;
 }
@@ -469,7 +468,6 @@ static int sdmmc_bootstrap_thread(void* arg) {
     return 0;
 err:
     if (sdmmc) {
-        device_destroy(sdmmc->mxdev);
         free(sdmmc);
     }
 

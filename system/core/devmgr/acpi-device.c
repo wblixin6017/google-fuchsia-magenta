@@ -35,7 +35,6 @@ static mx_acpi_protocol_t acpi_device_acpi_proto = {
 
 static mx_status_t acpi_device_release(mx_device_t* dev) {
     acpi_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -125,7 +124,6 @@ static mx_status_t acpi_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) 
         status = device_add_with_props(batt_dev->mxdev, dev, batt_dev->props,
                                        countof(batt_dev->props));
         if (status != NO_ERROR) {
-            device_destroy(batt_dev->mxdev);
             free(batt_dev);
             goto fail;
         }

@@ -106,7 +106,6 @@ static mx_status_t usb_audio_source_release(mx_device_t* dev) {
     while ((txn = list_remove_head_type(&source->completed_reads, iotxn_t, node)) != NULL) {
         iotxn_release(txn);
     }
-    device_destroy(source->mxdev);
     free(source->sample_rates);
     free(source);
     return NO_ERROR;

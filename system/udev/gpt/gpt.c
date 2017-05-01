@@ -150,7 +150,6 @@ static void gpt_unbind(mx_device_t* dev) {
 
 static mx_status_t gpt_release(mx_device_t* dev) {
     gptpart_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -363,7 +362,6 @@ static int gpt_bind_thread(void* arg) {
 
         iotxn_copyfrom(txn, &device->gpt_entry, sizeof(gpt_entry_t), sizeof(gpt_entry_t) * partitions);
         if (device->gpt_entry.type[0] == 0) {
-            device_destroy(device->mxdev);
             free(device);
             continue;
         }
@@ -382,7 +380,6 @@ static int gpt_bind_thread(void* arg) {
         device_set_protocol(device->mxdev, MX_PROTOCOL_BLOCK_CORE, &gpt_block_ops);
         if (device_add(device->mxdev, dev) != NO_ERROR) {
             printf("gpt device_add failed\n");
-            device_destroy(device->mxdev);
             free(device);
             continue;
         }

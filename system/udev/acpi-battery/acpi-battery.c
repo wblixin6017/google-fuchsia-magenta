@@ -131,7 +131,6 @@ static mx_status_t acpi_battery_bind(mx_driver_t* drv, mx_device_t* dev, void** 
     device_set_protocol(device->mxdev, MX_PROTOCOL_BATTERY, NULL);
     if ((status = device_add(device->mxdev, dev)) < 0) {
         printf("acpi-battery: could not add device! err=%d\n", status);
-        device_destroy(device->mxdev);
         free(device);
         return status;
     }

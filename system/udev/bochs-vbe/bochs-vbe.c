@@ -173,7 +173,6 @@ static mx_status_t bochs_vbe_release(mx_device_t* dev) {
         vdev->framebuffer_handle = -1;
     }
 
-    device_destroy(vdev->mxdev);
     free(vdev);
 
     return NO_ERROR;
@@ -234,7 +233,7 @@ static mx_status_t bochs_vbe_bind(mx_driver_t* drv, mx_device_t* dev, void** coo
 
     status = device_add(device->mxdev, dev);
     if (status != NO_ERROR) {
-        goto fail_created;
+        goto fail;
     }
 
     xprintf("initialized bochs_vbe display driver, reg=0x%x regsize=0x%x fb=0x%x fbsize=0x%x\n",
@@ -242,8 +241,6 @@ static mx_status_t bochs_vbe_bind(mx_driver_t* drv, mx_device_t* dev, void** coo
 
     return NO_ERROR;
 
-fail_created:
-    device_destroy(device->mxdev);
 fail:
     free(device);
     return status;

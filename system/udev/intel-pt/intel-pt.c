@@ -918,7 +918,6 @@ static mx_status_t ipt_release(mx_device_t* dev) {
     x86_pt_cpu_mode_stop(ipt_dev);
     x86_pt_cpu_mode_free(ipt_dev);
 
-    device_destroy(ipt_dev->mxdev);
     free(ipt_dev);
 
     return NO_ERROR;
@@ -947,7 +946,6 @@ static mx_status_t ipt_bind(mx_driver_t* driver, mx_device_t* parent, void** coo
     }
 
     if ((status = device_add(ipt_dev->mxdev, parent)) < 0) {
-        device_destroy(ipt_dev->mxdev);
         free(ipt_dev);
         return status;
     }

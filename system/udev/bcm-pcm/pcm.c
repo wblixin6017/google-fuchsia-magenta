@@ -398,7 +398,6 @@ set_stream_done:
 
 static mx_status_t pcm_audio_sink_release(mx_device_t* device) {
     bcm_pcm_t* ctx = device->ctx;
-    device_destroy(ctx->mxdev);
     free(ctx);
     return NO_ERROR;
 }
@@ -704,7 +703,6 @@ static int pcm_bootstrap_thread(void* arg) {
 
 pcm_err:
     if (pcm_ctx) {
-        device_destroy(pcm_ctx->mxdev);
         free(pcm_ctx);
     }
 

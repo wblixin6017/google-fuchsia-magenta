@@ -238,12 +238,10 @@ static mx_status_t pty_client_release(mx_device_t* dev) {
         if (ps->release) {
             ps->release(ps);
         } else {
-            device_destroy(ps->mxdev);
             free(ps);
         }
     }
 
-    device_destroy(pc->mxdev);
     free(pc);
     xprintf("pty cli %p (id=%u) release\n", pc, pc->id);
 
@@ -298,7 +296,6 @@ static mx_status_t pty_openat(pty_server_t* ps, mx_device_t** out, uint32_t id, 
     list_for_every_entry(&ps->clients, c, pty_client_t, node) {
         if (c->id == id) {
             mtx_unlock(&ps->lock);
-            device_destroy(pc->mxdev);
             free(pc);
             return ERR_INVALID_ARGS;
         }
@@ -424,7 +421,6 @@ mx_status_t pty_server_release(mx_device_t* dev) {
         if (ps->release) {
             ps->release(ps);
         } else {
-            device_destroy(ps->mxdev);
             free(ps);
         }
     }

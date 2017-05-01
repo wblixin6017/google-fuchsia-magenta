@@ -77,7 +77,6 @@ static mx_status_t usb_midi_sink_release(mx_device_t* dev) {
     while ((txn = list_remove_head_type(&sink->free_write_reqs, iotxn_t, node)) != NULL) {
         iotxn_release(txn);
     }
-    device_destroy(sink->mxdev);
     free(sink);
     return NO_ERROR;
 }

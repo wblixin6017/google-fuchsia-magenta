@@ -205,7 +205,6 @@ static mx_status_t usb_device_release(mx_device_t* device) {
         }
         free(dev->config_descs);
     }
-    device_destroy(dev->mxdev);
     free(dev);
 
     return NO_ERROR;
@@ -401,7 +400,6 @@ mx_status_t usb_device_add(mx_device_t* hci_mxdev, usb_hci_protocol_t* hci_proto
     return usb_device_add_interfaces(dev, configs[0]);
 
 error_exit:
-    device_destroy(dev->mxdev);
     if (configs) {
         for (int i = 0; i < num_configurations; i++) {
             if (configs[i]) free(configs[i]);

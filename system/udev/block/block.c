@@ -207,7 +207,6 @@ static void blkdev_unbind(mx_device_t* dev) {
 static mx_status_t blkdev_release(mx_device_t* dev) {
     blkdev_t* blkdev = dev->ctx;
     blkdev_fifo_close(blkdev);
-    device_destroy(blkdev->mxdev);
     free(blkdev);
     return NO_ERROR;
 }
@@ -239,13 +238,11 @@ static mx_status_t block_driver_bind(mx_driver_t* drv, mx_device_t* dev, void** 
 
     device_set_protocol(bdev->mxdev, MX_PROTOCOL_BLOCK, NULL);
     if ((status = device_add(bdev->mxdev, dev)) != NO_ERROR) {
-        goto fail_add;
+        goto fail;
     }
 
     return NO_ERROR;
 
-fail_add:
-    device_destroy(bdev->mxdev);
 fail:
     free(bdev);
     return status;

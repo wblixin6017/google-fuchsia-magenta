@@ -117,7 +117,6 @@ static mx_status_t intel_i915_release(mx_device_t* dev) {
         device->framebuffer_handle = -1;
     }
 
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -210,7 +209,6 @@ static mx_status_t intel_i915_bind(mx_driver_t* drv, mx_device_t* dev, void** co
     return NO_ERROR;
 
 fail:
-    device_destroy(device->mxdev);
     free(device);
     return status;
 }

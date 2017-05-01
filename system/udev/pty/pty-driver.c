@@ -135,7 +135,6 @@ static mx_status_t ptmx_open(mx_device_t* dev, mx_device_t** out, uint32_t flags
 
     status = device_add_instance(psd->srv.mxdev, dev);
     if (status < 0) {
-        device_destroy(psd->srv.mxdev);
         free(psd);
         return status;
     }

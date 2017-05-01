@@ -241,7 +241,6 @@ static mx_off_t sata_getsize(mx_device_t* dev) {
 
 static mx_status_t sata_release(mx_device_t* dev) {
     sata_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -344,7 +343,6 @@ mx_status_t sata_bind(mx_device_t* dev, int port) {
     // send device identify
     status = sata_device_identify(device, dev);
     if (status < 0) {
-        device_destroy(device->mxdev);
         free(device);
         return status;
     }
@@ -353,7 +351,6 @@ mx_status_t sata_bind(mx_device_t* dev, int port) {
     device_set_protocol(device->mxdev, MX_PROTOCOL_BLOCK_CORE, &sata_block_ops);
     status = device_add(device->mxdev, dev);
     if (status < 0) {
-        device_destroy(device->mxdev);
         free(device);
         return status;
     }

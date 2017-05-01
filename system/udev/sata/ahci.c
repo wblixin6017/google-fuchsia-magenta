@@ -475,7 +475,6 @@ static void ahci_iotxn_queue(mx_device_t* dev, iotxn_t* txn) {
 static mx_status_t ahci_release(mx_device_t* dev) {
     // FIXME - join threads created by this driver
     ahci_device_t* device = dev->ctx;
-    device_destroy(device->mxdev);
     free(device);
     return NO_ERROR;
 }
@@ -823,7 +822,6 @@ static mx_status_t ahci_bind(mx_driver_t* drv, mx_device_t* dev, void** cookie) 
     return NO_ERROR;
 fail:
     // FIXME unmap, and join any threads created above
-    device_destroy(device->mxdev);
     free(device);
     return status;
 }

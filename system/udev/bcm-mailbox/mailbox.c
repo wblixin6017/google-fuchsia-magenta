@@ -459,7 +459,7 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie
 
     status = device_add(disp_mxdev, parent);
     if (status != NO_ERROR) {
-        goto disp_fail;
+        goto rpc_fail;
     }
 
     bcm_vc_poweron(bcm_dev_sd);
@@ -468,7 +468,7 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie
     mx_device_t* sdmmc_mxdev;
     status = device_create("bcm-sdmmc", NULL, &empty_device_proto, driver, &sdmmc_mxdev);
     if (status != NO_ERROR) {
-        goto disp_fail;
+        goto rpc_fail;
     }
     sdmmc_mxdev->props = calloc(2, sizeof(mx_device_prop_t));
     sdmmc_mxdev->props[0] = (mx_device_prop_t){BIND_SOC_VID, 0, SOC_VID_BROADCOMM};
@@ -522,18 +522,12 @@ mx_status_t mailbox_bind(mx_driver_t* driver, mx_device_t* parent, void** cookie
 
 pcm_fail:
     free(pcm_mxdev->props);
-    device_destroy(pcm_mxdev);
 i2c_fail:
     free(i2c_mxdev->props);
-    device_destroy(i2c_mxdev);
 sdmmc_fail:
     free(sdmmc_mxdev->props);
-    device_destroy(sdmmc_mxdev);
-disp_fail:
-    device_destroy(disp_mxdev);
 rpc_fail:
     free(rpc_mxdev->props);
-    device_destroy(rpc_mxdev);
     return status;
 }
 
