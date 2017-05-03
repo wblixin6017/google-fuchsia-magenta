@@ -225,7 +225,8 @@ static int isUnsupportedTerm(int* uart) {
     char *term = getenv("TERM");
     int j;
 
-    *uart = 0;
+    *uart = 1;
+    return 1;
     if (term == NULL) return 0;
     for (j = 0; unsupported_term[j]; j++)
         if (!strcasecmp(term,unsupported_term[j])) return 1;
