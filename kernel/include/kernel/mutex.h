@@ -12,6 +12,7 @@
 #include <magenta/compiler.h>
 #include <magenta/thread_annotations.h>
 #include <debug.h>
+#include <err.h>
 #include <stdint.h>
 #include <kernel/thread.h>
 
@@ -42,11 +43,46 @@ typedef struct TA_CAP("mutex") mutex {
 */
 void mutex_init(mutex_t *m);
 void mutex_destroy(mutex_t *m);
-void mutex_acquire(mutex_t *m) TA_ACQ(m);
-void mutex_release(mutex_t *m) TA_REL(m);
+status_t mutex_acquire_slow(mutex_t *m) TA_ACQ(m);
+void mutex_release_slow(mutex_t *m, bool resched, bool thread_lock_held) TA_REL(m);
 
-/* special version of the above with the thread lock held */
-void mutex_release_thread_locked(mutex_t *m, bool resched) TA_REL(m);
+/* fast path for mutexes */
+static inline void mutex_acquire(mutex_t *m) TA_ACQ(m)
+{
+    thread_t *ct = get_current_thread();
+
+    for (;;) {
+        uintptr_t zero = 0;
+        if (likely(atomic_cmpxchg_u64(&m->val, &zero, (uintptr_t)ct))) {
+            // acquired it cleanly
+            return;
+        }
+
+        if (likely(mutex_acquire_slow(m) == NO_ERROR))
+            return;
+    }
+}
+
+/* fast path for release */
+static inline void mutex_release_etc(mutex_t *m, bool resched, bool thread_lock_held) TA_REL(m)
+{
+    thread_t *ct = get_current_thread();
+    uintptr_t oldval;
+
+    // in case there's no contention, try the fast path
+    oldval = (uintptr_t)ct;
+    if (likely(atomic_cmpxchg_u64(&m->val, &oldval, 0))) {
+        // we're done, exit
+        return;
+    }
+
+    mutex_release_slow(m, resched, thread_lock_held);
+}
+
+static inline void mutex_release(mutex_t *m) TA_REL(m)
+{
+    mutex_release_etc(m, true, false);
+}
 
 /* does the current thread hold the mutex? */
 static inline bool is_mutex_held(const mutex_t *m)

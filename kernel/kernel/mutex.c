@@ -16,9 +16,11 @@
  */
 
 #include <kernel/mutex.h>
+
 #include <debug.h>
 #include <assert.h>
 #include <err.h>
+#include <inttypes.h>
 #include <kernel/thread.h>
 #include <kernel/sched.h>
 #include <trace.h>
@@ -60,25 +62,13 @@ void mutex_destroy(mutex_t *m)
     THREAD_UNLOCK(state);
 }
 
-/**
- * @brief  Acquire the mutex
- *
- * @return  NO_ERROR on success, other values on error
- */
-void mutex_acquire(mutex_t *m) TA_NO_THREAD_SAFETY_ANALYSIS
+status_t mutex_acquire_slow(mutex_t *m) TA_NO_THREAD_SAFETY_ANALYSIS
 {
     DEBUG_ASSERT(m->magic == MUTEX_MAGIC);
     DEBUG_ASSERT(!arch_in_int_handler());
 
     thread_t *ct = get_current_thread();
     uintptr_t oldval;
-
-retry:
-    if (likely(atomic_cmpxchg_u64(&m->val, &(uintptr_t) { 0 }, (uintptr_t)ct))) {
-        // acquired it cleanly
-        LTRACEF("%p got it\n", ct);
-        return;
-    }
 
     LTRACEF("%p slow path\n", ct);
 
@@ -95,14 +85,14 @@ retry:
     oldval = m->val;
     if (unlikely(oldval == 0)) {
         THREAD_UNLOCK(state);
-        goto retry;
+        return ERR_BAD_STATE;
     }
 
     // try to exchange again with a flag indicating that we're blocking is set
     if (unlikely(!atomic_cmpxchg_u64(&m->val, &oldval, oldval | MUTEX_FLAG_QUEUED))) {
         // if we fail, just start over from the top
         THREAD_UNLOCK(state);
-        goto retry;
+        return ERR_BAD_STATE;
     }
 
     status_t ret = wait_queue_block(&m->wait, INFINITE_TIME);
@@ -120,24 +110,17 @@ retry:
     DEBUG_ASSERT(ct == MUTEX_HOLDER(m));
 
     THREAD_UNLOCK(state);
+
+    return NO_ERROR;
 }
 
-
-void mutex_release(mutex_t *m) TA_NO_THREAD_SAFETY_ANALYSIS
+void mutex_release_slow(mutex_t *m, bool resched, bool thread_lock_held) TA_NO_THREAD_SAFETY_ANALYSIS
 {
     DEBUG_ASSERT(m->magic == MUTEX_MAGIC);
     DEBUG_ASSERT(!arch_in_int_handler());
 
     thread_t *ct = get_current_thread();
     uintptr_t oldval;
-
-    // in case there's no contention, try the fast path
-    oldval = (uintptr_t)ct;
-    if (likely(atomic_cmpxchg_u64(&m->val, &oldval, 0))) {
-        // we're done, exit
-        LTRACEF("%p released it\n", ct);
-        return;
-    }
 
     // slow path from now on out
     LTRACEF("%p slow path\n", ct);
@@ -151,14 +134,14 @@ void mutex_release(mutex_t *m) TA_NO_THREAD_SAFETY_ANALYSIS
 #endif
 
     // must have been some contention, try the slow release
-    THREAD_LOCK(state);
+    spin_lock_saved_state_t state;
+    if (!thread_lock_held)
+        spin_lock_irqsave(&thread_lock, state);
 
     oldval = (uintptr_t)ct | MUTEX_FLAG_QUEUED;
 
     thread_t *t = wait_queue_dequeue_one(&m->wait, NO_ERROR);
-    DEBUG_ASSERT_MSG(t, "mutex_release: wait queue didn't have anything, but m->val = %#" PRIxPTR "\n",
-            m->val);
-
+    DEBUG_ASSERT_MSG(t, "mutex_release: wait queue didn't have anything, but m->val = %#" PRIxPTR "\n", m->val);
 
     // we woke up a thread, mark the mutex owned by that thread
     uintptr_t newval = (uintptr_t)t | (wait_queue_is_empty(&m->wait) ? 0 : MUTEX_FLAG_QUEUED);
@@ -169,56 +152,9 @@ void mutex_release(mutex_t *m) TA_NO_THREAD_SAFETY_ANALYSIS
         panic("bad state in mutex release %p, current thread %p\n", m, ct);
     }
 
-    sched_unblock(t, true);
+    sched_unblock(t, resched);
 
-    THREAD_UNLOCK(state);
+    if (!thread_lock_held)
+        spin_unlock_irqrestore(&thread_lock, state);
 }
 
-void mutex_release_thread_locked(mutex_t *m, bool reschedule) TA_NO_THREAD_SAFETY_ANALYSIS
-{
-    DEBUG_ASSERT(m->magic == MUTEX_MAGIC);
-    DEBUG_ASSERT(!arch_in_int_handler());
-    DEBUG_ASSERT(arch_ints_disabled());
-    DEBUG_ASSERT(spin_lock_held(&thread_lock));
-
-    thread_t *ct = get_current_thread();
-    uintptr_t oldval;
-
-    LTRACEF("%p mutex %p m->val %#" PRIxPTR "\n", ct, m, m->val);
-
-    // in case there's no contention, try the fast path
-    oldval = (uintptr_t)ct;
-    if (likely(atomic_cmpxchg_u64(&m->val, &oldval, 0))) {
-        // we're done, exit
-        LTRACEF("%p released it\n", ct);
-        return;
-    }
-
-    // slow path from now on out
-    LTRACEF("%p slow path\n", ct);
-
-#if LK_DEBUGLEVEL > 0
-    if (unlikely(ct != MUTEX_HOLDER(m))) {
-        thread_t *holder = MUTEX_HOLDER(m);
-        panic("mutex_release_thread_locked: thread %p (%s) tried to release mutex %p it doesn't own. owned by %p (%s)\n",
-              ct, ct->name, m, holder, holder ? holder->name : "none");
-    }
-#endif
-
-    oldval = (uintptr_t)ct | MUTEX_FLAG_QUEUED;
-
-    thread_t *t = wait_queue_dequeue_one(&m->wait, NO_ERROR);
-    DEBUG_ASSERT_MSG(t, "mutex_release_thread_locked: wait queue didn't have anything, but m->val = %#" PRIxPTR "\n",
-            m->val);
-
-    // we woke up a thread, mark the mutex owned by that thread
-    uintptr_t newval = (uintptr_t)t | (wait_queue_is_empty(&m->wait) ? 0 : MUTEX_FLAG_QUEUED);
-
-    LTRACEF("%p woke up thread %p, marking it as owner, newval %#" PRIxPTR "\n", ct, t, newval);
-
-    if (!atomic_cmpxchg_u64(&m->val, &oldval, newval)) {
-        panic("bad state in mutex release %p, current thread %p\n", m, ct);
-    }
-
-    sched_unblock(t, true);
-}
