@@ -21,16 +21,18 @@ __BEGIN_CDECLS;
 
 typedef struct TA_CAP("mutex") mutex {
     uint32_t magic;
-    thread_t *holder;
-    int count;
+    uintptr_t val;
     wait_queue_t wait;
 } mutex_t;
+
+#define MUTEX_FLAG_QUEUED ((uintptr_t)1)
+
+#define MUTEX_HOLDER(m) ((thread_t *)(((m)->val) & ~MUTEX_FLAG_QUEUED))
 
 #define MUTEX_INITIAL_VALUE(m) \
 { \
     .magic = MUTEX_MAGIC, \
-    .holder = NULL, \
-    .count = 0, \
+    .val = 0, \
     .wait = WAIT_QUEUE_INITIAL_VALUE((m).wait), \
 }
 
@@ -49,7 +51,7 @@ void mutex_release_thread_locked(mutex_t *m, bool resched) TA_REL(m);
 /* does the current thread hold the mutex? */
 static inline bool is_mutex_held(const mutex_t *m)
 {
-    return m->holder == get_current_thread();
+    return (MUTEX_HOLDER(m) == get_current_thread());
 }
 
 __END_CDECLS;
