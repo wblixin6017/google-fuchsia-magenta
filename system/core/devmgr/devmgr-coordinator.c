@@ -79,8 +79,9 @@ static void prepopulate_protocol_dirs(void) {
 }
 
 mx_status_t do_publish(device_t* parent, device_t* ctx) {
-    if (memfs_create_device_at(parent->vnode, &ctx->vnode, ctx->name, ctx->hrpc)) {
-        printf("devmgr: could not add '%s' to devfs!\n", ctx->name);
+mx_status_t status;
+    if ((status = memfs_create_device_at(parent->vnode, &ctx->vnode, ctx->name, ctx->hrpc))) {
+        printf("devmgr: could not add '%s' to devfs %s! %d\n", ctx->name, parent->name, status);
         return ERR_INTERNAL;
     }
 

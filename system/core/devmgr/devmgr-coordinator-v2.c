@@ -16,11 +16,32 @@
 #include "devcoordinator.h"
 #include "log.h"
 
-uint32_t log_flags = LOG_ERROR | LOG_INFO;
+uint32_t log_flags = LOG_ERROR | LOG_INFO | LOG_DEVLC;
 
 static void dc_dump_state(void);
 
 extern mx_handle_t application_launcher;
+
+static mx_handle_t mdi_handle = MX_HANDLE_INVALID;
+
+static mx_handle_t devmgr_get_mdi(void) {
+    if (mdi_handle != MX_HANDLE_INVALID) {
+        mx_handle_t handle;
+        if (mx_handle_duplicate(mdi_handle, MX_RIGHT_SAME_RIGHTS, &handle) == NO_ERROR) {
+            return handle;
+        } else {
+            printf("mx_handle_duplicate failed in devmgr_get_mdi\n");
+        }
+    }
+
+    return MX_HANDLE_INVALID;
+}
+
+void devmgr_set_mdi(mx_handle_t handle) {
+printf("devmgr_set_mdi\n");
+    mdi_handle = handle;
+}
+
 
 static mx_status_t handle_dmctl_write(size_t len, const char* cmd) {
     if (len == 4) {
@@ -79,6 +100,7 @@ static mx_status_t handle_dmctl_write(size_t len, const char* cmd) {
 
 //TODO: these are copied from devhost.h
 #define ID_HJOBROOT 4
+#define ID_HMDI     5
 mx_handle_t get_sysinfo_job_root(void);
 
 
@@ -108,6 +130,17 @@ static device_t misc_device = {
     .args = "misc,,",
     .children = LIST_INITIAL_VALUE(misc_device.children),
     .pending = LIST_INITIAL_VALUE(misc_device.pending),
+    .refcount = 1,
+};
+
+static device_t platform_device = {
+    .flags = DEV_CTX_IMMORTAL | DEV_CTX_BUSDEV,
+    .protocol_id = MX_PROTOCOL_MISC_PARENT,
+    .name = "platform",
+    .libname = "",
+    .args = "platform,,",
+    .children = LIST_INITIAL_VALUE(platform_device.children),
+    .pending = LIST_INITIAL_VALUE(platform_device.pending),
     .refcount = 1,
 };
 
@@ -143,6 +176,7 @@ static void dc_dump_device(device_t* dev, size_t indent) {
 static void dc_dump_state(void) {
     dc_dump_device(&root_device, 0);
     dc_dump_device(&misc_device, 1);
+    dc_dump_device(&platform_device, 1);
 }
 
 static void dc_handle_new_device(device_t* dev);
@@ -183,8 +217,8 @@ static void process_work(work_t* work) {
 
 static const char* devhost_bin = "/boot/bin/devhost2";
 
-static mx_status_t dc_launch_devhost(devhost_t* host,
-                                     const char* name, mx_handle_t hrpc) {
+static mx_status_t dc_launch_devhost(devhost_t* host, const char* name,
+                                     mx_handle_t hrpc, mx_handle_t hmdi) {
     launchpad_t* lp;
     launchpad_create(devhost_job, name, &lp);
     launchpad_load_from_file(lp, devhost_bin);
@@ -207,6 +241,11 @@ static mx_status_t dc_launch_devhost(devhost_t* host,
     launchpad_add_handle(lp, get_sysinfo_job_root(),
                          PA_HND(PA_USER0, ID_HJOBROOT));
 
+    if (hmdi != MX_HANDLE_INVALID) {
+        launchpad_add_handle(lp, hmdi,
+                             PA_HND(PA_USER0, ID_HMDI));
+    }
+
     // Inherit devmgr's environment (including kernel cmdline)
     launchpad_clone(lp, LP_CLONE_ENVIRON | LP_CLONE_MXIO_ROOT);
 
@@ -228,7 +267,7 @@ static mx_status_t dc_launch_devhost(devhost_t* host,
     return NO_ERROR;
 }
 
-static mx_status_t dc_new_devhost(const char* name, devhost_t** out) {
+static mx_status_t dc_new_devhost(const char* name, mx_handle_t hmdi, devhost_t** out) {
     devhost_t* dh = calloc(1, sizeof(devhost_t));
     if (dh == NULL) {
         return ERR_NO_MEMORY;
@@ -241,7 +280,7 @@ static mx_status_t dc_new_devhost(const char* name, devhost_t** out) {
         return r;
     }
 
-    if ((r = dc_launch_devhost(dh, name, hrpc)) < 0) {
+    if ((r = dc_launch_devhost(dh, name, hrpc, hmdi)) < 0) {
         mx_handle_close(dh->hrpc);
         free(dh);
         return r;
@@ -523,6 +562,7 @@ static mx_status_t dc_bind_device(device_t* dev, const char* drvname) {
                                dev->props, dev->prop_count, false)) {
                 log(INFO, "devcoord: drv='%s' bindable to dev='%s'\n",
                     drv->name, dev->name);
+printf("dc_attempt_bind %s\n", drvname);
                 dc_attempt_bind(drv, dev);
             }
             break;
@@ -789,11 +829,64 @@ static mx_status_t dh_bind_driver(device_t* dev, const char* libname) {
     return NO_ERROR;
 }
 
+static bool is_platform_bus_driver(driver_t* drv) {
+    return !strcmp(drv->libname, "driver/platform-bus.so");
+}
+
+
+static mx_status_t dc_start_platform_bus(driver_t* drv, device_t* dev) {
+    dev = &platform_device;
+
+    mx_handle_t  hmdi = devmgr_get_mdi();
+    if (hmdi == MX_HANDLE_INVALID) {
+        return ERR_NOT_SUPPORTED;
+    }
+
+    // busdev args are "processname,driverlibname,args"
+    const char* arg0 = (dev->flags & DEV_CTX_SHADOW) ? dev->parent->args : dev->args;
+    const char* arg1 = strchr(arg0, ',');
+    if (arg1 == NULL) {
+        return ERR_INTERNAL;
+    }
+    arg1++;
+
+    const char* arg2 = strchr(arg1, ',');
+    if (arg2 == NULL) {
+        return ERR_INTERNAL;
+    }
+    arg2++;
+
+    mx_status_t r;
+    if ((r = dc_create_shadow(dev)) < 0) {
+        log(ERROR, "devcoord: cannot create shadow device: %d\n", r);
+        return r;
+    }
+
+    // if this device has no devhost, first instantiate it
+    if (dev->shadow->host == NULL) {
+        if ((r = dc_new_devhost("devhost:platform", hmdi, &dev->shadow->host)) < 0) {
+            log(ERROR, "devcoord: dh_new_devhost: %d\n", r);
+            return r;
+        }
+        if ((r = dh_create_device(dev->shadow, dev->shadow->host, drv->libname, "")) < 0) {
+            log(ERROR, "devcoord: dh_create_device: %d\n", r);
+            return r;
+        }
+    }
+
+    return dh_bind_driver(dev->shadow, drv->libname);
+}
+
 static mx_status_t dc_attempt_bind(driver_t* drv, device_t* dev) {
     // cannot bind driver to already bound device
     if ((dev->flags & DEV_CTX_BOUND) && (!(dev->flags & DEV_CTX_MULTI_BIND))) {
         return ERR_BAD_STATE;
     }
+
+    if (is_platform_bus_driver(drv)) {
+        return dc_start_platform_bus(drv, dev);
+    }
+
     if (!(dev->flags & DEV_CTX_BUSDEV)) {
         // non-busdev is pretty simple
         if (dev->host == NULL) {
@@ -838,7 +931,7 @@ static mx_status_t dc_attempt_bind(driver_t* drv, device_t* dev) {
 
     // if this device has no devhost, first instantiate it
     if (dev->shadow->host == NULL) {
-        if ((r = dc_new_devhost(devhostname, &dev->shadow->host)) < 0) {
+        if ((r = dc_new_devhost(devhostname, MX_HANDLE_INVALID, &dev->shadow->host)) < 0) {
             log(ERROR, "devcoord: dh_new_devhost: %d\n", r);
             return r;
         }
@@ -893,10 +986,12 @@ void coordinator_new_driver(driver_t* ctx) {
     list_add_tail(&list_drivers, &ctx->node);
 
     if (is_root_driver(ctx)) {
+printf("dc_attempt_bind root %s\n", ctx->libname);
         dc_attempt_bind(ctx, &root_device);
         return;
     }
     if (is_misc_driver(ctx)) {
+printf("dc_attempt_bind misc %s\n", ctx->libname);
         dc_attempt_bind(ctx, &misc_device);
         return;
     }
@@ -939,6 +1034,7 @@ void coordinator(void) {
     acpi_init();
 
     do_publish(&root_device, &misc_device);
+    do_publish(&root_device, &platform_device);
 
     enumerate_drivers();
 

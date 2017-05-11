@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "devcoordinator.h"
 #include "devmgr.h"
 #include "memfs-private.h"
 
@@ -139,6 +140,41 @@ static ssize_t setup_bootfs_vmo(uint32_t n, uint32_t type, mx_handle_t vmo) {
     return cd.file_count;
 }
 
+#if DEVHOST_V2
+static mx_status_t devmgr_read_mdi(mx_handle_t vmo, mx_off_t offset, size_t length) {
+    mx_handle_t mdi_handle;
+    mx_status_t status = mx_vmo_create(length, 0, &mdi_handle);
+    if (status != NO_ERROR) {
+        printf("failed to allocate VMO in devmgr_read_mdi(): %d\n", status);
+        return status;
+    }
+
+    char buffer[PAGE_SIZE];
+    mx_off_t src_offset = offset;
+    mx_off_t dest_offset = 0;
+
+    while (length > 0) {
+        size_t copy = (length > sizeof(buffer) ? sizeof(buffer) : length);
+        size_t actual;
+        if ((status = mx_vmo_read(vmo, buffer, src_offset, copy, &actual)) != NO_ERROR ||
+             (status = mx_vmo_write(mdi_handle, buffer, dest_offset, copy, &actual)) != NO_ERROR) {
+            goto fail;    
+        }
+        src_offset += copy;
+        dest_offset += copy;
+        length -= copy;
+    }
+
+    devmgr_set_mdi(mdi_handle);
+    return NO_ERROR;
+
+fail:
+    printf("devmgr_read_mdi failed %d\n", status);
+    mx_handle_close(mdi_handle);
+    return status;
+}
+#endif
+
 #define HND_BOOTFS(n) PA_HND(PA_VMO_BOOTFS, n)
 #define HND_BOOTDATA(n) PA_HND(PA_VMO_BOOTDATA, n)
 
@@ -200,6 +236,10 @@ static void setup_bootfs(void) {
                 break;
             }
             case BOOTDATA_MDI:
+#if DEVHOST_V2
+                devmgr_read_mdi(vmo, off, len);
+#endif
+                break;
             case BOOTDATA_CMDLINE:
             case BOOTDATA_ACPI_RSDP:
             case BOOTDATA_FRAMEBUFFER:

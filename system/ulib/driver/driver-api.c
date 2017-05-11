@@ -143,3 +143,8 @@ __EXPORT mx_status_t load_firmware(mx_driver_t* drv, const char* path,
                                    mx_handle_t* fw, size_t* size) {
     return API->load_firmware(drv, path, fw, size);
 }
+
+// private - only for use by platform-bus driver
+__EXPORT mx_handle_t driver_get_mdi_handle(void) {
+    return API->get_mdi_handle();
+}

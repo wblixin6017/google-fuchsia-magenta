@@ -31,6 +31,7 @@ typedef struct driver_api {
     mx_handle_t (*get_root_resource)(void);
     mx_status_t (*load_firmware)(mx_driver_t* drv, const char* path,
                                  mx_handle_t* fw, size_t* size);
+    mx_handle_t (*get_mdi_handle)(void);
 } driver_api_t;
 
 void driver_api_init(driver_api_t* api);

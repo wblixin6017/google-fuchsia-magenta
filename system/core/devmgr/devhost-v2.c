@@ -31,6 +31,8 @@ uint32_t log_flags = LOG_ERROR | LOG_INFO;
 
 #define ios_from_ph(ph) containerof(ph, devhost_iostate_t, ph)
 
+mx_handle_t mdi_handle = MX_HANDLE_INVALID;
+
 static mx_status_t dh_handle_dc_rpc(port_handler_t* ph, mx_signals_t signals, uint32_t evt);
 
 static port_t dh_port;
@@ -526,7 +528,6 @@ extern driver_api_t devhost_api;
 
 mx_handle_t root_resource_handle;
 
-
 mx_status_t devhost_start_iostate(devhost_iostate_t* ios, mx_handle_t h) {
     ios->ph.handle = h;
     ios->ph.waitfor = MX_CHANNEL_READABLE | MX_CHANNEL_PEER_CLOSED;
@@ -551,6 +552,9 @@ int main(int argc, char** argv) {
     if (root_resource_handle == MX_HANDLE_INVALID) {
         log(ERROR, "devhost: no root resource handle!\n");
     }
+
+    mdi_handle = mx_get_startup_handle(PA_HND(PA_USER0, ID_HMDI));
+    // hmdi is optional and usually invalid, so no error checking here
 
     mx_status_t r;
     if ((r = port_init(&dh_port)) < 0) {

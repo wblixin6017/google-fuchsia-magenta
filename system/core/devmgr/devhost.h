@@ -29,12 +29,15 @@
 #define ID_HACPI 2
 #define ID_HLAUNCHER 3
 #define ID_HJOBROOT 4
+#define ID_HMDI 5
 
 // Nothing outside of devmgr/{devmgr,devhost,rpc-device}.c
 // should be calling devhost_*() APIs, as this could
 // violate the internal locking design.
 
 // Safe external APIs are in device.h and device_internal.h
+
+extern mx_handle_t mdi_handle;
 
 void driver_add(mx_driver_t* driver);
 void driver_remove(mx_driver_t* driver);

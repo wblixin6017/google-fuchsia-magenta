@@ -219,6 +219,8 @@ mx_status_t dc_msg_unpack(dc_msg_t* msg, size_t len, const void** data,
 mx_status_t dc_msg_rpc(mx_handle_t h, dc_msg_t* msg, size_t msglen,
                        mx_handle_t* handles, size_t hcount);
 
+void devmgr_set_mdi(mx_handle_t mdi_handle);
+
 #else
 typedef struct dev_coordinator_msg {
     uint32_t op;
@@ -231,4 +233,5 @@ typedef struct dev_coordinator_msg {
 #define DC_OP_ADD 1
 #define DC_OP_REMOVE 2
 #define DC_OP_SHUTDOWN 3
+
 #endif
