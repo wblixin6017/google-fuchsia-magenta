@@ -1,0 +1,3 @@
+include "system/ulib/ddk/include/mdi/ddk-defs.mdi"
+
+platform-bus = {}

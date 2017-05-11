@@ -18,3 +18,4 @@ MODULE_DEPS += \
 
 include make/module.mk
 
+MDI_SRCS += $(LOCAL_DIR)/pc.mdi
